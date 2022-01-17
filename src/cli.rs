@@ -1,0 +1,87 @@
+use crate::keys::Keypair;
+use clap::Parser;
+use libp2p::{multiaddr::Protocol, Multiaddr};
+use std::net::{IpAddr, SocketAddr};
+
+#[derive(Debug, Parser)]
+#[clap(version, about)]
+pub struct CliOpts {
+  #[clap(short, long, help = "secret key of the validator account")]
+  pub keypair: Keypair,
+
+  #[clap(
+    long,
+    help = "listen address of the validator",
+    default_value = "0.0.0.0"
+  )]
+  pub addr: Vec<IpAddr>,
+
+  #[clap(long, help = "listen port of the validator", default_value = "44668")]
+  pub port: u16,
+
+  #[clap(
+    short,
+    long,
+    parse(from_occurrences),
+    help = "Use verbose output (-vv very verbose output)"
+  )]
+  pub verbose: u64,
+
+  #[clap(
+    long,
+    help = "address of a known peer to bootstrap p2p networking from"
+  )]
+  pub peer: Vec<SocketAddr>,
+}
+
+impl CliOpts {
+  /// Lists all the multiaddresses this node will listen
+  /// on for incoming connections. By default it will listen
+  /// on all available interfaces.
+  pub fn listen_multiaddrs(&self) -> Vec<Multiaddr> {
+    self
+      .addr
+      .iter()
+      .map(|addr| {
+        let mut maddr = Multiaddr::empty();
+        maddr.push(match addr {
+          &IpAddr::V4(addr) => Protocol::Ip4(addr),
+          &IpAddr::V6(addr) => Protocol::Ip6(addr),
+        });
+        maddr.push(Protocol::Tcp(self.port));
+        maddr
+      })
+      .collect()
+  }
+
+  /// Lists all multiaddresses of known peers of the chain.
+  /// Those peers are used as first bootstrap nodes to join
+  /// the p2p gossip network of the chain.
+  pub fn peers(&self) -> Vec<Multiaddr> {
+    self
+      .peer
+      .iter()
+      .map(|addr| {
+        let mut maddr = Multiaddr::empty();
+        maddr.push(match addr {
+          &SocketAddr::V4(addr) => Protocol::Ip4(*addr.ip()),
+          &SocketAddr::V6(addr) => Protocol::Ip6(*addr.ip()),
+        });
+        maddr.push(Protocol::Tcp(addr.port()));
+        maddr
+      })
+      .collect()
+  }
+
+  /// The libp2p identity of this validator node.
+  /// This is based on the keypair provided through [`self.secret`]
+  pub fn p2p_identity(&self) -> libp2p::identity::Keypair {
+    libp2p::identity::Keypair::Ed25519(
+      libp2p::identity::ed25519::SecretKey::from_bytes(
+        &mut self.keypair.secret().to_bytes(),
+      )
+      .unwrap()
+      .into(),
+    )
+  }
+}

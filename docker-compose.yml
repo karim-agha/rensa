@@ -1,0 +1,117 @@
+version: '3'
+
+services:
+  validator_0:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    command: ./rensa -v --keypair FtUhvsHCGA6KePPcBDxLiKcuLyhKAz4W1iU4hX2CWtUd
+    networks:
+      rensa_test_net:
+        ipv4_address: 172.29.1.2
+
+  validator_1:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    command: ./rensa -v --keypair 6GDs9UNWHp9oB6vPf7uSBocbJTR6Z4TQao7zQGDWE4Vu --peer 172.29.1.2:44668
+    depends_on:
+      validator_0:
+        condition: service_started
+    networks:
+      rensa_test_net:
+
+  validator_2:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    command: ./rensa -v --keypair 3TTteibqWqxdzDGg2oAvwatEs7iwXuFg45nprsFFpHEZ --peer 172.29.1.2:44668
+    depends_on:
+      validator_0:
+        condition: service_started
+    networks:
+      rensa_test_net:
+
+  validator_3:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    command: ./rensa -v --keypair csTUBKjVWS4P1Lq5fXQJ1U6JX2dEMef8MFzyNG21ycF --peer 172.29.1.2:44668
+    depends_on:
+      validator_0:
+        condition: service_started
+    networks:
+      rensa_test_net:
+
+  validator_4:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    command: ./rensa -v --keypair 6SebepsFketmvHW5wHc4PGK41Nt9JGfojUN5PXybPSuo --peer 172.29.1.2:44668
+    depends_on:
+      validator_0:
+        condition: service_started
+    networks:
+      rensa_test_net:
+
+  validator_5:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    command: ./rensa -v --keypair 2r7N3U1vEsXGjm29TCfFTzwSuXjq9xPDiiah5egbSZpC --peer 172.29.1.2:44668
+    depends_on:
+      validator_0:
+        condition: service_started
+    networks:
+      rensa_test_net:
+
+  validator_6:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    command: ./rensa -v --keypair Daa4SKexWyfgh5rN5DJUQAfEEQ4piJzRkf72CsBQJEtr --peer 172.29.1.2:44668
+    depends_on:
+      validator_0:
+        condition: service_started
+    networks:
+      rensa_test_net:
+
+  validator_7:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    command: ./rensa -v --keypair 6zUWXGnHLqZzKBEJERqrLiM4v3QLMDWJpDbjt9QtwJcg --peer 172.29.1.2:44668
+    depends_on:
+      validator_0:
+        condition: service_started
+    networks:
+      rensa_test_net:
+
+  validator_8:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    command: ./rensa -v --keypair Fi6HBTsAPURV75GEY1fPKXwF24pTikU4qsFc4TgrwbeB --peer 172.29.1.2:44668
+    depends_on:
+      validator_0:
+        condition: service_started
+    networks:
+      rensa_test_net:
+
+  validator_9:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    command: ./rensa -v --keypair 5jtFt9g9qYgicGbVS846BeZAyUbe7X7rvAWw3pNn2mXj --peer 172.29.1.2:44668
+    depends_on:
+      validator_0:
+        condition: service_started
+    networks:
+      rensa_test_net:
+
+networks:
+  rensa_test_net:
+    ipam:
+      driver: default
+      config:
+        - subnet: 172.29.1.0/24

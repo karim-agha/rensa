@@ -1,9 +1,18 @@
 use base58::{FromBase58, FromBase58Error, ToBase58};
 use ed25519_dalek::{PublicKey, SecretKey};
-use std::{fmt::Display, ops::Deref, str::FromStr};
+use std::{
+  fmt::{Debug, Display},
+  ops::Deref,
+  str::FromStr,
+};
 use thiserror::Error;
 
-/// Represents an address of an account
+/// Represents an address of an account.
+///
+/// The same address could either represent a user wallet that
+/// has a corresponding private key on the ed25519 curve or a
+/// program owned account that is not on the curve and is writable
+/// only by its program.
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub struct Pubkey([u8; 32]);
 
@@ -20,17 +29,23 @@ impl Display for Pubkey {
   }
 }
 
+impl Debug for Pubkey {
+  fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    write!(f, "Pubkey({})", self.0.to_base58())
+  }
+}
+
 impl Into<String> for Pubkey {
   fn into(self) -> String {
     self.0.to_base58()
   }
 }
 
-impl TryFrom<String> for Pubkey {
-  type Error = FromBase58Error;
-  fn try_from(value: String) -> Result<Self, Self::Error> {
+impl FromStr for Pubkey {
+  type Err = FromBase58Error;
+  fn from_str(s: &str) -> Result<Self, Self::Err> {
     let mut bytes = [0u8; 32];
-    bytes.copy_from_slice(&value.from_base58()?[..]);
+    bytes.copy_from_slice(&s.from_base58()?[..]);
     Ok(Self(bytes))
   }
 }
@@ -38,6 +53,18 @@ impl TryFrom<String> for Pubkey {
 impl From<PublicKey> for Pubkey {
   fn from(p: PublicKey) -> Self {
     Self(*p.as_bytes())
+  }
+}
+
+impl PartialEq<libp2p::PeerId> for Pubkey {
+  fn eq(&self, other: &libp2p::PeerId) -> bool {
+    self.0.eq(&other.as_ref().digest()[4..])
+  }
+}
+
+impl PartialEq<Pubkey> for libp2p::PeerId {
+  fn eq(&self, other: &Pubkey) -> bool {
+    other.0.eq(&self.as_ref().digest()[4..])
   }
 }
 
