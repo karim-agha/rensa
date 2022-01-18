@@ -1,7 +1,11 @@
-use base58::{FromBase58, FromBase58Error, ToBase58};
 use ed25519_dalek::{PublicKey, SecretKey};
+use serde::{
+  de::{self, Visitor},
+  Deserialize, Deserializer, Serialize,
+};
 use std::{
-  fmt::{Debug, Display},
+  fmt::{Debug, Display, Formatter},
+  marker::PhantomData,
   ops::Deref,
   str::FromStr,
 };
@@ -13,7 +17,7 @@ use thiserror::Error;
 /// has a corresponding private key on the ed25519 curve or a
 /// program owned account that is not on the curve and is writable
 /// only by its program.
-#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Serialize)]
 pub struct Pubkey([u8; 32]);
 
 impl Deref for Pubkey {
@@ -25,27 +29,27 @@ impl Deref for Pubkey {
 
 impl Display for Pubkey {
   fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-    write!(f, "{}", self.0.to_base58())
+    write!(f, "{}", bs58::encode(self.0).into_string())
   }
 }
 
 impl Debug for Pubkey {
   fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-    write!(f, "Pubkey({})", self.0.to_base58())
+    write!(f, "Pubkey({})", bs58::encode(self.0).into_string())
   }
 }
 
-impl Into<String> for Pubkey {
-  fn into(self) -> String {
-    self.0.to_base58()
+impl From<Pubkey> for String {
+  fn from(pk: Pubkey) -> Self {
+    bs58::encode(pk.0).into_string()
   }
 }
 
 impl FromStr for Pubkey {
-  type Err = FromBase58Error;
+  type Err = bs58::decode::Error;
   fn from_str(s: &str) -> Result<Self, Self::Err> {
     let mut bytes = [0u8; 32];
-    bytes.copy_from_slice(&s.from_base58()?[..]);
+    bs58::decode(s).into(&mut bytes)?;
     Ok(Self(bytes))
   }
 }
@@ -104,7 +108,11 @@ impl std::fmt::Debug for Keypair {
 
 impl Display for Keypair {
   fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-    write!(f, "Keypair({})", self.0.public.as_bytes().to_base58())
+    write!(
+      f,
+      "Keypair({})",
+      bs58::encode(self.0.public.as_bytes()).into_string()
+    )
   }
 }
 
@@ -123,7 +131,7 @@ impl From<Keypair> for ed25519_dalek::Keypair {
 #[derive(Debug, Error)]
 pub enum KeypairError {
   #[error("Failed parsing base58 string: {0:?}")]
-  Base58ParseError(FromBase58Error),
+  Base58ParseError(bs58::decode::Error),
 
   #[error("{0}")]
   Ed25519Error(#[from] ed25519_dalek::ed25519::Error),
@@ -141,9 +149,51 @@ impl TryFrom<&[u8]> for Keypair {
 impl FromStr for Keypair {
   type Err = KeypairError;
   fn from_str(value: &str) -> Result<Self, Self::Err> {
-    let bytes = &value
-      .from_base58()
-      .map_err(KeypairError::Base58ParseError)?[..];
-    Ok(bytes.try_into()?)
+    let mut secret = [0u8; 32];
+    bs58::decode(value)
+      .into(&mut secret)
+      .map_err(KeypairError::Base58ParseError)?;
+    let secret = SecretKey::from_bytes(&secret)?;
+    let public = (&secret).into();
+    Ok(Keypair(ed25519_dalek::Keypair { secret, public }))
+  }
+}
+
+/// Deserialize a pubkey for either a user-friendsly base58
+/// representation or a machine-friendly byte array.
+impl<'de> Deserialize<'de> for Pubkey {
+  fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+  where
+    D: Deserializer<'de>,
+  {
+    struct StringOrArray<T>(PhantomData<fn() -> T>);
+
+    impl<'de, T> Visitor<'de> for StringOrArray<T>
+    where
+      T: Deserialize<'de> + FromStr<Err = bs58::decode::Error>,
+    {
+      type Value = T;
+
+      fn expecting(&self, formatter: &mut Formatter) -> std::fmt::Result {
+        formatter.write_str("base58 string or byte array")
+      }
+
+      fn visit_str<E>(self, value: &str) -> Result<T, E>
+      where
+        E: de::Error,
+      {
+        FromStr::from_str(value)
+          .map_err(|e| de::Error::custom(format!("{e:?}")))
+      }
+
+      fn visit_seq<A>(self, seq: A) -> Result<Self::Value, A::Error>
+      where
+        A: de::SeqAccess<'de>,
+      {
+        Deserialize::deserialize(de::value::SeqAccessDeserializer::new(seq))
+      }
+    }
+
+    deserializer.deserialize_any(StringOrArray(PhantomData))
   }
 }

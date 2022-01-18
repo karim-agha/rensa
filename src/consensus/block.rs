@@ -1,19 +1,19 @@
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 /// Represents the type of values on which the consensus protocol
 /// decides among many competing versions.
-/// 
+///
 /// Type parameters:
-/// D is type of the underlying data that consensus is trying to 
+/// D is type of the underlying data that consensus is trying to
 ///   decide on, in case of a blockchain it is going to be Blocks
-/// 
+///
 /// S is type of the signatures gathered by the conensus to vote
 ///   and justify blocks in the fork tree.
-/// 
-pub trait Block<D, S>: Eq + Serialize
+///
+pub trait Block<D, S>: Eq + Serialize + for<'a> Deserialize<'a>
 where
-  D: Eq + Serialize,
-  S: Eq + Serialize,
+  D: Eq + Serialize + for<'a> Deserialize<'a>,
+  S: Eq + Serialize + for<'a> Deserialize<'a>,
 {
   type Hash: Eq;
 

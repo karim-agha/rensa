@@ -5,19 +5,20 @@ use rand::{
   SeedableRng,
 };
 use rand_chacha::ChaCha20Rng;
+use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Validator {
   pub pubkey: Pubkey,
   pub stake: u128,
 }
 
 /// Creates a stake-weighted validator schedule iterator based on
-/// a predefined seed function. This iterator will iterate forever
+/// a predefined seed value. This iterator will iterate forever
 /// returning the next expected validator deterministically for a
 /// given seed on all validator instances.
 ///
-/// The source of the enthropy for the seed is not specified here,
+/// The source of the entropy for the seed is not specified here,
 /// that is going to be defined in higher level of abstraction.
 ///
 /// So for example to get the leader schedule for an entire epoch
@@ -27,7 +28,7 @@ pub struct Validator {
 /// let seed = vec![5u8;32];
 /// let validators = Vec<Validator>::new(); // validators with stakes
 /// let schedule = ValidatorSchedule::new(seed.try_into()?, &validators)?;
-/// 
+///
 /// let epoch_validators = schedule.take(64);
 /// ```
 #[derive(Debug)]

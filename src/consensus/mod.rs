@@ -6,3 +6,4 @@ pub mod epoch;
 pub mod fault;
 pub mod validator;
 pub mod vote;
+pub mod genesis;

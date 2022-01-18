@@ -3,7 +3,6 @@
   "genesisTime": 1642437350,
   "slotIntervalMs": 3000,
   "slotsInEpoch": 32,
-  "majorityRatio": 0.67,
   "state": "genesis-value-1",
   "validators": [
     {

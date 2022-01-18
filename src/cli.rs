@@ -44,9 +44,9 @@ impl CliOpts {
       .iter()
       .map(|addr| {
         let mut maddr = Multiaddr::empty();
-        maddr.push(match addr {
-          &IpAddr::V4(addr) => Protocol::Ip4(addr),
-          &IpAddr::V6(addr) => Protocol::Ip6(addr),
+        maddr.push(match *addr {
+          IpAddr::V4(addr) => Protocol::Ip4(addr),
+          IpAddr::V6(addr) => Protocol::Ip6(addr),
         });
         maddr.push(Protocol::Tcp(self.port));
         maddr
@@ -63,9 +63,9 @@ impl CliOpts {
       .iter()
       .map(|addr| {
         let mut maddr = Multiaddr::empty();
-        maddr.push(match addr {
-          &SocketAddr::V4(addr) => Protocol::Ip4(*addr.ip()),
-          &SocketAddr::V6(addr) => Protocol::Ip6(*addr.ip()),
+        maddr.push(match *addr {
+          SocketAddr::V4(addr) => Protocol::Ip4(*addr.ip()),
+          SocketAddr::V6(addr) => Protocol::Ip6(*addr.ip()),
         });
         maddr.push(Protocol::Tcp(addr.port()));
         maddr
