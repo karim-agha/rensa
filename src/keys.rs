@@ -17,7 +17,7 @@ use thiserror::Error;
 /// has a corresponding private key on the ed25519 curve or a
 /// program owned account that is not on the curve and is writable
 /// only by its program.
-#[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Serialize)]
+#[derive(Clone, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize)]
 pub struct Pubkey([u8; 32]);
 
 impl Deref for Pubkey {
@@ -57,6 +57,12 @@ impl FromStr for Pubkey {
 impl From<PublicKey> for Pubkey {
   fn from(p: PublicKey) -> Self {
     Self(*p.as_bytes())
+  }
+}
+
+impl From<libp2p::PeerId> for Pubkey {
+  fn from(p: libp2p::PeerId) -> Self {
+    Self(p.as_ref().digest()[4..].try_into().unwrap())
   }
 }
 

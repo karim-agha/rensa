@@ -91,11 +91,11 @@ impl CliOpts {
     )
   }
 
-  /// Retreives the genesis block config from its JSON 
+  /// Retreives the genesis block config from its JSON
   /// serialized form from the path provided by the user.
   pub fn genesis(&self) -> Result<Genesis<String>, impl std::error::Error> {
     let json = std::fs::read_to_string(&self.genesis)
-      .map_err(|e| serde::de::Error::custom(e))?;
+      .map_err(serde::de::Error::custom)?;
     serde_json::from_str(&json)
   }
 }

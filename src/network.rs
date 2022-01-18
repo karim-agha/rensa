@@ -1,3 +1,7 @@
+use crate::{
+  consensus::validator::Validator,
+  keys::{Keypair, Pubkey},
+};
 use futures::StreamExt;
 use libp2p::{
   core::{muxing::StreamMuxerBox, transport::Boxed, upgrade::Version},
@@ -9,9 +13,8 @@ use libp2p::{
   yamux::YamuxConfig,
   Multiaddr, PeerId, Swarm, Transport,
 };
-use libp2p_episub::{Config, Episub, EpisubEvent};
-
-use crate::keys::Keypair;
+use libp2p_episub::{Config, Episub, EpisubEvent, PeerAuthorizer};
+use std::collections::HashSet;
 
 type BoxedTransport = Boxed<(PeerId, StreamMuxerBox)>;
 
@@ -57,6 +60,7 @@ type EpisubProtocolError = <EpisubProtocolHandler as ProtocolsHandler>::Error;
 impl Network {
   pub async fn new(
     chainid: impl AsRef<str>,
+    validators: &[Validator],
     keypair: Keypair,
     listenaddrs: impl Iterator<Item = Multiaddr>,
   ) -> std::io::Result<Self> {
@@ -68,10 +72,26 @@ impl Network {
       .into(),
     );
 
+    // allow only known validators to join this p2p network.
+    // dynamic validator membership is not implemented in this
+    // iteration of the consensus algorithm.
+
+    // build an O(1) quick lookup structure for validators
+    let vset: HashSet<_> =
+      validators.iter().map(|v| v.pubkey.clone()).collect();
+
+    // use an authentiator predicate that denies connections
+    // to any peer id that is not a known validator.
+    let authorizer = PeerAuthorizer::new(move |_, peerid| {
+      let pubkey: Pubkey = (*peerid).into();
+      vset.contains(&pubkey)
+    });
+
     let mut swarm = Swarm::new(
       create_transport(&keypair).await?,
       Episub::new(Config {
-        network_size: 10,
+        authorizer,
+        network_size: validators.len(),
         ..Config::default()
       }),
       id.public().to_peer_id(),

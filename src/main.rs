@@ -51,6 +51,7 @@ async fn main() -> anyhow::Result<()> {
 
   let mut network = Network::new(
     genesis.chain_id,
+    &genesis.validators,
     opts.keypair.clone(),
     opts.listen_multiaddrs().into_iter(),
   )
