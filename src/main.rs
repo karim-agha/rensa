@@ -7,10 +7,10 @@ pub mod rpc;
 pub mod storage;
 pub mod transaction;
 
-use chrono::Utc;
 use clap::StructOpt;
 use cli::CliOpts;
-use consensus::validator::ValidatorSchedule;
+use consensus::validator::{ValidatorSchedule, ValidatorScheduleStream};
+use futures::StreamExt;
 use keys::Pubkey;
 use network::Network;
 use tokio::sync::mpsc;
@@ -67,20 +67,22 @@ async fn main() -> anyhow::Result<()> {
 
   tokio::spawn(async move {
     let seed = [5u8; 32];
+    let me = opts.keypair.public();
     let validators = genesis.validators.clone();
 
-    let slots_since_genesis = (Utc::now().timestamp_millis()
-      - genesis.genesis_time.timestamp_millis())
-      as u128
-      / genesis.slot_interval.as_millis();
-    info!("current slot number: {slots_since_genesis}");
-    let schedule = ValidatorSchedule::new(seed, &validators).unwrap();
-    let mut current = schedule.skip(slots_since_genesis as usize);
-    loop {
-      tokio::time::sleep(genesis.slot_interval).await;
-      if let Some(validator) = current.next() {
+    let mut schedule = ValidatorSchedule::new(seed, &validators).unwrap();
+    let mut schedule_stream = ValidatorScheduleStream::new(
+      &mut schedule,
+      genesis.genesis_time,
+      genesis.slot_interval,
+    );
+
+    while let Some((slot, validator)) = schedule_stream.next().await {
+      if validator.pubkey == me {
         ticks_tx.send(validator.pubkey.clone()).unwrap();
-        info!("validator turn: {validator:?}");
+        info!("It's my turn on slot {slot}: {validator:?}");
+      } else {
+        info!("I think that slot {slot} is for: {validator:?}");
       }
     }
   });

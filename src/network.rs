@@ -72,7 +72,7 @@ impl Network {
       .into(),
     );
 
-    // allow only known validators to join this p2p network.
+    // allow only validators to join this p2p network.
     // dynamic validator membership is not implemented in this
     // iteration of the consensus algorithm.
 
