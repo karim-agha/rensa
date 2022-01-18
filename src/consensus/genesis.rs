@@ -8,7 +8,10 @@ use std::time::Duration;
 /// Defines the very first block of a chain with a fixed
 /// set of validators and a few other settings.
 #[derive(Debug, Serialize, Deserialize)]
-#[serde(bound = "D: Serialize, for<'a> D: Deserialize<'a>")]
+#[serde(
+  bound = "D: Serialize, for<'a> D: Deserialize<'a>",
+  rename_all = "camelCase"
+)]
 pub struct Genesis<D>
 where
   D: Eq + Serialize + for<'a> Deserialize<'a>,
@@ -28,12 +31,13 @@ where
 
   /// Thr length of a single slot during which there is one
   /// leader validator that proposes new blocks. Regardless if
-  /// the leader produces a new block during this slot or not, 
+  /// the leader produces a new block during this slot or not,
   /// the consensus will advance to the next leader validator
   /// when the slot time elapses.
+  #[serde(with = "humantime_serde")]
   pub slot_interval: Duration,
 
-  /// How many slots make up one epoch. Epochs are groups of 
+  /// How many slots make up one epoch. Epochs are groups of
   /// consecutive slots. Two epochs in a row that receive 2/3
   /// of validator votes constitute a finalized chechpoint that
   /// will never be reverted by any fork choice rule and could
@@ -46,5 +50,5 @@ where
 
   /// State of the first block, specific to the execution layer
   /// that is responsible for executing blocks.
-  pub data: D,
+  pub state: D,
 }

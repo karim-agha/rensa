@@ -1,7 +1,10 @@
-use crate::keys::Keypair;
+use crate::{consensus::genesis::Genesis, keys::Keypair};
 use clap::Parser;
 use libp2p::{multiaddr::Protocol, Multiaddr};
-use std::net::{IpAddr, SocketAddr};
+use std::{
+  net::{IpAddr, SocketAddr},
+  path::PathBuf,
+};
 
 #[derive(Debug, Parser)]
 #[clap(version, about)]
@@ -32,6 +35,9 @@ pub struct CliOpts {
     help = "address of a known peer to bootstrap p2p networking from"
   )]
   pub peer: Vec<SocketAddr>,
+
+  #[clap(long, parse(from_os_str), help = "path to the chain genesis file")]
+  pub genesis: PathBuf,
 }
 
 impl CliOpts {
@@ -83,5 +89,13 @@ impl CliOpts {
       .unwrap()
       .into(),
     )
+  }
+
+  /// Retreives the genesis block config from its JSON 
+  /// serialized form from the path provided by the user.
+  pub fn genesis(&self) -> Result<Genesis<String>, impl std::error::Error> {
+    let json = std::fs::read_to_string(&self.genesis)
+      .map_err(|e| serde::de::Error::custom(e))?;
+    serde_json::from_str(&json)
   }
 }

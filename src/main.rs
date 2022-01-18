@@ -14,7 +14,7 @@ use std::time::Duration;
 use tokio::sync::mpsc;
 use tracing::{info, Level};
 
-fn print_essentials(opts: &CliOpts) {
+fn print_essentials(opts: &CliOpts) -> anyhow::Result<()> {
   info!("Starting Rensa validator node");
   info!("Version: {}", env!("CARGO_PKG_VERSION"));
   info!("Listen addresses: {:?}", opts.listen_multiaddrs());
@@ -23,6 +23,9 @@ fn print_essentials(opts: &CliOpts) {
     "P2P identity: {}",
     opts.p2p_identity().public().to_peer_id()
   );
+  info!("Genesis: {:#?}", opts.genesis()?);
+
+  Ok(())
 }
 
 #[tokio::main]
@@ -37,10 +40,15 @@ async fn main() -> anyhow::Result<()> {
     })
     .init();
 
-  print_essentials(&opts);
+  // print basic information about the
+  // validator software and the blockchain
+  print_essentials(&opts)?;
+
+  // read the genesis configuration
+  let genesis = opts.genesis()?;
 
   let mut network = Network::new(
-    "rensta-t1",
+    genesis.chain_id,
     opts.keypair.clone(),
     opts.listen_multiaddrs().into_iter(),
   )

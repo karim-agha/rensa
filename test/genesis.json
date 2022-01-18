@@ -1,49 +1,49 @@
 {
-  "chainid": "rensa-t1",
-  "genesisTime": 1642437350,
-  "slotIntervalMs": 3000,
-  "slotsInEpoch": 32,
+  "chainId": "rensa-t1",
+  "genesisTime": "2022-01-18T13:40:00Z",
+  "slotInterval": "3s",
+  "epochSlots": 32,
   "state": "genesis-value-1",
   "validators": [
     {
       "pubkey": "4AKRabNsRm6fgum4zmj5KH5qXGVLAKkxwr3U2Pt5ZXwF",
-      "stake": "2000000000"
+      "stake": 2000000000
     },
     {
       "pubkey": "7jo1WoniBtewH7PuNhb8Lr58VuiGVEWPfaYiKffu9rYM",
-      "stake": "3000000000"
+      "stake": 3000000000
     },
     {
       "pubkey": "6PfpWE27XzE2BRwXsPQWiTv2jRqZ6u9ybuetyACnAUC3",
-      "stake": "1000000000"
+      "stake": 1000000000
     },
     {
       "pubkey": "BymTBKbFYtMbMif4jwZ6BXehd5Yo5VsYptzyUkR3dnqt",
-      "stake": "1000000000"
+      "stake": 1000000000
     },
     {
       "pubkey": "2RkHq8C31BeX8jxv4ecc4KwXeGUgGkauDGFX2WMcEAbG",
-      "stake": "4000000000"
+      "stake": 4000000000
     },
     {
       "pubkey": "8aVenhcQg1TEHr6afoLJVdr2XziwuKygvJxWgenLTNqc",
-      "stake": "1000000000"
+      "stake": 1000000000
     },
     {
       "pubkey": "FrxG1Ch9hnkw6QeuHwsBFCMruCrTiWjgJpH8kJ13wCmi",
-      "stake": "5000000000"
+      "stake": 5000000000
     },
     {
       "pubkey": "Ewubs8czjmgvbAdcsBbHaHJD82Mghjsm5duYE2jaB3mD",
-      "stake": "1000000000"
+      "stake": 1000000000
     },
     {
       "pubkey": "CrPhwoyRt3FobHtf4Hypss4R7tGLWaxgLbWdTMdpxZXv",
-      "stake": "2000000000"
+      "stake": 2000000000
     },
     {
       "pubkey": "2FKYTBGSSm9QqhaR2tKWjRpBA88nX34DpgZ8VzkwFKoL",
-      "stake": "2000000000"
+      "stake": 2000000000
     }
   ]
 }
