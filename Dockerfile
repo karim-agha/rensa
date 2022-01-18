@@ -1,11 +1,10 @@
-FROM nwtgck/rust-musl-builder:latest AS rust-build
+FROM rust:1.58-slim-bullseye AS rust-build
 ADD . /code
-RUN sudo chown -R rust /code
-RUN cd /code && cargo build --release --target x86_64-unknown-linux-musl
+RUN cd /code && cargo build --release
 
-FROM alpine:latest
+FROM debian:bullseye-slim
 WORKDIR /home
-COPY --from=rust-build /code/target/x86_64-unknown-linux-musl/release/rensa .
+COPY --from=rust-build /code/target/release/rensa .
 COPY --from=rust-build /code/test/genesis.json .
 
 EXPOSE 44668
