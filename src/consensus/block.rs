@@ -1,6 +1,7 @@
 use super::{validator::Validator, vote::Vote};
 use crate::keys::Pubkey;
 use chrono::{DateTime, Utc};
+use ed25519_dalek::Signature;
 use flexbuffers::FlexbufferSerializer;
 use multihash::{Code as MultihashCode, Multihash, MultihashDigest};
 use serde::{Deserialize, Serialize};
@@ -12,12 +13,8 @@ use std::{
 /// Represents the type of values on which the consensus protocol
 /// decides among many competing versions.
 ///
-/// Type parameters:
 /// D is type of the underlying data that consensus is trying to
 ///   decide on, in case of a blockchain it is going to be Blocks
-///
-/// S is type of the signatures gathered by the conensus to vote
-///   and justify blocks in the fork tree.
 ///
 pub trait Block<D>
 where
@@ -29,6 +26,14 @@ where
   /// The previous block that this block builds
   /// off in the fork tree.
   fn parent(&self) -> Result<Multihash, StdIoError>;
+
+  /// The public key of the validator that produced
+  /// this block along with an Ed25519 signature of the hash
+  /// of this block produced using validator's private key.
+  /// 
+  /// The genesis block does not have a signature or
+  /// a producer.
+  fn signature(&self) -> Option<&(Pubkey, Signature)>;
 
   /// Slot height at which the block was produced.
   fn height(&self) -> u64;
@@ -125,6 +130,11 @@ where
   /// The slot height at which it was produced.
   pub height: u64,
 
+  /// The public key of the validator that produced this block
+  /// along with a signature using their private key of the hash
+  /// of this block.
+  pub signature: (Pubkey, Signature),
+
   /// Block data stored in the block.
   ///
   /// This is specific to the execution layer that is responsible
@@ -143,6 +153,8 @@ impl<D> Block<D> for Genesis<D>
 where
   D: Eq + Serialize + for<'a> Deserialize<'a>,
 {
+  /// The hash of the genesis is used to determine a
+  /// unique fingerprint of a blockchain configuration.
   fn hash(&self) -> Result<Multihash, StdIoError> {
     // note: this could be optimized into zero-copy
     let mut s = FlexbufferSerializer::new();
@@ -153,18 +165,39 @@ where
     Ok(self.hasher.digest(&buffer))
   }
 
+  /// Always errors because this is the very first
+  /// block of a block chain and its structure is
+  /// special and different than other blocks produced
+  /// by block proposers through the lifetime of the chain.
   fn parent(&self) -> Result<Multihash, StdIoError> {
-    self.hash()
+    Err(StdIoError::new(
+      ErrorKind::NotFound,
+      "The genesis block has no parent",
+    ))
   }
 
+  /// The genesis block has no producer and thus nobody
+  /// signed that block, as it comes from a config file
+  /// rather than a validator.
+  fn signature(&self) -> Option<&(Pubkey, Signature)> {
+    None
+  }
+
+  /// Constant zero
   fn height(&self) -> u64 {
     0
   }
 
+  /// The initial set of data stored in the genesis.
+  /// This data is specific to the execution layer
+  /// that drives the chain
   fn data(&self) -> &D {
     &self.data
   }
 
+  /// The gensis block has no votes because it is a
+  /// constant parameter to the validator during the
+  /// process startup.
   fn votes(&self) -> &[Vote] {
     &[]
   }
@@ -174,6 +207,14 @@ impl<D> Block<D> for Produced<D>
 where
   D: Eq + Serialize + for<'a> Deserialize<'a>,
 {
+  /// Hashes the contents of the current block using the
+  /// same hashing algorithm that was used to hash its parent.
+  /// This way it will recursively reuse the same hashing algo
+  /// specified in the genesis block.
+  ///
+  /// This value is computed (as opposed to stored) intentionally
+  /// to detect discrepancies between blocks and to avoid having
+  /// to verify the correctness of the block hash.
   fn hash(&self) -> Result<Multihash, StdIoError> {
     // note: this could be optimized into zero-copy
     let mut s = FlexbufferSerializer::new();
@@ -193,18 +234,51 @@ where
     Ok(hasher.digest(&buffer))
   }
 
+  /// Hash of the first ancestor of this block.
+  ///
+  /// There may be more than one block with the same ancesor
+  /// and that creates a fork in the blockchain that is resolved
+  /// by the consensus algorithm.
+  ///
+  /// The hash is a multihash which means that the first bytes
+  /// specify the code of the algorithm used to hash the data.
+  ///
+  /// The hashing algorithm is always reused in descendant blocks.
   fn parent(&self) -> Result<Multihash, StdIoError> {
     Ok(self.parent)
   }
 
+  /// The public key of the validator that produced this block
+  /// and a signature that signs the hash of this block using
+  /// producer's private key
+  fn signature(&self) -> Option<&(Pubkey, Signature)> {
+    Some(&self.signature)
+  }
+
+  /// The number of the time slot at which the block was produced.
+  ///
+  /// This is always a value greater than zero, and there may be gaps
+  /// in the block height in the blockchain if a producer fails to
+  /// produce a block during its turn.
   fn height(&self) -> u64 {
     self.height
   }
 
+  /// The data carried by the block.
+  /// Most often this is a list of transactions, unless some
+  /// special variations are used for testing. The interpretation
+  /// of the data is left to the execution layer.
   fn data(&self) -> &D {
     &self.data
   }
 
+  /// Any votes accumulated during the production of this block.
+  /// Those votes don't have to be for a specific block, and most
+  /// likely they are for previous blocks as validators validate and
+  /// propagate votes.
+  ///
+  /// Those votes are used to decide on the preferred fork in the
+  /// Greedy Heaviest Observed Subtree (GHOST) fork choice algo.
   fn votes(&self) -> &[Vote] {
     &self.votes
   }
