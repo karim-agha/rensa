@@ -30,7 +30,7 @@ where
   /// The public key of the validator that produced
   /// this block along with an Ed25519 signature of the hash
   /// of this block produced using validator's private key.
-  /// 
+  ///
   /// The genesis block does not have a signature or
   /// a producer.
   fn signature(&self) -> Option<&(Pubkey, Signature)>;
@@ -158,9 +158,12 @@ where
   fn hash(&self) -> Result<Multihash, StdIoError> {
     // note: this could be optimized into zero-copy
     let mut s = FlexbufferSerializer::new();
-    self
-      .serialize(&mut s)
-      .map_err(|e| StdIoError::new(ErrorKind::Other, e.to_string()))?;
+    self.serialize(&mut s).map_err(|e| {
+      StdIoError::new(
+        ErrorKind::InvalidInput,
+        format!("Unsupported hash algorithm: {e}"),
+      )
+    })?;
     let buffer = s.take_buffer();
     Ok(self.hasher.digest(&buffer))
   }
@@ -228,8 +231,12 @@ where
     // in the genesis. Read the algorithm code from
     // the parent block multihash and use it to hash
     // the current block contents.
-    let hasher = MultihashCode::try_from(self.parent.code())
-      .map_err(|e| std::io::Error::new(ErrorKind::Other, e))?;
+    let hasher = MultihashCode::try_from(self.parent.code()).map_err(|e| {
+      std::io::Error::new(
+        ErrorKind::InvalidInput,
+        format!("Parent block is hashed using unsupported algorithm: {e}"),
+      )
+    })?;
 
     Ok(hasher.digest(&buffer))
   }
@@ -345,9 +352,9 @@ mod multihash_serde {
           "blake2b-512" => Ok(MultihashCode::Blake2b512),
           "blake2s-256" => Ok(MultihashCode::Blake2s256),
           "blake3" => Ok(MultihashCode::Blake3_256),
-          _ => {
-            Err(de::Error::custom(format!("unrecognized hash type {value}")))
-          }
+          _ => Err(de::Error::custom(format!(
+            "unrecognized hash algorithm type {value}"
+          ))),
         }
       }
 
