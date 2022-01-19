@@ -3,7 +3,8 @@
   "genesisTime": "2022-01-18T13:40:00Z",
   "slotInterval": "3s",
   "epochSlots": 32,
-  "state": "genesis-value-1",
+  "hasher": "sha3-256",
+  "data": "genesis-value-1",
   "validators": [
     {
       "pubkey": "4AKRabNsRm6fgum4zmj5KH5qXGVLAKkxwr3U2Pt5ZXwF",

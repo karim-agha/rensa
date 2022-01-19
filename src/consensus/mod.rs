@@ -4,6 +4,6 @@
 pub mod block;
 pub mod epoch;
 pub mod fault;
+pub mod schedule;
 pub mod validator;
 pub mod vote;
-pub mod genesis;

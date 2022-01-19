@@ -9,7 +9,7 @@ pub mod transaction;
 
 use clap::StructOpt;
 use cli::CliOpts;
-use consensus::validator::{ValidatorSchedule, ValidatorScheduleStream};
+use consensus::schedule::{ValidatorSchedule, ValidatorScheduleStream};
 use futures::StreamExt;
 use keys::Pubkey;
 use network::Network;
@@ -63,7 +63,7 @@ async fn main() -> anyhow::Result<()> {
     .into_iter()
     .for_each(|p| network.connect(p).unwrap());
 
-  let (ticks_tx, mut ticks_rx) = mpsc::unbounded_channel::<Pubkey>();
+  let (_ticks_tx, mut ticks_rx) = mpsc::unbounded_channel::<Pubkey>();
 
   tokio::spawn(async move {
     let seed = [5u8; 32];
@@ -79,7 +79,7 @@ async fn main() -> anyhow::Result<()> {
 
     while let Some((slot, validator)) = schedule_stream.next().await {
       if validator.pubkey == me {
-        ticks_tx.send(validator.pubkey.clone()).unwrap();
+        //ticks_tx.send(validator.pubkey.clone()).unwrap();
         info!("It's my turn on slot {slot}: {validator:?}");
       } else {
         info!("I think that slot {slot} is for: {validator:?}");
