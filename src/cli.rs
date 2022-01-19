@@ -93,9 +93,16 @@ impl CliOpts {
 
   /// Retreives the genesis block config from its JSON
   /// serialized form from the path provided by the user.
-  pub fn genesis(&self) -> Result<Genesis<String>, impl std::error::Error> {
-    let json = std::fs::read_to_string(&self.genesis)
-      .map_err(serde::de::Error::custom)?;
-    serde_json::from_str(&json)
+  pub fn genesis(&self) -> Result<Genesis<String>, std::io::Error> {
+    let json =
+      std::fs::read_to_string(&self.genesis).map_err(std::io::Error::from)?;
+    let mut genesis: Genesis<String> =
+      serde_json::from_str(&json).map_err(std::io::Error::from)?;
+
+    // we're sorting validators in the genesis because we want the same
+    // hash for two gensis files with the exact same list of parameters
+    // and validators but only differing in the order of their appearance.
+    genesis.validators.sort();
+    Ok(genesis)
   }
 }

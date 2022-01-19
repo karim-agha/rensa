@@ -7,6 +7,7 @@ pub mod rpc;
 pub mod storage;
 pub mod transaction;
 
+use crate::consensus::block::Block;
 use clap::StructOpt;
 use cli::CliOpts;
 use consensus::schedule::{ValidatorSchedule, ValidatorScheduleStream};
@@ -25,7 +26,14 @@ fn print_essentials(opts: &CliOpts) -> anyhow::Result<()> {
     "P2P identity: {}",
     opts.p2p_identity().public().to_peer_id()
   );
-  info!("Genesis: {:#?}", opts.genesis()?);
+
+  let genesis = opts.genesis()?;
+
+  info!("Genesis: {:#?}", genesis);
+  info!(
+    "Genesis hash: {}",
+    bs58::encode(&genesis.hash()?.to_bytes()).into_string()
+  );
 
   Ok(())
 }

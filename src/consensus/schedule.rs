@@ -36,7 +36,7 @@ use tokio::sync::watch;
 #[derive(Debug)]
 pub struct ValidatorSchedule<'a> {
   rng: ChaCha20Rng,
-  dist: WeightedIndex<u128>,
+  dist: WeightedIndex<u64>,
   validators: &'a [Validator],
 }
 
