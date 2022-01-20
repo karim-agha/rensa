@@ -1,7 +1,8 @@
 use crate::{
-  consensus::validator::Validator,
+  consensus::{block::Block, validator::Validator, vote::Vote},
   keys::{Keypair, Pubkey},
 };
+use flexbuffers::FlexbufferSerializer;
 use futures::StreamExt;
 use libp2p::{
   core::{muxing::StreamMuxerBox, transport::Boxed, upgrade::Version},
@@ -14,7 +15,8 @@ use libp2p::{
   Multiaddr, PeerId, Swarm, Transport,
 };
 use libp2p_episub::{Config, Episub, EpisubEvent, PeerAuthorizer};
-use std::collections::HashSet;
+use serde::{Deserialize, Serialize};
+use std::{collections::HashSet, io::ErrorKind};
 
 type BoxedTransport = Boxed<(PeerId, StreamMuxerBox)>;
 
@@ -51,7 +53,7 @@ async fn create_transport(
 
 pub struct Network {
   swarm: Swarm<Episub>,
-  topic: String,
+  chainid: String,
 }
 
 type EpisubProtocolHandler = <Episub as NetworkBehaviour>::ProtocolsHandler;
@@ -101,21 +103,55 @@ impl Network {
       swarm.listen_on(addr).unwrap();
     });
 
-    let topic = format!("/{}/gossip", chainid.as_ref());
-    swarm.behaviour_mut().subscribe(topic.clone());
+    swarm
+      .behaviour_mut()
+      .subscribe(format!("/{}/vote", chainid.as_ref()));
+    swarm
+      .behaviour_mut()
+      .subscribe(format!("/{}/blocks", chainid.as_ref()));
+    swarm
+      .behaviour_mut()
+      .subscribe(format!("/{}/txs", chainid.as_ref()));
 
-    Ok(Self { swarm, topic })
+    Ok(Self {
+      swarm,
+      chainid: chainid.as_ref().to_owned(),
+    })
   }
 
   pub fn connect(&mut self, addr: Multiaddr) -> Result<(), DialError> {
     self.swarm.dial(addr)
   }
 
-  pub fn gossip(
+  pub fn gossip_vote(&mut self, vote: &Vote) -> Result<u128, std::io::Error> {
+    self.gossip_generic(&format!("/{}/vote", self.chainid), vote)
+  }
+
+  pub fn gossip_block<D>(
     &mut self,
-    data: Vec<u8>,
-  ) -> Result<u128, impl std::error::Error> {
-    self.swarm.behaviour_mut().publish(&self.topic, data)
+    block: &impl Block<D>,
+  ) -> Result<u128, std::io::Error>
+  where
+    D: Serialize + Eq + for<'a> Deserialize<'a>,
+  {
+    self.gossip_generic(&format!("/{}/blocks", self.chainid), block)
+  }
+
+  fn gossip_generic(
+    &mut self,
+    topic: &str,
+    data: &impl Serialize,
+  ) -> Result<u128, std::io::Error> {
+    let mut s = FlexbufferSerializer::new();
+    data
+      .serialize(&mut s)
+      .map_err(|e| std::io::Error::new(ErrorKind::InvalidInput, e))?;
+
+    self
+      .swarm
+      .behaviour_mut()
+      .publish(topic, s.take_buffer())
+      .map_err(|e| std::io::Error::new(ErrorKind::InvalidInput, e))
   }
 
   pub async fn next(

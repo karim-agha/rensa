@@ -16,7 +16,7 @@ use std::{
 /// D is type of the underlying data that consensus is trying to
 ///   decide on, in case of a blockchain it is going to be Blocks
 ///
-pub trait Block<D>
+pub trait Block<D>: Serialize + for<'a> Deserialize<'a>
 where
   D: Eq + Serialize + for<'a> Deserialize<'a>,
 {
@@ -52,7 +52,7 @@ where
 ///
 /// Defines the very first block of a chain with a fixed
 /// set of validators and a few other settings.
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(
   bound = "D: Serialize, D: Eq, for<'a> D: Deserialize<'a>",
   rename_all = "camelCase"
@@ -112,7 +112,7 @@ where
 /// A block of this type is at height at least 1 and is dynamically
 /// appended to the chain by block producers and voted on by other
 /// validators.
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(
   bound = "D: Serialize, D: Eq, for<'a> D: Deserialize<'a>",
   rename_all = "camelCase"
@@ -161,7 +161,7 @@ where
     self.serialize(&mut s).map_err(|e| {
       StdIoError::new(
         ErrorKind::InvalidInput,
-        format!("Unsupported hash algorithm: {e}"),
+        format!("genesis serialization failed: {e}"),
       )
     })?;
     let buffer = s.take_buffer();

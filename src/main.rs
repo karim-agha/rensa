@@ -100,9 +100,7 @@ async fn main() -> anyhow::Result<()> {
       Some(event) = network.next() => {
         info!("network event: {:?}", event);
       },
-      Some(tick) = ticks_rx.recv() => {
-        network.gossip(tick.to_vec())?;
-      }
+      Some(_tick) = ticks_rx.recv() => {}
     }
   }
 }

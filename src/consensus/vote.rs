@@ -30,7 +30,7 @@ use serde::{Deserialize, Serialize};
 ///
 /// The vote is signed using validator's public key over
 /// bytes of [`target`] and [`justification`].
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Vote {
   /// The public key of the validator casting a vote.
   pub validator: Pubkey,
