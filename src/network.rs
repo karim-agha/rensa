@@ -1,5 +1,8 @@
 use crate::{
-  consensus::{block::Block, validator::Validator, vote::Vote},
+  consensus::{
+    block::{self, Block},
+    vote::Vote,
+  },
   keys::{Keypair, Pubkey},
 };
 use flexbuffers::FlexbufferSerializer;
@@ -9,14 +12,15 @@ use libp2p::{
   dns::{DnsConfig, ResolverConfig, ResolverOpts},
   identity::{self, ed25519::SecretKey},
   noise,
-  swarm::{DialError, NetworkBehaviour, ProtocolsHandler, SwarmEvent},
+  swarm::{DialError, SwarmEvent},
   tcp::TcpConfig,
   yamux::YamuxConfig,
   Multiaddr, PeerId, Swarm, Transport,
 };
 use libp2p_episub::{Config, Episub, EpisubEvent, PeerAuthorizer};
 use serde::{Deserialize, Serialize};
-use std::{collections::HashSet, io::ErrorKind};
+use std::{collections::HashSet, io::ErrorKind, marker::PhantomData};
+use tracing::error;
 
 type BoxedTransport = Boxed<(PeerId, StreamMuxerBox)>;
 
@@ -51,18 +55,34 @@ async fn create_transport(
   )
 }
 
-pub struct Network {
-  swarm: Swarm<Episub>,
-  chainid: String,
+// this is a bug in clippy, I filed an issue on GH:
+// https://github.com/rust-lang/rust-clippy/issues/8321
+// remove this when the issue gets closed.
+#[allow(clippy::large_enum_variant)]
+#[derive(Debug, Clone)]
+pub enum NetworkEvent<D>
+where
+  D: Eq + Serialize + for<'a> Deserialize<'a>,
+{
+  BlockReceived(block::Produced<D>),
+  VoteReceived(Vote),
 }
 
-type EpisubProtocolHandler = <Episub as NetworkBehaviour>::ProtocolsHandler;
-type EpisubProtocolError = <EpisubProtocolHandler as ProtocolsHandler>::Error;
+pub struct Network<D>
+where
+  D: Eq + Serialize + for<'a> Deserialize<'a>,
+{
+  swarm: Swarm<Episub>,
+  chainid: String,
+  _marker: PhantomData<D>,
+}
 
-impl Network {
+impl<D> Network<D>
+where
+  D: Eq + Serialize + for<'a> Deserialize<'a>,
+{
   pub async fn new(
-    chainid: impl AsRef<str>,
-    validators: &[Validator],
+    genesis: &block::Genesis<D>,
     keypair: Keypair,
     listenaddrs: impl Iterator<Item = Multiaddr>,
   ) -> std::io::Result<Self> {
@@ -79,8 +99,11 @@ impl Network {
     // iteration of the consensus algorithm.
 
     // build an O(1) quick lookup structure for validators
-    let vset: HashSet<_> =
-      validators.iter().map(|v| v.pubkey.clone()).collect();
+    let vset: HashSet<_> = genesis
+      .validators
+      .iter()
+      .map(|v| v.pubkey.clone())
+      .collect();
 
     // use an authentiator predicate that denies connections
     // to any peer id that is not a known validator.
@@ -93,7 +116,7 @@ impl Network {
       create_transport(&keypair).await?,
       Episub::new(Config {
         authorizer,
-        network_size: validators.len(),
+        network_size: genesis.validators.len(),
         ..Config::default()
       }),
       id.public().to_peer_id(),
@@ -103,19 +126,22 @@ impl Network {
       swarm.listen_on(addr).unwrap();
     });
 
+    let chainid = genesis.chain_id.clone();
+
     swarm
       .behaviour_mut()
-      .subscribe(format!("/{}/vote", chainid.as_ref()));
+      .subscribe(format!("/{}/vote", &chainid));
     swarm
       .behaviour_mut()
-      .subscribe(format!("/{}/blocks", chainid.as_ref()));
+      .subscribe(format!("/{}/blocks", &chainid));
     swarm
       .behaviour_mut()
-      .subscribe(format!("/{}/txs", chainid.as_ref()));
+      .subscribe(format!("/{}/txs", &chainid));
 
     Ok(Self {
       swarm,
-      chainid: chainid.as_ref().to_owned(),
+      chainid,
+      _marker: PhantomData,
     })
   }
 
@@ -127,7 +153,7 @@ impl Network {
     self.gossip_generic(&format!("/{}/vote", self.chainid), vote)
   }
 
-  pub fn gossip_block<D>(
+  pub fn gossip_block(
     &mut self,
     block: &impl Block<D>,
   ) -> Result<u128, std::io::Error>
@@ -154,9 +180,29 @@ impl Network {
       .map_err(|e| std::io::Error::new(ErrorKind::InvalidInput, e))
   }
 
-  pub async fn next(
-    &mut self,
-  ) -> Option<SwarmEvent<EpisubEvent, EpisubProtocolError>> {
-    self.swarm.next().await
+  pub async fn next(&mut self) -> Option<NetworkEvent<D>>
+  where
+    D: Serialize + Eq + for<'a> Deserialize<'a>,
+  {
+    loop {
+      if let Some(SwarmEvent::Behaviour(EpisubEvent::Message {
+        topic,
+        payload,
+        ..
+      })) = self.swarm.next().await
+      {
+        if topic == format!("/{}/vote", self.chainid) {
+          match flexbuffers::from_slice(&payload) {
+            Ok(vote) => return Some(NetworkEvent::VoteReceived(vote)),
+            Err(e) => error!("Failed to deserialize vote: {e}"),
+          }
+        } else if topic == format!("/{}/blocks", self.chainid) {
+          match flexbuffers::from_slice(&payload) {
+            Ok(block) => return Some(NetworkEvent::BlockReceived(block)),
+            Err(e) => error!("Failed to deserialize block: {e}"),
+          }
+        }
+      }
+    }
   }
 }

@@ -58,8 +58,7 @@ async fn main() -> anyhow::Result<()> {
   let genesis = opts.genesis()?;
 
   let mut network = Network::new(
-    genesis.chain_id,
-    &genesis.validators,
+    &genesis,
     opts.keypair.clone(),
     opts.listen_multiaddrs().into_iter(),
   )
@@ -98,7 +97,7 @@ async fn main() -> anyhow::Result<()> {
   loop {
     tokio::select! {
       Some(event) = network.next() => {
-        info!("network event: {:?}", event);
+        info!("network event: {event:?}");
       },
       Some(_tick) = ticks_rx.recv() => {}
     }
