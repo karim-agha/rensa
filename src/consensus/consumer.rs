@@ -1,18 +1,15 @@
-use super::block;
-use serde::{Deserialize, Serialize};
+use super::{block::{self, BlockData}, chain::Chain};
 use std::marker::PhantomData;
+use tracing::info;
 
-pub struct BlockConsumer<D>(PhantomData<D>)
-where
-  D: Eq + Serialize + for<'a> Deserialize<'a>;
+pub struct BlockConsumer<D: BlockData>(PhantomData<D>);
 
-impl<D> BlockConsumer<D>
-where
-  D: Eq + Serialize + for<'a> Deserialize<'a>,
-{
-  pub fn new(_genesis: &block::Genesis<D>) -> Self {
+impl<D: BlockData> BlockConsumer<D> {
+  pub fn new(_genesis: &Chain<D>) -> Self {
     BlockConsumer(PhantomData)
   }
 
-  pub fn consume(&mut self, _block: block::Produced<D>) {}
+  pub fn consume(&mut self, block: block::Produced<D>) {
+    info!("consuming block {block:?}");
+  }
 }

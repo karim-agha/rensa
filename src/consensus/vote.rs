@@ -1,4 +1,4 @@
-use super::block;
+use super::{block::BlockData, chain::Chain};
 use crate::keys::Pubkey;
 use ed25519_dalek::Signature;
 use futures::Stream;
@@ -60,38 +60,25 @@ pub struct Vote {
   pub signature: Signature,
 }
 
-pub struct VoteConsumer<D>(PhantomData<D>)
-where
-  D: Eq + Serialize + for<'a> Deserialize<'a>;
+pub struct VoteConsumer<D: BlockData>(PhantomData<D>);
 
-impl<D> VoteConsumer<D>
-where
-  D: Eq + Serialize + for<'a> Deserialize<'a>,
-{
-  pub fn new(_genesis: &block::Genesis<D>) -> Self {
+impl<D: BlockData> VoteConsumer<D> {
+  pub fn new(_chain: &Chain<D>) -> Self {
     VoteConsumer(PhantomData)
   }
 
   pub fn consume(&mut self, _vote: Vote) {}
 }
 
-pub struct VoteProducer<D>(PhantomData<D>)
-where
-  D: Eq + Serialize + for<'a> Deserialize<'a>;
+pub struct VoteProducer<D: BlockData>(PhantomData<D>);
 
-impl<D> VoteProducer<D>
-where
-  D: Eq + Serialize + for<'a> Deserialize<'a>,
-{
-  pub fn new(_genesis: &block::Genesis<D>) -> Self {
+impl<D: BlockData> VoteProducer<D> {
+  pub fn new(_chain: &Chain<D>) -> Self {
     VoteProducer(PhantomData)
   }
 }
 
-impl<D> Stream for VoteProducer<D>
-where
-  D: Eq + Serialize + for<'a> Deserialize<'a>,
-{
+impl<D: BlockData> Stream for VoteProducer<D> {
   type Item = Vote;
 
   fn poll_next(

@@ -1,6 +1,6 @@
 use crate::{
   consensus::{
-    block::{self, Block},
+    block::{self, Block, BlockData},
     vote::Vote,
   },
   keys::{Keypair, Pubkey},
@@ -18,7 +18,7 @@ use libp2p::{
   Multiaddr, PeerId, Swarm, Transport,
 };
 use libp2p_episub::{Config, Episub, EpisubEvent, PeerAuthorizer};
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
 use std::{collections::HashSet, io::ErrorKind, marker::PhantomData};
 use tracing::error;
 
@@ -60,27 +60,18 @@ async fn create_transport(
 // remove this when the issue gets closed.
 #[allow(clippy::large_enum_variant)]
 #[derive(Debug, Clone)]
-pub enum NetworkEvent<D>
-where
-  D: Eq + Serialize + for<'a> Deserialize<'a>,
-{
+pub enum NetworkEvent<D: BlockData> {
   BlockReceived(block::Produced<D>),
   VoteReceived(Vote),
 }
 
-pub struct Network<D>
-where
-  D: Eq + Serialize + for<'a> Deserialize<'a>,
-{
+pub struct Network<D: BlockData> {
   swarm: Swarm<Episub>,
   chainid: String,
   _marker: PhantomData<D>,
 }
 
-impl<D> Network<D>
-where
-  D: Eq + Serialize + for<'a> Deserialize<'a>,
-{
+impl<D: BlockData> Network<D> {
   pub async fn new(
     genesis: &block::Genesis<D>,
     keypair: Keypair,
@@ -134,9 +125,7 @@ where
     swarm
       .behaviour_mut()
       .subscribe(format!("/{}/block", &chainid));
-    swarm
-      .behaviour_mut()
-      .subscribe(format!("/{}/tx", &chainid));
+    swarm.behaviour_mut().subscribe(format!("/{}/tx", &chainid));
 
     Ok(Self {
       swarm,
@@ -156,10 +145,7 @@ where
   pub fn gossip_block(
     &mut self,
     block: &impl Block<D>,
-  ) -> Result<u128, std::io::Error>
-  where
-    D: Serialize + Eq + for<'a> Deserialize<'a>,
-  {
+  ) -> Result<u128, std::io::Error> {
     self.gossip_generic(&format!("/{}/block", self.chainid), block)
   }
 
@@ -180,10 +166,7 @@ where
       .map_err(|e| std::io::Error::new(ErrorKind::InvalidInput, e))
   }
 
-  pub async fn next(&mut self) -> Option<NetworkEvent<D>>
-  where
-    D: Serialize + Eq + for<'a> Deserialize<'a>,
-  {
+  pub async fn next(&mut self) -> Option<NetworkEvent<D>> {
     loop {
       if let Some(SwarmEvent::Behaviour(EpisubEvent::Message {
         topic,

@@ -14,7 +14,7 @@ use consensus::{
   consumer::BlockConsumer,
   producer::BlockProducer,
   schedule::{ValidatorSchedule, ValidatorScheduleStream},
-  vote::{VoteConsumer, VoteProducer},
+  vote::{VoteConsumer, VoteProducer}, chain::Chain,
 };
 use futures::StreamExt;
 use network::Network;
@@ -77,11 +77,15 @@ async fn main() -> anyhow::Result<()> {
   let me = opts.keypair.public();
   let seed = genesis.hash()?.digest().try_into()?;
 
+  
+  // the blockchain
+  let chain = Chain::new(&genesis);
+  
   // componsents of the consensus
-  let mut voter = VoteProducer::new(&genesis);
-  let mut ballot = VoteConsumer::new(&genesis);
-  let mut consumer = BlockConsumer::new(&genesis);
-  let mut producer = BlockProducer::new(&genesis);
+  let mut voter = VoteProducer::new(&chain);
+  let mut ballot = VoteConsumer::new(&chain);
+  let mut consumer = BlockConsumer::new(&chain);
+  let mut producer = BlockProducer::new(&chain);
   let mut schedule = ValidatorScheduleStream::new(
     ValidatorSchedule::new(seed, &genesis.validators)?,
     genesis.genesis_time,
@@ -92,10 +96,9 @@ async fn main() -> anyhow::Result<()> {
   loop {
     tokio::select! {
       Some(event) = network.next() => {
-        info!("network event: {event:?}");
         match event {
-            NetworkEvent::BlockReceived(block) => consumer.consume(block),
-            NetworkEvent::VoteReceived(vote) => ballot.consume(vote),
+          NetworkEvent::BlockReceived(block) => consumer.consume(block),
+          NetworkEvent::VoteReceived(vote) => ballot.consume(vote),
         }
       },
       Some(block) = producer.next() => {

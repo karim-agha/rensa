@@ -6,9 +6,23 @@ use flexbuffers::FlexbufferSerializer;
 use multihash::{Code as MultihashCode, Multihash, MultihashDigest};
 use serde::{Deserialize, Serialize};
 use std::{
+  fmt::Debug,
   io::{Error as StdIoError, ErrorKind},
   time::Duration,
 };
+
+/// The type requirements for anything that could be carried by a block
+/// in the consensus layer. This is usually a list of transactions in
+/// production settings, but it could also be strings or other types
+/// for tests or specialized chains.
+///
+/// Essentially we need to be able to serialize and deserialize this data,
+/// compare it for exact equality and print it in debug logs.
+pub trait BlockData: Eq + Debug + Serialize + for<'a> Deserialize<'a> {}
+
+/// Blanket implementation for all types that fulfill those requirements
+impl<T> BlockData for T where T: Eq + Debug + Serialize + for<'a> Deserialize<'a>
+{}
 
 /// Represents the type of values on which the consensus protocol
 /// decides among many competing versions.
@@ -16,9 +30,8 @@ use std::{
 /// D is type of the underlying data that consensus is trying to
 ///   decide on, in case of a blockchain it is going to be Blocks
 ///
-pub trait Block<D>: Serialize + for<'a> Deserialize<'a>
-where
-  D: Eq + Serialize + for<'a> Deserialize<'a>,
+pub trait Block<D: BlockData>:
+  Debug + Serialize + for<'a> Deserialize<'a>
 {
   /// Hash of this block with its payload.
   fn hash(&self) -> Result<Multihash, StdIoError>;
@@ -57,10 +70,7 @@ where
   bound = "D: Serialize, D: Eq, for<'a> D: Deserialize<'a>",
   rename_all = "camelCase"
 )]
-pub struct Genesis<D>
-where
-  D: Eq + Serialize + for<'a> Deserialize<'a>,
-{
+pub struct Genesis<D: BlockData> {
   /// The globally unique string that identifies this chain
   /// on the global network. This value is used to allow many
   /// instances of this validator software to be deployed as
@@ -117,10 +127,7 @@ where
   bound = "D: Serialize, D: Eq, for<'a> D: Deserialize<'a>",
   rename_all = "camelCase"
 )]
-pub struct Produced<D>
-where
-  D: Eq + Serialize + for<'a> Deserialize<'a>,
-{
+pub struct Produced<D: BlockData> {
   /// The validator that proposed this block
   pub proposer: Pubkey,
 
@@ -149,10 +156,7 @@ where
   pub votes: Vec<Vote>,
 }
 
-impl<D> Block<D> for Genesis<D>
-where
-  D: Eq + Serialize + for<'a> Deserialize<'a>,
-{
+impl<D: BlockData> Block<D> for Genesis<D> {
   /// The hash of the genesis is used to determine a
   /// unique fingerprint of a blockchain configuration.
   fn hash(&self) -> Result<Multihash, StdIoError> {
@@ -206,10 +210,7 @@ where
   }
 }
 
-impl<D> Block<D> for Produced<D>
-where
-  D: Eq + Serialize + for<'a> Deserialize<'a>,
-{
+impl<D: BlockData> Block<D> for Produced<D> {
   /// Hashes the contents of the current block using the
   /// same hashing algorithm that was used to hash its parent.
   /// This way it will recursively reuse the same hashing algo
