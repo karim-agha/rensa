@@ -133,10 +133,10 @@ where
       .subscribe(format!("/{}/vote", &chainid));
     swarm
       .behaviour_mut()
-      .subscribe(format!("/{}/blocks", &chainid));
+      .subscribe(format!("/{}/block", &chainid));
     swarm
       .behaviour_mut()
-      .subscribe(format!("/{}/txs", &chainid));
+      .subscribe(format!("/{}/tx", &chainid));
 
     Ok(Self {
       swarm,
@@ -160,7 +160,7 @@ where
   where
     D: Serialize + Eq + for<'a> Deserialize<'a>,
   {
-    self.gossip_generic(&format!("/{}/blocks", self.chainid), block)
+    self.gossip_generic(&format!("/{}/block", self.chainid), block)
   }
 
   fn gossip_generic(
@@ -196,7 +196,7 @@ where
             Ok(vote) => return Some(NetworkEvent::VoteReceived(vote)),
             Err(e) => error!("Failed to deserialize vote: {e}"),
           }
-        } else if topic == format!("/{}/blocks", self.chainid) {
+        } else if topic == format!("/{}/block", self.chainid) {
           match flexbuffers::from_slice(&payload) {
             Ok(block) => return Some(NetworkEvent::BlockReceived(block)),
             Err(e) => error!("Failed to deserialize block: {e}"),

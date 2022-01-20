@@ -7,3 +7,4 @@ pub mod fault;
 pub mod schedule;
 pub mod validator;
 pub mod vote;
+pub mod history;

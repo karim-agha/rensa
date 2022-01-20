@@ -13,7 +13,7 @@ use std::{
   task::{Context, Poll, Waker},
   time::Duration,
 };
-use tokio::sync::watch;
+use tokio::{sync::watch, time::Instant};
 
 /// Creates a stake-weighted validator schedule iterator based on
 /// a predefined seed value. This iterator will iterate forever
@@ -67,25 +67,25 @@ impl<'a> Iterator for ValidatorSchedule<'a> {
 /// they are not different more than a small fraction of
 /// one slot time, otherwise we will have multiple validators
 /// thinking that it is their turn at the same time.
-/// 
+///
 /// Example:
-/// 
+///
 /// ```
 /// let seed = [5u8; 32];
 /// let validators = &genesis.validators;
-/// 
+///
 /// let mut schedule = ValidatorSchedule::new(seed, &validators)?;
 /// let mut schedule_stream = ValidatorScheduleStream::new(
 ///   &mut schedule,
 ///   genesis.genesis_time,
 ///   genesis.slot_interval,
 /// );
-/// 
+///
 /// while let Some((slot, validator)) = schedule_stream.next().await {
 ///   info!("I think that slot {slot} is for: {validator:?}");
 /// }
 /// ```
-/// 
+///
 pub struct ValidatorScheduleStream<'a> {
   pos: u64,
   waker: watch::Sender<Option<Waker>>,
@@ -114,6 +114,9 @@ impl<'a> ValidatorScheduleStream<'a> {
         .await;
       }
 
+      // next block slot time start
+      let mut next_at = Instant::now();
+
       // how much time passed since the genesis
       let elapsed = Utc::now() - genesis;
 
@@ -125,18 +128,20 @@ impl<'a> ValidatorScheduleStream<'a> {
 
       // how much time we have left in this slot
       let rem = next - elapsed.num_milliseconds() as u64;
+      next_at = next_at + Duration::from_millis(rem);
 
       // the current slot height
       let mut pos = slots;
 
       // wait until the end of this slot time to start signalling at
       // an aligned time of the start of a slot.
-      tokio::time::sleep(Duration::from_millis(rem)).await;
+      tokio::time::sleep_until(next_at).await;
 
       // and now signal all slot increases every slot time
       loop {
         tx.send(pos).unwrap();
-        tokio::time::sleep(slot).await;
+        next_at = next_at + slot;
+        tokio::time::sleep_until(next_at).await;
         let waker = &*waker_rx.borrow();
         if let Some(waker) = waker {
           waker.wake_by_ref();
