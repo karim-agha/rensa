@@ -60,16 +60,6 @@ pub struct Vote {
   pub signature: Signature,
 }
 
-pub struct VoteConsumer<D: BlockData>(PhantomData<D>);
-
-impl<D: BlockData> VoteConsumer<D> {
-  pub fn new(_chain: &Chain<D>) -> Self {
-    VoteConsumer(PhantomData)
-  }
-
-  pub fn consume(&mut self, _vote: Vote) {}
-}
-
 pub struct VoteProducer<D: BlockData>(PhantomData<D>);
 
 impl<D: BlockData> VoteProducer<D> {

@@ -2,7 +2,6 @@
 //! Implementation of the Latest Message Driven CBC Casper GHOST consensus
 
 pub mod block;
-pub mod consumer;
 pub mod epoch;
 pub mod fault;
 pub mod chain;

@@ -11,10 +11,10 @@ use crate::{consensus::block::Block, network::NetworkEvent};
 use clap::StructOpt;
 use cli::CliOpts;
 use consensus::{
-  consumer::BlockConsumer,
+  chain::Chain,
   producer::BlockProducer,
   schedule::{ValidatorSchedule, ValidatorScheduleStream},
-  vote::{VoteConsumer, VoteProducer}, chain::Chain,
+  vote::{VoteProducer},
 };
 use futures::StreamExt;
 use network::Network;
@@ -77,14 +77,11 @@ async fn main() -> anyhow::Result<()> {
   let me = opts.keypair.public();
   let seed = genesis.hash()?.digest().try_into()?;
 
-  
-  // the blockchain
+  // the blockchain, no persistance yet
   let chain = Chain::new(&genesis);
-  
+
   // componsents of the consensus
   let mut voter = VoteProducer::new(&chain);
-  let mut ballot = VoteConsumer::new(&chain);
-  let mut consumer = BlockConsumer::new(&chain);
   let mut producer = BlockProducer::new(&chain);
   let mut schedule = ValidatorScheduleStream::new(
     ValidatorSchedule::new(seed, &genesis.validators)?,
@@ -97,8 +94,8 @@ async fn main() -> anyhow::Result<()> {
     tokio::select! {
       Some(event) = network.next() => {
         match event {
-          NetworkEvent::BlockReceived(block) => consumer.consume(block),
-          NetworkEvent::VoteReceived(vote) => ballot.consume(vote),
+          NetworkEvent::BlockReceived(block) => chain.append(block).await,
+          NetworkEvent::VoteReceived(vote) => chain.vote(vote).await,
         }
       },
       Some(block) = producer.next() => {
