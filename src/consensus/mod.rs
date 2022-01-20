@@ -8,3 +8,5 @@ pub mod schedule;
 pub mod validator;
 pub mod vote;
 pub mod history;
+pub mod producer;
+pub mod consumer;

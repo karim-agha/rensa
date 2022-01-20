@@ -90,12 +90,12 @@ pub struct ValidatorScheduleStream<'a> {
   pos: u64,
   waker: watch::Sender<Option<Waker>>,
   notif: watch::Receiver<u64>,
-  schedule: Enumerate<&'a mut ValidatorSchedule<'a>>,
+  schedule: Enumerate<ValidatorSchedule<'a>>,
 }
 
 impl<'a> ValidatorScheduleStream<'a> {
   pub fn new(
-    schedule: &'a mut ValidatorSchedule<'a>,
+    schedule: ValidatorSchedule<'a>,
     genesis: DateTime<Utc>,
     slot: Duration,
   ) -> Self {
@@ -128,7 +128,7 @@ impl<'a> ValidatorScheduleStream<'a> {
 
       // how much time we have left in this slot
       let rem = next - elapsed.num_milliseconds() as u64;
-      next_at = next_at + Duration::from_millis(rem);
+      next_at += Duration::from_millis(rem);
 
       // the current slot height
       let mut pos = slots;
@@ -140,7 +140,7 @@ impl<'a> ValidatorScheduleStream<'a> {
       // and now signal all slot increases every slot time
       loop {
         tx.send(pos).unwrap();
-        next_at = next_at + slot;
+        next_at += slot;
         tokio::time::sleep_until(next_at).await;
         let waker = &*waker_rx.borrow();
         if let Some(waker) = waker {

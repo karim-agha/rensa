@@ -1,7 +1,14 @@
+use super::block;
 use crate::keys::Pubkey;
 use ed25519_dalek::Signature;
+use futures::Stream;
 use multihash::Multihash;
 use serde::{Deserialize, Serialize};
+use std::{
+  marker::PhantomData,
+  pin::Pin,
+  task::{Context, Poll},
+};
 
 // vote = (
 //  validator,
@@ -51,4 +58,46 @@ pub struct Vote {
   /// The message being signed is a concatinated bytestring
   /// of target bytes and justification bytes.
   pub signature: Signature,
+}
+
+pub struct VoteConsumer<D>(PhantomData<D>)
+where
+  D: Eq + Serialize + for<'a> Deserialize<'a>;
+
+impl<D> VoteConsumer<D>
+where
+  D: Eq + Serialize + for<'a> Deserialize<'a>,
+{
+  pub fn new(_genesis: &block::Genesis<D>) -> Self {
+    VoteConsumer(PhantomData)
+  }
+
+  pub fn consume(&mut self, _vote: Vote) {}
+}
+
+pub struct VoteProducer<D>(PhantomData<D>)
+where
+  D: Eq + Serialize + for<'a> Deserialize<'a>;
+
+impl<D> VoteProducer<D>
+where
+  D: Eq + Serialize + for<'a> Deserialize<'a>,
+{
+  pub fn new(_genesis: &block::Genesis<D>) -> Self {
+    VoteProducer(PhantomData)
+  }
+}
+
+impl<D> Stream for VoteProducer<D>
+where
+  D: Eq + Serialize + for<'a> Deserialize<'a>,
+{
+  type Item = Vote;
+
+  fn poll_next(
+    self: Pin<&mut Self>,
+    _: &mut Context<'_>,
+  ) -> Poll<Option<Self::Item>> {
+    Poll::Pending
+  }
 }

@@ -7,14 +7,17 @@ pub mod rpc;
 pub mod storage;
 pub mod transaction;
 
-use crate::consensus::block::Block;
+use crate::{consensus::block::Block, network::NetworkEvent};
 use clap::StructOpt;
 use cli::CliOpts;
-use consensus::schedule::{ValidatorSchedule, ValidatorScheduleStream};
+use consensus::{
+  consumer::BlockConsumer,
+  producer::BlockProducer,
+  schedule::{ValidatorSchedule, ValidatorScheduleStream},
+  vote::{VoteConsumer, VoteProducer},
+};
 use futures::StreamExt;
-use keys::Pubkey;
 use network::Network;
-use tokio::sync::mpsc;
 use tracing::{info, Level};
 
 fn print_essentials(opts: &CliOpts) -> anyhow::Result<()> {
@@ -57,6 +60,7 @@ async fn main() -> anyhow::Result<()> {
   // read the genesis configuration
   let genesis = opts.genesis()?;
 
+  // Create the P2P networking layer
   let mut network = Network::new(
     &genesis,
     opts.keypair.clone(),
@@ -70,36 +74,46 @@ async fn main() -> anyhow::Result<()> {
     .into_iter()
     .for_each(|p| network.connect(p).unwrap());
 
-  let (_ticks_tx, mut ticks_rx) = mpsc::unbounded_channel::<Pubkey>();
+  let me = opts.keypair.public();
+  let seed = genesis.hash()?.digest().try_into()?;
 
-  tokio::spawn(async move {
-    let seed = [5u8; 32];
-    let me = opts.keypair.public();
-    let validators = genesis.validators.clone();
+  // componsents of the consensus
+  let mut voter = VoteProducer::new(&genesis);
+  let mut ballot = VoteConsumer::new(&genesis);
+  let mut consumer = BlockConsumer::new(&genesis);
+  let mut producer = BlockProducer::new(&genesis);
+  let mut schedule = ValidatorScheduleStream::new(
+    ValidatorSchedule::new(seed, &genesis.validators)?,
+    genesis.genesis_time,
+    genesis.slot_interval,
+  );
 
-    let mut schedule = ValidatorSchedule::new(seed, &validators).unwrap();
-    let mut schedule_stream = ValidatorScheduleStream::new(
-      &mut schedule,
-      genesis.genesis_time,
-      genesis.slot_interval,
-    );
-
-    while let Some((slot, validator)) = schedule_stream.next().await {
-      if validator.pubkey == me {
-        //ticks_tx.send(validator.pubkey.clone()).unwrap();
-        info!("It's my turn on slot {slot}: {validator:?}");
-      } else {
-        info!("I think that slot {slot} is for: {validator:?}");
-      }
-    }
-  });
-
+  // validator runloop
   loop {
     tokio::select! {
       Some(event) = network.next() => {
         info!("network event: {event:?}");
+        match event {
+            NetworkEvent::BlockReceived(block) => consumer.consume(block),
+            NetworkEvent::VoteReceived(vote) => ballot.consume(vote),
+        }
       },
-      Some(_tick) = ticks_rx.recv() => {}
+      Some(block) = producer.next() => {
+        info!("block produced at height {}", block.height());
+        network.gossip_block(&block)?;
+      }
+      Some(vote) = voter.next() => {
+        info!("vote received {vote:?}");
+        network.gossip_vote(&vote)?;
+      }
+      Some((slot, validator)) = schedule.next() => {
+        if validator.pubkey == me {
+          info!("It's my turn on slot {slot}: {validator:?}");
+          producer.produce(slot);
+        } else {
+          info!("I think that slot {slot} is for: {validator:?}");
+        }
+      }
     }
   }
 }
