@@ -14,7 +14,7 @@ use consensus::{
   chain::Chain,
   producer::BlockProducer,
   schedule::{ValidatorSchedule, ValidatorScheduleStream},
-  vote::{VoteProducer},
+  vote::VoteProducer,
 };
 use futures::StreamExt;
 use network::Network;
@@ -78,7 +78,7 @@ async fn main() -> anyhow::Result<()> {
   let seed = genesis.hash()?.digest().try_into()?;
 
   // the blockchain, no persistance yet
-  let chain = Chain::new(&genesis);
+  let mut chain = Chain::new(&genesis);
 
   // componsents of the consensus
   let mut voter = VoteProducer::new(&chain);

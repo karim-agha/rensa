@@ -6,11 +6,22 @@ use super::{
 use crate::keys::Pubkey;
 use dashmap::DashMap;
 use multihash::Multihash;
-use std::rc::Rc;
+use std::{collections::HashSet, rc::Rc};
 use thiserror::Error;
-use tokio::sync::RwLock;
 use tracing::warn;
 
+/// Represents a single block in the volatile blockchain state
+///
+/// Ideally under perfect network conditions and abscence of failures
+/// this structure would be a linked list of blocks.
+///
+/// However due to network delays, partitions or malicious actors some
+/// blocks might be missed by some validators and proposers might start
+/// building new blocks off an older block, and that creates several
+/// histories.
+///
+/// This data structure represents all known blockchain histories
+/// since the last finalized block.
 struct TreeNode<D: BlockData> {
   value: VolatileBlock<D>,
   parent: Option<Rc<TreeNode<D>>>,
@@ -18,22 +29,69 @@ struct TreeNode<D: BlockData> {
 }
 
 impl<D: BlockData> TreeNode<D> {
-  pub fn get_block_mut(
+  pub fn new(block: VolatileBlock<D>) -> Self {
+    Self {
+      value: block,
+      parent: None,
+      children: vec![],
+    }
+  }
+
+  /// Returns a mutable reference to a block with a given hash
+  /// in the current subtree, or None if no such block is found.
+  pub fn get(
     self: &Rc<Self>,
     hash: &Multihash,
   ) -> Result<Option<Rc<Self>>, std::io::Error> {
     if self.value.block.hash()? == *hash {
-      return Ok(Some(Rc::clone(self)));
+      Ok(Some(Rc::clone(self)))
     } else {
       for child in self.children.iter() {
-        if let Some(ref b) = child.get_block_mut(hash)? {
+        if let Some(ref b) = child.get(hash)? {
           return Ok(Some(Rc::clone(b)));
         }
       }
-      return Ok(None);
+      Ok(None)
     }
   }
 
+  /// Returns the block that is currently considered the
+  /// head of the fork subtree.
+  ///
+  /// The selection of this block uses the Greedy Heaviest
+  /// Observed Subtree algorithm (GHOST), and it basically
+  /// means that returns the last block from the subtree
+  /// that has accumulated the largest amount of votes
+  /// so far or highest slot number if there is a draw.
+  pub fn head<'b>(&'b self) -> &'b block::Produced<D> {
+    if self.children.is_empty() {
+      return &self.value.block; // leaf block
+    }
+
+    let mut max_votes = 0;
+    let mut top_subtree = self
+      .children
+      .first()
+      .expect("is_empty would have returned earlier");
+    for subtree in &self.children {
+      if subtree.value.votes > max_votes {
+        max_votes = subtree.value.votes;
+        top_subtree = &subtree;
+      } else if subtree.value.votes == max_votes {
+        // if two blocks have the same number of votes, select the one with
+        // the greater height.
+        if subtree.value.block.height() > top_subtree.value.block.height() {
+          top_subtree = &subtree;
+        }
+      }
+    }
+
+    // recursively keep finding the top subtree
+    // until we get to a leaf block, then return it
+    top_subtree.head()
+  }
+
+  /// Adds an immediate child to this forktree node.
   pub fn add_child(
     mut self: Rc<Self>,
     block: VolatileBlock<D>,
@@ -64,9 +122,16 @@ impl<D: BlockData> TreeNode<D> {
     Ok(block)
   }
 
-  pub fn add_votes(mut self: Rc<Self>, votes: u64) {
-    // apply those votes to the current block
-    Rc::get_mut(&mut self).unwrap().value.votes += votes;
+  /// Applies votes to a block, and all its ancestors until the
+  /// last finalized block that is used as the justification for
+  /// this vote.
+  pub fn add_votes(mut self: Rc<Self>, votes: u64, voter: Pubkey) {
+    // apply those votes to the current block, but don't duplicate
+    // validator votes on the same block.
+    let selfmut = Rc::get_mut(&mut self).unwrap();
+    if selfmut.value.voters.insert(voter.clone()) {
+      selfmut.value.votes += votes;
+    }
 
     // also apply those votes to all the parent votes
     // until the justification point.
@@ -74,29 +139,12 @@ impl<D: BlockData> TreeNode<D> {
     while let Some(ancestor) =
       Rc::get_mut(&mut current).unwrap().parent.as_mut()
     {
-      Rc::get_mut(ancestor).unwrap().value.votes += votes;
+      let mutancestor = Rc::get_mut(ancestor).unwrap();
+      if mutancestor.value.voters.insert(voter.clone()) {
+        mutancestor.value.votes += votes;
+      }
       current = Rc::clone(ancestor);
     }
-  }
-}
-
-struct ForkTree<D: BlockData> {
-  root: Rc<TreeNode<D>>,
-}
-
-impl<D: BlockData> ForkTree<D> {
-  pub fn new(root: VolatileBlock<D>) -> Self {
-    Self {
-      root: Rc::new(TreeNode {
-        value: root,
-        parent: None,
-        children: vec![],
-      }),
-    }
-  }
-
-  pub fn get_block_mut(&self, hash: &Multihash) -> Option<Rc<TreeNode<D>>> {
-    self.root.get_block_mut(hash).unwrap_or(None)
   }
 }
 
@@ -108,6 +156,7 @@ impl<D: BlockData> ForkTree<D> {
 struct VolatileBlock<D: BlockData> {
   block: block::Produced<D>,
   votes: u64,
+  voters: HashSet<Pubkey>,
 }
 
 /// State of the unfinalized part of the chain.
@@ -115,14 +164,14 @@ struct VolatileBlock<D: BlockData> {
 /// fork choice rules and voting.
 struct VolatileState<D: BlockData> {
   root: Multihash,
-  forktree: Vec<ForkTree<D>>,
+  forrest: Vec<Rc<TreeNode<D>>>,
 }
 
 impl<D: BlockData> VolatileState<D> {
   pub fn new(root: Multihash) -> Self {
     Self {
       root,
-      forktree: vec![],
+      forrest: vec![],
     }
   }
 
@@ -135,37 +184,43 @@ impl<D: BlockData> VolatileState<D> {
     block: block::Produced<D>,
     stake: u64,
   ) -> Result<(), VolatileStateError> {
+    let voter = block.proposer.clone();
     let block = VolatileBlock {
       block,
       votes: stake, // block proposition is counted as a vote on the block
+      voters: [voter].into_iter().collect(),
     };
 
     let parent = block.block.parent()?;
 
     // if we're the first block in the volatile state
-    if self.forktree.is_empty() {
+    if self.forrest.is_empty() {
       if parent == self.root {
-        self.forktree.push(ForkTree::new(block));
-        return Ok(());
+        self.forrest.push(Rc::new(TreeNode::new(block)));
+        Ok(())
       } else {
         warn!(
           "rejecting block. cannot find parent {}",
           bs58::encode(parent.to_bytes()).into_string()
         );
-        return Err(VolatileStateError::ParentBlockNotFound);
+        Err(VolatileStateError::ParentBlockNotFound)
       }
     } else {
       // we already have some unfinalized blocks
-      for root in self.forktree.iter_mut() {
-        if let Some(b) = root.get_block_mut(&parent) {
+      for root in self.forrest.iter_mut() {
+        if let Some(b) = root.get(&parent)? {
           b.add_child(block)?;
           return Ok(());
         }
       }
-      return Err(VolatileStateError::ParentBlockNotFound);
+      Err(VolatileStateError::ParentBlockNotFound)
     }
   }
 
+  /// Adds a vote for a given target block in the history.
+  ///
+  /// The justification must be the last finalized block,
+  /// and the target block must be one of its descendants.
   pub fn vote(
     &mut self,
     vote: Vote,
@@ -176,10 +231,10 @@ impl<D: BlockData> VolatileState<D> {
       return Err(VolatileStateError::InvalidJustification);
     }
 
-    for root in self.forktree.iter_mut() {
-      if let Some(b) = root.get_block_mut(&vote.target) {
-        b.add_votes(stake);
-        return Ok(())
+    for root in self.forrest.iter_mut() {
+      if let Some(b) = root.get(&vote.target)? {
+        b.add_votes(stake, vote.validator);
+        return Ok(());
       }
     }
 
@@ -207,7 +262,7 @@ pub struct Chain<'g, D: BlockData> {
   genesis: &'g block::Genesis<D>,
   stakes: DashMap<Pubkey, u64>,
   finalized: Vec<block::Produced<D>>,
-  volatile: RwLock<VolatileState<D>>,
+  volatile: VolatileState<D>,
 }
 
 impl<'g, D: BlockData> Chain<'g, D> {
@@ -215,7 +270,7 @@ impl<'g, D: BlockData> Chain<'g, D> {
     Self {
       genesis,
       finalized: vec![],
-      volatile: RwLock::new(VolatileState::new(genesis.hash().unwrap())),
+      volatile: VolatileState::new(genesis.hash().unwrap()),
       stakes: genesis
         .validators
         .iter()
@@ -253,6 +308,51 @@ impl<'g, D: BlockData> Chain<'g, D> {
     }
   }
 
+  /// Returns the block that is currently considered the
+  /// head of the chain.
+  ///
+  /// The selection of this block uses the Greedy Heaviest
+  /// Observed Subtree algorithm (GHOST), and it basically
+  /// means that returns the last block from the subtree
+  /// that has accumulated the largest amount of votes
+  /// so far.
+  ///
+  /// This method is called when a proposer needs to propose
+  /// a new block and wants to know the parent block it needs
+  /// to build on and use it as its parent.
+  ///
+  /// This method returns None when the volatile history
+  /// is empty and no blocks were finalized so far, which
+  /// means that we are still at the genesis block.
+  pub async fn head<'b>(&'b self) -> Option<&'b block::Produced<D>> {
+    // no volatile state, either all blocks are finalized
+    // or we are still at genesis block.
+    if self.volatile.forrest.is_empty() {
+      return self.finalized.last();
+    }
+
+    let mut max_votes = 0;
+    let mut top_tree = self
+      .volatile
+      .forrest
+      .first()
+      .expect("is_empty would have returned earlier");
+
+    // find the subtree that has accumulated the highes number
+    // of votes in the fork forrest.
+    for tree in &self.volatile.forrest {
+      if tree.value.votes > max_votes {
+        max_votes = tree.value.votes;
+        top_tree = tree;
+      }
+    }
+
+    // then from that tree get the most voted on
+    // child block or the one with the most recent
+    // slot number of there is a draw in votes.
+    Some(top_tree.head())
+  }
+
   /// Represents the current set of validators that are
   /// taking part in the consensus. For now, this value
   /// is static and based on what is defined in genesis.
@@ -275,10 +375,9 @@ impl<'g, D: BlockData> Chain<'g, D> {
   ///
   /// This method will validate signatures on the block and attempt
   /// to insert it into the volatile state of the chain.
-  pub async fn append(&self, block: block::Produced<D>) {
+  pub async fn append(&mut self, block: block::Produced<D>) {
     if let Some(stake) = self.stakes.get(&block.proposer) {
-      let mut unlocked = self.volatile.write().await;
-      if let Err(e) = unlocked.append(block, *stake) {
+      if let Err(e) = self.volatile.append(block, *stake) {
         warn!("block rejected: {e}");
       }
     } else {
@@ -293,7 +392,7 @@ impl<'g, D: BlockData> Chain<'g, D> {
   ///
   /// This method will validate signatures on the vote and attempt
   /// to insert it into the volatile state of the chain.
-  pub async fn vote(&self, vote: Vote) {
+  pub async fn vote(&mut self, vote: Vote) {
     let stake = match self.stakes.get(&vote.validator) {
       Some(stake) => *stake,
       None => {
@@ -307,8 +406,7 @@ impl<'g, D: BlockData> Chain<'g, D> {
       return;
     }
 
-    let mut unlocked = self.volatile.write().await;
-    if let Err(e) = unlocked.vote(vote, stake) {
+    if let Err(e) = self.volatile.vote(vote, stake) {
       warn!("vote rejected: {e}");
     }
   }

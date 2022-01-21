@@ -89,18 +89,18 @@ impl Vote {
     msg.append(&mut self.justification.to_bytes());
     match PublicKey::from_bytes(&self.validator) {
       Ok(p) => match p.verify(&msg, &self.signature) {
-        Ok(_) => return true,
+        Ok(_) => true,
         Err(e) => {
           warn!(
             "signature verification for vote from {} failed {e}",
             self.validator
           );
-          return false;
+          false
         }
       },
       Err(e) => {
         warn!("invalid public key {}: {e}", self.validator);
-        return false;
+        false
       }
     }
   }
@@ -119,7 +119,7 @@ impl Vote {
     msg.append(&mut justification.to_bytes());
     let signature = (*keypair).sign(&msg);
     Self {
-      validator: keypair.public().clone(),
+      validator: keypair.public(),
       target,
       justification,
       signature,
