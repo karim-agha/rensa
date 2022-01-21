@@ -1,12 +1,12 @@
 use super::{
-  block::{self, BlockData},
+  block::{self, Block, BlockData},
   validator::Validator,
   vote::Vote,
 };
 use crate::keys::Pubkey;
 use dashmap::DashMap;
 use tokio::sync::RwLock;
-use tracing::error;
+use tracing::{info, warn};
 
 struct TreeNode<'b, D: BlockData> {
   value: &'b block::Produced<D>,
@@ -30,10 +30,10 @@ impl<'b, D: BlockData> ForkTree<'b, D> {
   }
 }
 
-/// A block that is still not finalized and its votes 
+/// A block that is still not finalized and its votes
 /// are still being counted.
-/// 
-/// Those blocks are not guaranteed to never be 
+///
+/// Those blocks are not guaranteed to never be
 /// discarded by the blockchain yet.
 struct VolatileBlock<D: BlockData> {
   block: block::Produced<D>,
@@ -122,12 +122,45 @@ impl<'g, 'b, D: BlockData> Chain<'g, 'b, D> {
         votes: *stake, // block proposition is counted as a vote on the block
       });
     } else {
-      error!(
+      warn!(
         "Rejecting block from non-staking proposer {}",
         block.proposer
       );
     }
   }
 
-  pub async fn vote(&self, vote: Vote) {}
+  pub async fn vote(&self, vote: Vote) {
+    let stake = match self.stakes.get(&vote.validator) {
+      Some(stake) => *stake,
+      None => {
+        warn!("rejecting vote from unknown validator: {}", vote.validator);
+        return;
+      }
+    };
+
+    let finalized = {
+      match self.finalized.last() {
+        Some(b) => b.hash().unwrap(),
+        None => self.genesis.hash().unwrap(),
+      }
+    };
+
+    if vote.justification != finalized {
+      warn!(
+        "Rejecting vote. Not justified by the last finalized block: {vote:?}"
+      );
+      return;
+    }
+
+    if !vote.verify_signature() {
+      warn!("Rejecting vote {vote:?}. signature verification failed");
+      return;
+    }
+
+    // todo:
+    // let target = find_block in fork tree
+    // add stake to block votes and all its ancestors
+    // up to the justification point
+    info!("recoding {vote:?} with stake {stake}");
+  }
 }

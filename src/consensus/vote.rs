@@ -1,6 +1,6 @@
 use super::{block::BlockData, chain::Chain};
-use crate::keys::Pubkey;
-use ed25519_dalek::Signature;
+use crate::keys::{Keypair, Pubkey};
+use ed25519_dalek::{PublicKey, Signature, Signer, Verifier};
 use futures::Stream;
 use multihash::Multihash;
 use serde::{Deserialize, Serialize};
@@ -9,6 +9,7 @@ use std::{
   pin::Pin,
   task::{Context, Poll},
 };
+use tracing::warn;
 
 // vote = (
 //  validator,
@@ -37,7 +38,7 @@ use std::{
 ///
 /// The vote is signed using validator's public key over
 /// bytes of [`target`] and [`justification`].
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Clone, Serialize, Deserialize)]
 pub struct Vote {
   /// The public key of the validator casting a vote.
   pub validator: Pubkey,
@@ -58,6 +59,73 @@ pub struct Vote {
   /// The message being signed is a concatinated bytestring
   /// of target bytes and justification bytes.
   pub signature: Signature,
+}
+
+
+impl std::fmt::Debug for Vote {
+  fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    f.debug_struct("Vote")
+      .field("validator", &self.validator)
+      .field(
+        "target",
+        &bs58::encode(self.target.to_bytes()).into_string(),
+      )
+      .field(
+        "justification",
+        &bs58::encode(self.justification.to_bytes()).into_string(),
+      )
+      .field(
+        "signature",
+        &bs58::encode(self.signature.to_bytes()).into_string(),
+      )
+      .finish()
+  }
+}
+
+impl Vote {
+  /// Verifies the signature of the vote.
+  pub fn verify_signature(&self) -> bool {
+    let mut msg = Vec::new();
+    msg.append(&mut self.target.to_bytes());
+    msg.append(&mut self.justification.to_bytes());
+    match PublicKey::from_bytes(&self.validator) {
+      Ok(p) => match p.verify(&msg, &self.signature) {
+        Ok(_) => return true,
+        Err(e) => {
+          warn!(
+            "signature verification for vote from {} failed {e}",
+            self.validator
+          );
+          return false;
+        }
+      },
+      Err(e) => {
+        warn!("invlid public key {}: {e}", self.validator);
+        return false;
+      }
+    }
+  }
+
+  /// Creates new vote for a target block using validator's secret key.
+  /// The justification must be the hash of the last finalized block on
+  /// the chain. If no blocks are finalized yet, then the genesis block
+  /// is considered as the last finalized.
+  pub fn new(
+    keypair: &Keypair,
+    target: Multihash,
+    justification: Multihash,
+  ) -> Self {
+    let mut msg = Vec::new();
+    msg.append(&mut target.to_bytes());
+    msg.append(&mut justification.to_bytes());
+    let signature = (*keypair).sign(&msg);
+    Self {
+      validator: keypair.public().clone(),
+      target,
+      justification,
+      signature,
+    }
+  }
 }
 
 pub struct VoteProducer<D: BlockData>(PhantomData<D>);
