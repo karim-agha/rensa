@@ -6,7 +6,7 @@ use super::{
 use crate::keys::Pubkey;
 use dashmap::DashMap;
 use multihash::Multihash;
-use std::{collections::HashSet, rc::Rc};
+use std::{cmp::Ordering, collections::HashSet, rc::Rc};
 use thiserror::Error;
 use tracing::warn;
 
@@ -63,7 +63,7 @@ impl<D: BlockData> TreeNode<D> {
   /// means that returns the last block from the subtree
   /// that has accumulated the largest amount of votes
   /// so far or highest slot number if there is a draw.
-  pub fn head<'b>(&'b self) -> &'b block::Produced<D> {
+  pub fn head(&self) -> &block::Produced<D> {
     if self.children.is_empty() {
       return &self.value.block; // leaf block
     }
@@ -74,14 +74,18 @@ impl<D: BlockData> TreeNode<D> {
       .first()
       .expect("is_empty would have returned earlier");
     for subtree in &self.children {
-      if subtree.value.votes > max_votes {
-        max_votes = subtree.value.votes;
-        top_subtree = &subtree;
-      } else if subtree.value.votes == max_votes {
-        // if two blocks have the same number of votes, select the one with
-        // the greater height.
-        if subtree.value.block.height() > top_subtree.value.block.height() {
-          top_subtree = &subtree;
+      match subtree.value.votes.cmp(&max_votes) {
+        Ordering::Less => { /* nothing, we have a better tree */ }
+        Ordering::Equal => {
+          // if two blocks have the same number of votes, select the one with
+          // the greater height.
+          if subtree.value.block.height() > top_subtree.value.block.height() {
+            top_subtree = subtree;
+          }
+        }
+        Ordering::Greater => {
+          max_votes = subtree.value.votes;
+          top_subtree = subtree;
         }
       }
     }
@@ -324,7 +328,7 @@ impl<'g, D: BlockData> Chain<'g, D> {
   /// This method returns None when the volatile history
   /// is empty and no blocks were finalized so far, which
   /// means that we are still at the genesis block.
-  pub async fn head<'b>(&'b self) -> Option<&'b block::Produced<D>> {
+  pub async fn head(&self) -> Option<&block::Produced<D>> {
     // no volatile state, either all blocks are finalized
     // or we are still at genesis block.
     if self.volatile.forrest.is_empty() {
