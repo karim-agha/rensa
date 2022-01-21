@@ -1,10 +1,12 @@
 use super::{block::BlockData, chain::Chain};
 use crate::keys::{Keypair, Pubkey};
 use ed25519_dalek::{PublicKey, Signature, Signer, Verifier};
+use flexbuffers::FlexbufferSerializer;
 use futures::Stream;
 use multihash::Multihash;
 use serde::{Deserialize, Serialize};
 use std::{
+  io::ErrorKind,
   marker::PhantomData,
   pin::Pin,
   task::{Context, Poll},
@@ -124,6 +126,14 @@ impl Vote {
       justification,
       signature,
     }
+  }
+
+  pub fn to_bytes(&self) -> Result<Vec<u8>, std::io::Error> {
+    let mut s = FlexbufferSerializer::new();
+    self
+      .serialize(&mut s)
+      .map_err(|e| std::io::Error::new(ErrorKind::InvalidInput, e))?;
+    Ok(s.take_buffer())
   }
 }
 

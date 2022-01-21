@@ -6,9 +6,13 @@ use super::{
 use crate::keys::Pubkey;
 use dashmap::DashMap;
 use multihash::Multihash;
-use std::{cmp::Ordering, collections::HashSet, rc::Rc};
+use std::{
+  cmp::Ordering,
+  collections::HashSet,
+  rc::{Rc, Weak},
+};
 use thiserror::Error;
-use tracing::warn;
+use tracing::{info, warn};
 
 /// Represents a single block in the volatile blockchain state
 ///
@@ -22,9 +26,10 @@ use tracing::warn;
 ///
 /// This data structure represents all known blockchain histories
 /// since the last finalized block.
+#[derive(Debug)]
 struct TreeNode<D: BlockData> {
   value: VolatileBlock<D>,
-  parent: Option<Rc<TreeNode<D>>>,
+  parent: Option<Weak<TreeNode<D>>>,
   children: Vec<Rc<TreeNode<D>>>,
 }
 
@@ -99,31 +104,28 @@ impl<D: BlockData> TreeNode<D> {
   pub fn add_child(
     mut self: Rc<Self>,
     block: VolatileBlock<D>,
-  ) -> Result<Rc<TreeNode<D>>, std::io::Error> {
-    let blockhash = block.block.hash()?;
+  ) -> Result<(), std::io::Error> {
     assert!(block.block.parent()? == self.value.block.hash()?);
 
+    let blockhash = block.block.hash()?;
     for child in self.children.iter() {
       if child.value.block.hash()? == blockhash {
         // block already a child of this block
-        return Ok(Rc::clone(child));
+        return Ok(());
       }
     }
 
     // set parent link and wrap in treenode
     let block = Rc::new(TreeNode {
       value: block,
-      parent: Some(Rc::clone(&self)),
+      parent: Some(Rc::downgrade(&self)),
       children: vec![],
     });
 
     // store
-    Rc::get_mut(&mut self)
-      .unwrap()
-      .children
-      .push(Rc::clone(&block));
+    Rc::get_mut(&mut self).unwrap().children.push(block);
 
-    Ok(block)
+    Ok(())
   }
 
   /// Applies votes to a block, and all its ancestors until the
@@ -139,15 +141,16 @@ impl<D: BlockData> TreeNode<D> {
 
     // also apply those votes to all the parent votes
     // until the justification point.
-    let mut current = Rc::clone(&self);
+    let mut current = self;
     while let Some(ancestor) =
       Rc::get_mut(&mut current).unwrap().parent.as_mut()
     {
-      let mutancestor = Rc::get_mut(ancestor).unwrap();
+      let mut ancestor = ancestor.upgrade().unwrap();
+      let mutancestor = Rc::get_mut(&mut ancestor).unwrap();
       if mutancestor.value.voters.insert(voter.clone()) {
         mutancestor.value.votes += votes;
       }
-      current = Rc::clone(ancestor);
+      current = ancestor;
     }
   }
 }
@@ -157,6 +160,7 @@ impl<D: BlockData> TreeNode<D> {
 ///
 /// Those blocks are not guaranteed to never be
 /// discarded by the blockchain yet.
+#[derive(Debug)]
 struct VolatileBlock<D: BlockData> {
   block: block::Produced<D>,
   votes: u64,
@@ -166,6 +170,7 @@ struct VolatileBlock<D: BlockData> {
 /// State of the unfinalized part of the chain.
 /// Blocks in this state can be overriden using
 /// fork choice rules and voting.
+#[derive(Debug)]
 struct VolatileState<D: BlockData> {
   root: Multihash,
   forrest: Vec<Rc<TreeNode<D>>>,
@@ -212,7 +217,9 @@ impl<D: BlockData> VolatileState<D> {
     } else {
       // we already have some unfinalized blocks
       for root in self.forrest.iter_mut() {
+        info!("checking {root:?} in the forrest");
         if let Some(b) = root.get(&parent)? {
+          info!("getting {b:?} from tree");
           b.add_child(block)?;
           return Ok(());
         }
@@ -328,7 +335,7 @@ impl<'g, D: BlockData> Chain<'g, D> {
   /// This method returns None when the volatile history
   /// is empty and no blocks were finalized so far, which
   /// means that we are still at the genesis block.
-  pub async fn head(&self) -> Option<&block::Produced<D>> {
+  pub fn head(&self) -> Option<&block::Produced<D>> {
     // no volatile state, either all blocks are finalized
     // or we are still at genesis block.
     if self.volatile.forrest.is_empty() {
@@ -379,9 +386,10 @@ impl<'g, D: BlockData> Chain<'g, D> {
   ///
   /// This method will validate signatures on the block and attempt
   /// to insert it into the volatile state of the chain.
-  pub async fn append(&mut self, block: block::Produced<D>) {
+  pub fn append(&mut self, block: block::Produced<D>) {
     if let Some(stake) = self.stakes.get(&block.signature.0) {
       if block.verify_signature() {
+        info!("ingesting block {block:?}");
         if let Err(e) = self.volatile.append(block, *stake) {
           warn!("block rejected: {e}");
         }
@@ -400,7 +408,7 @@ impl<'g, D: BlockData> Chain<'g, D> {
   ///
   /// This method will validate signatures on the vote and attempt
   /// to insert it into the volatile state of the chain.
-  pub async fn vote(&mut self, vote: Vote) {
+  pub fn vote(&mut self, vote: Vote) {
     let stake = match self.stakes.get(&vote.validator) {
       Some(stake) => *stake,
       None => {
@@ -417,5 +425,64 @@ impl<'g, D: BlockData> Chain<'g, D> {
     if let Err(e) = self.volatile.vote(vote, stake) {
       warn!("vote rejected: {e}");
     }
+  }
+}
+
+#[cfg(test)]
+mod test {
+  use super::Chain;
+  use crate::{
+    consensus::{
+      block::{self, Block, Genesis},
+      validator::Validator,
+    },
+    keys::Keypair,
+  };
+  use chrono::Utc;
+  use ed25519_dalek::{PublicKey, SecretKey};
+  use std::time::Duration;
+
+  #[test]
+  fn append_block() {
+    let secret = SecretKey::from_bytes(&[
+      157, 097, 177, 157, 239, 253, 090, 096, 186, 132, 074, 244, 146, 236,
+      044, 196, 068, 073, 197, 105, 123, 050, 105, 025, 112, 059, 172, 003,
+      028, 174, 127, 096,
+    ])
+    .unwrap();
+
+    let public: PublicKey = (&secret).into();
+    let keypair: Keypair = ed25519_dalek::Keypair { secret, public }.into();
+
+    let genesis = Genesis {
+      chain_id: "1".to_owned(),
+      data: "test".to_owned(),
+      epoch_slots: 32,
+      genesis_time: Utc::now(),
+      hasher: multihash::Code::Sha3_256,
+      slot_interval: Duration::from_secs(2),
+      validators: vec![Validator {
+        pubkey: keypair.public(),
+        stake: 200000,
+      }],
+    };
+
+    let mut chain = Chain::new(&genesis);
+    let block = block::Produced::new(
+      &keypair,
+      1,
+      genesis.hash().unwrap(),
+      "two".to_string(),
+      vec![],
+    )
+    .unwrap();
+
+    let hash = block.hash().unwrap();
+
+    assert!(chain.head().is_none());
+
+    chain.append(block);
+    assert!(chain.head().is_some());
+    assert_eq!(hash, chain.head().unwrap().hash().unwrap());
   }
 }

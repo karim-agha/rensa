@@ -5,7 +5,6 @@ use crate::{
   },
   keys::{Keypair, Pubkey},
 };
-use flexbuffers::FlexbufferSerializer;
 use futures::StreamExt;
 use libp2p::{
   core::{muxing::StreamMuxerBox, transport::Boxed, upgrade::Version},
@@ -18,7 +17,6 @@ use libp2p::{
   Multiaddr, PeerId, Swarm, Transport,
 };
 use libp2p_episub::{Config, Episub, EpisubEvent, PeerAuthorizer};
-use serde::Serialize;
 use std::{collections::HashSet, io::ErrorKind, marker::PhantomData};
 use tracing::error;
 
@@ -139,30 +137,21 @@ impl<D: BlockData> Network<D> {
   }
 
   pub fn gossip_vote(&mut self, vote: &Vote) -> Result<u128, std::io::Error> {
-    self.gossip_generic(&format!("/{}/vote", self.chainid), vote)
+    self
+      .swarm
+      .behaviour_mut()
+      .publish(&format!("/{}/vote", self.chainid), vote.to_bytes()?)
+      .map_err(|e| std::io::Error::new(ErrorKind::InvalidInput, e))
   }
 
   pub fn gossip_block(
     &mut self,
     block: &impl Block<D>,
   ) -> Result<u128, std::io::Error> {
-    self.gossip_generic(&format!("/{}/block", self.chainid), block)
-  }
-
-  fn gossip_generic(
-    &mut self,
-    topic: &str,
-    data: &impl Serialize,
-  ) -> Result<u128, std::io::Error> {
-    let mut s = FlexbufferSerializer::new();
-    data
-      .serialize(&mut s)
-      .map_err(|e| std::io::Error::new(ErrorKind::InvalidInput, e))?;
-
     self
       .swarm
       .behaviour_mut()
-      .publish(topic, s.take_buffer())
+      .publish(&format!("/{}/block", self.chainid), block.to_bytes()?)
       .map_err(|e| std::io::Error::new(ErrorKind::InvalidInput, e))
   }
 

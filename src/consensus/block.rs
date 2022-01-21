@@ -1,7 +1,7 @@
 use super::{validator::Validator, vote::Vote};
-use crate::keys::Pubkey;
+use crate::keys::{Keypair, Pubkey};
 use chrono::{DateTime, Utc};
-use ed25519_dalek::{PublicKey, Signature, Verifier};
+use ed25519_dalek::{PublicKey, Signature, Signer, Verifier};
 use flexbuffers::FlexbufferSerializer;
 use multihash::{Code as MultihashCode, Multihash, MultihashDigest};
 use serde::{Deserialize, Serialize};
@@ -30,9 +30,7 @@ impl<T> BlockData for T where T: Eq + Debug + Serialize + for<'a> Deserialize<'a
 /// D is type of the underlying data that consensus is trying to
 ///   decide on, in case of a blockchain it is going to be Blocks
 ///
-pub trait Block<D: BlockData>:
-  Debug + Serialize + for<'a> Deserialize<'a>
-{
+pub trait Block<D: BlockData>: Debug {
   /// Hash of this block with its payload.
   fn hash(&self) -> Result<Multihash, StdIoError>;
 
@@ -59,6 +57,11 @@ pub trait Block<D: BlockData>:
   /// validators. A vote on a block is also implicitly a vote on
   /// all its ancestors.
   fn votes(&self) -> &[Vote];
+
+  /// Serializes the contents of the block into a byte buffer.
+  /// This serialization must be stable as it is
+  /// used for calculating hashes.
+  fn to_bytes(&self) -> Result<Vec<u8>, std::io::Error>;
 }
 
 /// The genesis block of the blockchain.
@@ -122,7 +125,7 @@ pub struct Genesis<D: BlockData> {
 /// A block of this type is at height at least 1 and is dynamically
 /// appended to the chain by block producers and voted on by other
 /// validators.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Clone, Serialize, Deserialize)]
 #[serde(
   bound = "D: Serialize, D: Eq, for<'a> D: Deserialize<'a>",
   rename_all = "camelCase"
@@ -153,19 +156,31 @@ pub struct Produced<D: BlockData> {
   pub votes: Vec<Vote>,
 }
 
+impl<D: BlockData> Debug for Produced<D> {
+  fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    f.debug_struct("Produced")
+      .field(
+        "parent",
+        &bs58::encode(self.parent.to_bytes()).into_string(),
+      )
+      .field("height", &self.height)
+      .field("signature", &self.signature)
+      .field("data", &self.data)
+      .field("votes", &self.votes)
+      .field(
+        "hash",
+        &bs58::encode(self.hash().unwrap().to_bytes()).into_string(),
+      )
+      .finish()
+  }
+}
+
 impl<D: BlockData> Block<D> for Genesis<D> {
   /// The hash of the genesis is used to determine a
   /// unique fingerprint of a blockchain configuration.
   fn hash(&self) -> Result<Multihash, StdIoError> {
     // note: this could be optimized into zero-copy
-    let mut s = FlexbufferSerializer::new();
-    self.serialize(&mut s).map_err(|e| {
-      StdIoError::new(
-        ErrorKind::InvalidInput,
-        format!("genesis serialization failed: {e}"),
-      )
-    })?;
-    let buffer = s.take_buffer();
+    let buffer = self.to_bytes()?;
     Ok(self.hasher.digest(&buffer))
   }
 
@@ -205,6 +220,17 @@ impl<D: BlockData> Block<D> for Genesis<D> {
   fn votes(&self) -> &[Vote] {
     &[]
   }
+
+  /// Serializes the contents of the block into a byte buffer.
+  /// This serialization must be stable as it is
+  /// used for calculating hashes.
+  fn to_bytes(&self) -> Result<Vec<u8>, std::io::Error> {
+    let mut s = FlexbufferSerializer::new();
+    self
+      .serialize(&mut s)
+      .map_err(|e| std::io::Error::new(ErrorKind::InvalidInput, e))?;
+    Ok(s.take_buffer())
+  }
 }
 
 impl<D: BlockData> Block<D> for Produced<D> {
@@ -218,11 +244,21 @@ impl<D: BlockData> Block<D> for Produced<D> {
   /// to verify the correctness of the block hash.
   fn hash(&self) -> Result<Multihash, StdIoError> {
     // note: this could be optimized into zero-copy
+    let mut buffer = Vec::new();
+    buffer.append(&mut self.parent()?.to_bytes());
+    buffer.append(&mut self.height().to_le_bytes().to_vec());
+
     let mut s = FlexbufferSerializer::new();
     self
+      .data
       .serialize(&mut s)
-      .map_err(|e| StdIoError::new(ErrorKind::Other, e.to_string()))?;
-    let buffer = s.take_buffer();
+      .map_err(|e| std::io::Error::new(ErrorKind::InvalidInput, e))?;
+    buffer.append(&mut s.take_buffer());
+    self
+      .votes()
+      .serialize(&mut s)
+      .map_err(|e| std::io::Error::new(ErrorKind::InvalidInput, e))?;
+    buffer.append(&mut s.take_buffer());
 
     // all hashes in a given chain are always produced
     // using the same hashing algorithm that was define
@@ -287,9 +323,54 @@ impl<D: BlockData> Block<D> for Produced<D> {
   fn votes(&self) -> &[Vote] {
     &self.votes
   }
+
+  /// Serializes the contents of the block into a byte buffer.
+  /// This serialization must be stable as it is
+  /// used for calculating hashes.
+  fn to_bytes(&self) -> Result<Vec<u8>, std::io::Error> {
+    let mut s = FlexbufferSerializer::new();
+    self
+      .serialize(&mut s)
+      .map_err(|e| std::io::Error::new(ErrorKind::InvalidInput, e))?;
+    Ok(s.take_buffer())
+  }
 }
 
 impl<D: BlockData> Produced<D> {
+  pub fn new(
+    keypair: &Keypair,
+    height: u64,
+    parent: Multihash,
+    data: D,
+    votes: Vec<Vote>,
+  ) -> Result<Self, std::io::Error> {
+    let mut buffer = Vec::new();
+    buffer.append(&mut parent.to_bytes());
+    buffer.append(&mut height.to_le_bytes().to_vec());
+    let mut s = FlexbufferSerializer::new();
+    data
+      .serialize(&mut s)
+      .map_err(|e| std::io::Error::new(ErrorKind::InvalidInput, e))?;
+    buffer.append(&mut s.take_buffer());
+
+    votes
+      .serialize(&mut s)
+      .map_err(|e| std::io::Error::new(ErrorKind::InvalidInput, e))?;
+    buffer.append(&mut s.take_buffer());
+    let hash = multihash::Code::try_from(parent.code())
+      .map_err(|e| std::io::Error::new(ErrorKind::InvalidInput, e))?
+      .digest(&buffer);
+    let signature = (keypair.public(), (*keypair).sign(&hash.to_bytes()));
+
+    Ok(Self {
+      parent,
+      height,
+      signature,
+      data,
+      votes,
+    })
+  }
+
   /// Verifies the validity of the signature of a block against
   /// the block hash as the message and the validator public key.
   pub fn verify_signature(&self) -> bool {

@@ -82,7 +82,7 @@ async fn main() -> anyhow::Result<()> {
 
   // componsents of the consensus
   let mut voter = VoteProducer::new(&chain);
-  let mut producer = BlockProducer::new(&chain);
+  let mut producer = BlockProducer::new(opts.keypair);
   let mut schedule = ValidatorScheduleStream::new(
     ValidatorSchedule::new(seed, &genesis.validators)?,
     genesis.genesis_time,
@@ -93,23 +93,27 @@ async fn main() -> anyhow::Result<()> {
   loop {
     tokio::select! {
       Some(event) = network.next() => {
+        info!("network event: {event:?}");
         match event {
-          NetworkEvent::BlockReceived(block) => chain.append(block).await,
-          NetworkEvent::VoteReceived(vote) => chain.vote(vote).await,
+          NetworkEvent::BlockReceived(block) => chain.append(block),
+          NetworkEvent::VoteReceived(vote) => chain.vote(vote),
         }
       },
       Some(block) = producer.next() => {
-        info!("block produced at height {}", block.height());
         network.gossip_block(&block)?;
+        chain.append(block);
       }
       Some(vote) = voter.next() => {
-        info!("vote received {vote:?}");
         network.gossip_vote(&vote)?;
+        chain.vote(vote);
       }
       Some((slot, validator)) = schedule.next() => {
         if validator.pubkey == me {
           info!("It's my turn on slot {slot}: {validator:?}");
-          producer.produce(slot);
+          producer.produce(slot, match chain.head() {
+            Some(b) => b,
+            None => chain.genesis(),
+          });
         } else {
           info!("I think that slot {slot} is for: {validator:?}");
         }
