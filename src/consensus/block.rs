@@ -1,7 +1,7 @@
 use super::{validator::Validator, vote::Vote};
 use crate::keys::Pubkey;
 use chrono::{DateTime, Utc};
-use ed25519_dalek::Signature;
+use ed25519_dalek::{PublicKey, Signature, Verifier};
 use flexbuffers::FlexbufferSerializer;
 use multihash::{Code as MultihashCode, Multihash, MultihashDigest};
 use serde::{Deserialize, Serialize};
@@ -128,9 +128,6 @@ pub struct Genesis<D: BlockData> {
   rename_all = "camelCase"
 )]
 pub struct Produced<D: BlockData> {
-  /// The validator that proposed this block
-  pub proposer: Pubkey,
-
   /// Hash of the parent block
   pub parent: Multihash,
 
@@ -289,6 +286,21 @@ impl<D: BlockData> Block<D> for Produced<D> {
   /// Greedy Heaviest Observed Subtree (GHOST) fork choice algo.
   fn votes(&self) -> &[Vote] {
     &self.votes
+  }
+}
+
+impl<D: BlockData> Produced<D> {
+  /// Verifies the validity of the signature of a block against
+  /// the block hash as the message and the validator public key.
+  pub fn verify_signature(&self) -> bool {
+    if let Ok(msg) = self.hash() {
+      if let Ok(pubkey) = PublicKey::from_bytes(&self.signature.0) {
+        if let Ok(()) = pubkey.verify(&msg.to_bytes(), &self.signature.1) {
+          return true;
+        }
+      }
+    }
+    false
   }
 }
 

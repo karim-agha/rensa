@@ -188,7 +188,7 @@ impl<D: BlockData> VolatileState<D> {
     block: block::Produced<D>,
     stake: u64,
   ) -> Result<(), VolatileStateError> {
-    let voter = block.proposer.clone();
+    let voter = block.signature.0.clone();
     let block = VolatileBlock {
       block,
       votes: stake, // block proposition is counted as a vote on the block
@@ -380,14 +380,18 @@ impl<'g, D: BlockData> Chain<'g, D> {
   /// This method will validate signatures on the block and attempt
   /// to insert it into the volatile state of the chain.
   pub async fn append(&mut self, block: block::Produced<D>) {
-    if let Some(stake) = self.stakes.get(&block.proposer) {
-      if let Err(e) = self.volatile.append(block, *stake) {
-        warn!("block rejected: {e}");
+    if let Some(stake) = self.stakes.get(&block.signature.0) {
+      if block.verify_signature() {
+        if let Err(e) = self.volatile.append(block, *stake) {
+          warn!("block rejected: {e}");
+        }
+      } else {
+        warn!("rejecting block {block:?}: signature verification failed.");
       }
     } else {
       warn!(
         "Rejecting block from non-staking proposer {}",
-        block.proposer
+        block.signature.0
       );
     }
   }
