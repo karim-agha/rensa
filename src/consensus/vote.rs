@@ -61,7 +61,6 @@ pub struct Vote {
   pub signature: Signature,
 }
 
-
 impl std::fmt::Debug for Vote {
   fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
     f.debug_struct("Vote")
@@ -100,7 +99,7 @@ impl Vote {
         }
       },
       Err(e) => {
-        warn!("invlid public key {}: {e}", self.validator);
+        warn!("invalid public key {}: {e}", self.validator);
         return false;
       }
     }
