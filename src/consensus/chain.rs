@@ -5,6 +5,7 @@ use super::{
 };
 use crate::keys::Pubkey;
 use dashmap::DashMap;
+use multihash::Multihash;
 use tokio::sync::RwLock;
 use tracing::{info, warn};
 
@@ -86,14 +87,26 @@ impl<'g, 'b, D: BlockData> Chain<'g, 'b, D> {
     self.genesis
   }
 
-  /// Returns the highest block in the chain that is considered
-  /// finalized. Finalized blocks will never be reverted.
+  /// Returns the hash of the last finalized block in the chain.
+  /// Blocks that reached finality will never be reverted under
+  /// any circumstances.
+  /// 
+  /// If no block has been finalized yet, then the genesis block
+  /// hash is used as the last finalized block.
   ///
   /// This value is used as the justification when voting for new
   /// blocks, also the last finalized block is the root of the
   /// current fork tree.
-  pub fn finalized(&self) -> Option<&block::Produced<D>> {
-    self.finalized.last()
+  pub fn finalized(&self) -> Multihash {
+    match self.finalized.last() {
+      Some(b) => b
+        .hash()
+        .expect("a block with invalid hash would not get finalized"),
+      None => self
+        .genesis
+        .hash()
+        .expect("invalid genesis hash would have crashed the system already"),
+    }
   }
 
   /// Represents the current set of validators that are
@@ -138,14 +151,7 @@ impl<'g, 'b, D: BlockData> Chain<'g, 'b, D> {
       }
     };
 
-    let finalized = {
-      match self.finalized.last() {
-        Some(b) => b.hash().unwrap(),
-        None => self.genesis.hash().unwrap(),
-      }
-    };
-
-    if vote.justification != finalized {
+    if vote.justification != self.finalized() {
       warn!(
         "Rejecting vote. Not justified by the last finalized block: {vote:?}"
       );
