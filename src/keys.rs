@@ -17,7 +17,7 @@ use thiserror::Error;
 /// has a corresponding private key on the ed25519 curve or a
 /// program owned account that is not on the curve and is writable
 /// only by its program.
-#[derive(Clone, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize)]
+#[derive(Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct Pubkey([u8; 32]);
 
 impl Deref for Pubkey {
@@ -200,6 +200,15 @@ impl<'de> Deserialize<'de> for Pubkey {
       }
     }
 
-    deserializer.deserialize_any(StringOrArray(PhantomData))
+    deserializer.deserialize_str(StringOrArray(PhantomData))
+  }
+}
+
+impl Serialize for Pubkey {
+  fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+  where
+    S: serde::Serializer,
+  {
+    serializer.serialize_str(&bs58::encode(self.0).into_string())
   }
 }

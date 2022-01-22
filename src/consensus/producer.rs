@@ -1,9 +1,7 @@
 use super::block;
 use crate::keys::Keypair;
-use flexbuffers::FlexbufferSerializer;
-use futures::Stream;
+use futures_lite::Stream;
 use multihash::{Sha3_256, StatefulHasher};
-use serde::Serialize;
 use std::{
   collections::VecDeque,
   pin::Pin,
@@ -34,14 +32,13 @@ impl BlockProducer {
       bs58::encode(prevhash.to_bytes()).into_string()
     );
 
-    let mut s = FlexbufferSerializer::new();
-    match prev.data().serialize(&mut s) {
-      Ok(_) => {
+    match bincode::serialize(prev.data()) {
+      Ok(bytes) => {
         // this is a test block producer that
         // just hashes the contents of the previous block.
 
         let mut sha3 = Sha3_256::default();
-        sha3.update(s.view());
+        sha3.update(&bytes);
         let data = sha3.finalize();
         let data = bs58::encode(data.as_ref()).into_string();
 

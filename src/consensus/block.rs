@@ -2,7 +2,6 @@ use super::{validator::Validator, vote::Vote};
 use crate::keys::{Keypair, Pubkey};
 use chrono::{DateTime, Utc};
 use ed25519_dalek::{PublicKey, Signature, Signer, Verifier};
-use flexbuffers::FlexbufferSerializer;
 use multihash::{Code as MultihashCode, Multihash, MultihashDigest};
 use serde::{Deserialize, Serialize};
 use std::{
@@ -18,11 +17,16 @@ use std::{
 ///
 /// Essentially we need to be able to serialize and deserialize this data,
 /// compare it for exact equality and print it in debug logs.
-pub trait BlockData: Eq + Debug + Serialize + for<'a> Deserialize<'a> {}
+pub trait BlockData:
+  Eq + Clone + Debug + Serialize + for<'a> Deserialize<'a>
+{
+}
 
 /// Blanket implementation for all types that fulfill those requirements
-impl<T> BlockData for T where T: Eq + Debug + Serialize + for<'a> Deserialize<'a>
-{}
+impl<T> BlockData for T where
+  T: Eq + Clone + Debug + Serialize + for<'a> Deserialize<'a>
+{
+}
 
 /// Represents the type of values on which the consensus protocol
 /// decides among many competing versions.
@@ -225,11 +229,8 @@ impl<D: BlockData> Block<D> for Genesis<D> {
   /// This serialization must be stable as it is
   /// used for calculating hashes.
   fn to_bytes(&self) -> Result<Vec<u8>, std::io::Error> {
-    let mut s = FlexbufferSerializer::new();
-    self
-      .serialize(&mut s)
-      .map_err(|e| std::io::Error::new(ErrorKind::InvalidInput, e))?;
-    Ok(s.take_buffer())
+    bincode::serialize(&self)
+      .map_err(|e| std::io::Error::new(ErrorKind::InvalidData, e))
   }
 }
 
@@ -243,22 +244,13 @@ impl<D: BlockData> Block<D> for Produced<D> {
   /// to detect discrepancies between blocks and to avoid having
   /// to verify the correctness of the block hash.
   fn hash(&self) -> Result<Multihash, StdIoError> {
-    // note: this could be optimized into zero-copy
-    let mut buffer = Vec::new();
-    buffer.append(&mut self.parent()?.to_bytes());
-    buffer.append(&mut self.height().to_le_bytes().to_vec());
-
-    let mut s = FlexbufferSerializer::new();
-    self
-      .data
-      .serialize(&mut s)
-      .map_err(|e| std::io::Error::new(ErrorKind::InvalidInput, e))?;
-    buffer.append(&mut s.take_buffer());
-    self
-      .votes()
-      .serialize(&mut s)
-      .map_err(|e| std::io::Error::new(ErrorKind::InvalidInput, e))?;
-    buffer.append(&mut s.take_buffer());
+    let buffer = Self::hash_bytes(
+      &self.signature.0,
+      &self.height,
+      &self.parent,
+      &self.data,
+      &self.votes,
+    )?;
 
     // all hashes in a given chain are always produced
     // using the same hashing algorithm that was define
@@ -328,11 +320,8 @@ impl<D: BlockData> Block<D> for Produced<D> {
   /// This serialization must be stable as it is
   /// used for calculating hashes.
   fn to_bytes(&self) -> Result<Vec<u8>, std::io::Error> {
-    let mut s = FlexbufferSerializer::new();
-    self
-      .serialize(&mut s)
-      .map_err(|e| std::io::Error::new(ErrorKind::InvalidInput, e))?;
-    Ok(s.take_buffer())
+    bincode::serialize(&self)
+      .map_err(|e| std::io::Error::new(ErrorKind::InvalidData, e))
   }
 }
 
@@ -344,19 +333,8 @@ impl<D: BlockData> Produced<D> {
     data: D,
     votes: Vec<Vote>,
   ) -> Result<Self, std::io::Error> {
-    let mut buffer = Vec::new();
-    buffer.append(&mut parent.to_bytes());
-    buffer.append(&mut height.to_le_bytes().to_vec());
-    let mut s = FlexbufferSerializer::new();
-    data
-      .serialize(&mut s)
-      .map_err(|e| std::io::Error::new(ErrorKind::InvalidInput, e))?;
-    buffer.append(&mut s.take_buffer());
-
-    votes
-      .serialize(&mut s)
-      .map_err(|e| std::io::Error::new(ErrorKind::InvalidInput, e))?;
-    buffer.append(&mut s.take_buffer());
+    let buffer =
+      Self::hash_bytes(&keypair.public(), &height, &parent, &data, &votes)?;
     let hash = multihash::Code::try_from(parent.code())
       .map_err(|e| std::io::Error::new(ErrorKind::InvalidInput, e))?
       .digest(&buffer);
@@ -382,6 +360,29 @@ impl<D: BlockData> Produced<D> {
       }
     }
     false
+  }
+
+  /// Those are the bytes used to calculate block hash
+  fn hash_bytes(
+    validator: &Pubkey,
+    height: &u64,
+    parent: &Multihash,
+    data: &D,
+    votes: &[Vote],
+  ) -> Result<Vec<u8>, std::io::Error> {
+    let mut buffer = Vec::new();
+    buffer.append(&mut parent.to_bytes());
+    buffer.append(&mut height.to_le_bytes().to_vec());
+    buffer.append(
+      &mut bincode::serialize(data)
+        .map_err(|e| std::io::Error::new(ErrorKind::InvalidData, e))?,
+    );
+    buffer.append(
+      &mut bincode::serialize(votes)
+        .map_err(|e| std::io::Error::new(ErrorKind::InvalidData, e))?,
+    );
+    buffer.append(&mut validator.to_vec());
+    Ok(buffer)
   }
 }
 

@@ -1,6 +1,6 @@
 use super::validator::Validator;
 use chrono::{DateTime, Utc};
-use futures::Stream;
+use futures_lite::Stream;
 use rand::{
   distributions::{WeightedError, WeightedIndex},
   prelude::Distribution,

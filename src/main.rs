@@ -16,7 +16,7 @@ use consensus::{
   schedule::{ValidatorSchedule, ValidatorScheduleStream},
   vote::VoteProducer,
 };
-use futures::StreamExt;
+use futures_lite::StreamExt;
 use network::Network;
 use tracing::{info, Level};
 
@@ -92,30 +92,28 @@ async fn main() -> anyhow::Result<()> {
   // validator runloop
   loop {
     tokio::select! {
-      Some(event) = network.next() => {
-        info!("network event: {event:?}");
-        match event {
-          NetworkEvent::BlockReceived(block) => chain.append(block),
-          NetworkEvent::VoteReceived(vote) => chain.vote(vote),
+      Some(event) = network.driver().next() => {
+        if let Some(event) = network.relevant_event(event) {
+          match event {
+            NetworkEvent::BlockReceived(block) => chain.append(block),
+            NetworkEvent::VoteReceived(vote) => chain.vote(vote),
+          }
         }
       },
       Some(block) = producer.next() => {
+        chain.append(block.clone());
         network.gossip_block(&block)?;
-        chain.append(block);
       }
       Some(vote) = voter.next() => {
+        chain.vote(vote.clone());
         network.gossip_vote(&vote)?;
-        chain.vote(vote);
       }
       Some((slot, validator)) = schedule.next() => {
         if validator.pubkey == me {
-          info!("It's my turn on slot {slot}: {validator:?}");
           producer.produce(slot, match chain.head() {
-            Some(b) => b,
+            Some(ref b) => b,
             None => chain.genesis(),
           });
-        } else {
-          info!("I think that slot {slot} is for: {validator:?}");
         }
       }
     }
