@@ -1,7 +1,7 @@
 use super::{block::BlockData, chain::Chain, ToBase58String};
 use crate::keys::{Keypair, Pubkey};
 use ed25519_dalek::{PublicKey, Signature, Signer, Verifier};
-use futures_lite::Stream;
+use futures::Stream;
 use multihash::Multihash;
 use serde::{Deserialize, Serialize};
 use std::{

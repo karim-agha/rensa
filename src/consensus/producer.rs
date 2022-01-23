@@ -1,6 +1,6 @@
 use super::block;
-use crate::keys::Keypair;
-use futures_lite::Stream;
+use crate::{consensus::ToBase58String, keys::Keypair};
+use futures::Stream;
 use multihash::{Sha3_256, StatefulHasher};
 use std::{
   collections::VecDeque,
@@ -29,7 +29,7 @@ impl BlockProducer {
 
     info!(
       "producing block at slot {slot} on top of {}",
-      bs58::encode(prevhash.to_bytes()).into_string()
+      prevhash.to_b58()
     );
 
     match bincode::serialize(prev.data()) {

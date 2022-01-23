@@ -5,6 +5,7 @@ use crate::{
   },
   keys::{Keypair, Pubkey},
 };
+use futures::{Stream, StreamExt};
 use libp2p::{
   core::{muxing::StreamMuxerBox, transport::Boxed, upgrade::Version},
   dns::{DnsConfig, ResolverConfig, ResolverOpts},
@@ -15,10 +16,14 @@ use libp2p::{
   yamux::YamuxConfig,
   Multiaddr, PeerId, Swarm, Transport,
 };
-use libp2p_episub::{
-  Config, Episub, EpisubEvent, EpisubHandlerError, PeerAuthorizer,
+use libp2p_episub::{Config, Episub, EpisubEvent, PeerAuthorizer};
+use std::{
+  collections::HashSet,
+  io::ErrorKind,
+  marker::PhantomData,
+  pin::Pin,
+  task::{Context, Poll},
 };
-use std::{collections::HashSet, io::ErrorKind, marker::PhantomData};
 use tracing::{debug, error, warn};
 
 type BoxedTransport = Boxed<(PeerId, StreamMuxerBox)>;
@@ -160,29 +165,34 @@ impl<D: BlockData> Network<D> {
       .publish(&format!("/{}/block", self.chainid), block.to_bytes()?)
       .map_err(|e| std::io::Error::new(ErrorKind::InvalidInput, e))
   }
+}
 
-  pub fn driver(&mut self) -> &mut Swarm<Episub> {
-    &mut self.swarm
-  }
+impl<D: BlockData> Unpin for Network<D> {}
+impl<D: BlockData> Stream for Network<D> {
+  type Item = NetworkEvent<D>;
 
-  pub fn relevant_event(
-    &self,
-    event: SwarmEvent<EpisubEvent, EpisubHandlerError>,
-  ) -> Option<NetworkEvent<D>> {
-    if let SwarmEvent::Behaviour(EpisubEvent::Message {
-      topic, payload, ..
-    }) = event
+  fn poll_next(
+    mut self: Pin<&mut Self>,
+    cx: &mut Context<'_>,
+  ) -> Poll<Option<Self::Item>> {
+    if let Poll::Ready(Some(SwarmEvent::Behaviour(EpisubEvent::Message {
+      topic,
+      payload,
+      ..
+    }))) = self.swarm.poll_next_unpin(cx)
     {
       if topic == format!("/{}/vote", self.chainid) {
         match bincode::deserialize(&payload) {
-          Ok(vote) => return Some(NetworkEvent::VoteReceived(vote)),
+          Ok(vote) => {
+            return Poll::Ready(Some(NetworkEvent::VoteReceived(vote)))
+          }
           Err(e) => error!("Failed to deserialize vote: {e}"),
         }
       } else if topic == format!("/{}/block", self.chainid) {
         match bincode::deserialize(&payload) {
           Ok(block) => {
             debug!("received block {block} through gossip");
-            return Some(NetworkEvent::BlockReceived(block));
+            return Poll::Ready(Some(NetworkEvent::BlockReceived(block)));
           }
           Err(e) => error!("Failed to deserialize block: {e}"),
         }
@@ -190,6 +200,7 @@ impl<D: BlockData> Network<D> {
         warn!("something else on the network!");
       }
     }
-    None
+
+    Poll::Pending
   }
 }

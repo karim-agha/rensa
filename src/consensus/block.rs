@@ -1,4 +1,4 @@
-use super::{validator::Validator, vote::Vote};
+use super::{validator::Validator, vote::Vote, ToBase58String};
 use crate::keys::{Keypair, Pubkey};
 use chrono::{DateTime, Utc};
 use ed25519_dalek::{PublicKey, Signature, Signer, Verifier};
@@ -163,18 +163,12 @@ pub struct Produced<D: BlockData> {
 impl<D: BlockData> Debug for Produced<D> {
   fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
     f.debug_struct("Produced")
-      .field(
-        "parent",
-        &bs58::encode(self.parent.to_bytes()).into_string(),
-      )
+      .field("parent", &self.parent.to_b58())
       .field("height", &self.height)
       .field("signature", &self.signature)
       .field("data", &self.data)
       .field("votes", &self.votes)
-      .field(
-        "hash",
-        &bs58::encode(self.hash().unwrap().to_bytes()).into_string(),
-      )
+      .field("hash", &self.hash().unwrap().to_b58())
       .finish()
   }
 }
@@ -389,24 +383,14 @@ impl<D: BlockData> Produced<D> {
 impl<D: BlockData> std::fmt::Display for Produced<D> {
   fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
     let hash = self.hash().map_err(|_| std::fmt::Error)?;
-    write!(
-      f,
-      "[{} @ {}]",
-      bs58::encode(hash.to_bytes()).into_string(),
-      self.height()
-    )
+    write!(f, "[{} @ {}]", hash.to_b58(), self.height())
   }
 }
 
 impl<D: BlockData> std::fmt::Display for Genesis<D> {
   fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
     let hash = self.hash().map_err(|_| std::fmt::Error)?;
-    write!(
-      f,
-      "Genesis([{} @ {}])",
-      bs58::encode(hash.to_bytes()).into_string(),
-      self.height()
-    )
+    write!(f, "Genesis([{} @ {}])", hash.to_b58(), self.height())
   }
 }
 

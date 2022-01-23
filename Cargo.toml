@@ -13,7 +13,7 @@ categories = ["blockchain", "cryptocurrency"]
 
 [dependencies]
 anyhow = "1.0"
-futures-lite = "1.12"
+futures = "0.3"
 bs58 = "0.4"
 rand = "0.8"
 bincode = { version = "1.3.3" }

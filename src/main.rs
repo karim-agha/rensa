@@ -19,7 +19,7 @@ use consensus::{
   schedule::{ValidatorSchedule, ValidatorScheduleStream},
   vote::VoteProducer,
 };
-use futures_lite::StreamExt;
+use futures::StreamExt;
 use network::Network;
 use tracing::{info, Level};
 
@@ -92,12 +92,10 @@ async fn main() -> anyhow::Result<()> {
   // validator runloop
   loop {
     tokio::select! {
-      Some(event) = network.driver().next() => {
-        if let Some(event) = network.relevant_event(event) {
-          match event {
-            NetworkEvent::BlockReceived(block) => chain.include(block),
-            NetworkEvent::VoteReceived(vote) => chain.vote(vote),
-          }
+      Some(event) = network.next() => {
+        match event {
+          NetworkEvent::BlockReceived(block) => chain.include(block),
+          NetworkEvent::VoteReceived(vote) => chain.vote(vote),
         }
       },
       Some(block) = producer.next() => {
