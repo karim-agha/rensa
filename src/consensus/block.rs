@@ -386,6 +386,30 @@ impl<D: BlockData> Produced<D> {
   }
 }
 
+impl<D: BlockData> std::fmt::Display for Produced<D> {
+  fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    let hash = self.hash().map_err(|_| std::fmt::Error)?;
+    write!(
+      f,
+      "[{} @ {}]",
+      bs58::encode(hash.to_bytes()).into_string(),
+      self.height()
+    )
+  }
+}
+
+impl<D: BlockData> std::fmt::Display for Genesis<D> {
+  fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    let hash = self.hash().map_err(|_| std::fmt::Error)?;
+    write!(
+      f,
+      "Genesis([{} @ {}])",
+      bs58::encode(hash.to_bytes()).into_string(),
+      self.height()
+    )
+  }
+}
+
 mod multihash_serde {
   use multihash::Code as MultihashCode;
   use serde::{

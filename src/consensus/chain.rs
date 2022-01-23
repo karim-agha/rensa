@@ -107,19 +107,21 @@ impl<'g, D: BlockData> Chain<'g, D> {
   ///
   /// This method will validate signatures on the block and attempt
   /// to insert it into the volatile state of the chain.
-  pub fn append(&mut self, block: block::Produced<D>) {
+  pub fn include(&mut self, block: block::Produced<D>) {
     if let Some(stake) = self.stakes.get(&block.signature.0) {
       if block.verify_signature() {
-        info!("ingesting block {block:?}");
-        if let Err(e) = self.volatile.append(block, *stake) {
-          warn!("block rejected: {e}");
+        if block.hash().is_ok() && block.parent().is_ok() {
+          info!("ingesting block {block}",);
+          self.volatile.include(block, *stake);
+        } else {
+          warn!("rejecting block {block}. Unreadable hashes");
         }
       } else {
-        warn!("rejecting block {block:?}: signature verification failed.");
+        warn!("signature verification failed for block {block}.");
       }
     } else {
       warn!(
-        "Rejecting block from non-staking proposer {}",
+        "Rejecting block {block} from non-staking proposer {}",
         block.signature.0
       );
     }
@@ -143,9 +145,7 @@ impl<'g, D: BlockData> Chain<'g, D> {
       return;
     }
 
-    if let Err(e) = self.volatile.vote(vote, stake) {
-      warn!("vote rejected: {e}");
-    }
+    self.volatile.vote(vote, stake);
   }
 }
 
@@ -164,7 +164,7 @@ mod test {
   use std::time::Duration;
 
   #[test]
-  fn append_block() {
+  fn append_block_smoke() {
     let secret = SecretKey::from_bytes(&[
       157, 097, 177, 157, 239, 253, 090, 096, 186, 132, 074, 244, 146, 236,
       044, 196, 068, 073, 197, 105, 123, 050, 105, 025, 112, 059, 172, 003,
@@ -202,7 +202,7 @@ mod test {
 
     let hash = block.hash().unwrap();
 
-    chain.append(block);
+    chain.include(block);
     assert!(chain.head().is_some());
     assert_eq!(hash, chain.head().unwrap().hash().unwrap());
 
@@ -216,7 +216,72 @@ mod test {
     .unwrap();
 
     let hash2 = block2.hash().unwrap();
-    chain.append(block2);
+    chain.include(block2);
     assert_eq!(hash2, chain.head().unwrap().hash().unwrap());
+  }
+
+  #[test]
+  fn append_blocks_out_of_order() {
+    let secret = SecretKey::from_bytes(&[
+      157, 097, 177, 157, 239, 253, 090, 096, 186, 132, 074, 244, 146, 236,
+      044, 196, 068, 073, 197, 105, 123, 050, 105, 025, 112, 059, 172, 003,
+      028, 174, 127, 096,
+    ])
+    .unwrap();
+
+    let public: PublicKey = (&secret).into();
+    let keypair: Keypair = ed25519_dalek::Keypair { secret, public }.into();
+
+    let genesis = Genesis {
+      chain_id: "1".to_owned(),
+      data: "test".to_owned(),
+      epoch_slots: 32,
+      genesis_time: Utc::now(),
+      hasher: multihash::Code::Sha3_256,
+      slot_interval: Duration::from_secs(2),
+      validators: vec![Validator {
+        pubkey: keypair.public(),
+        stake: 200000,
+      }],
+    };
+
+    let mut chain = Chain::new(&genesis);
+    let block = block::Produced::new(
+      &keypair,
+      1,
+      genesis.hash().unwrap(),
+      "two".to_string(),
+      vec![],
+    )
+    .unwrap();
+    let hash = block.hash().unwrap();
+
+    // no we should have only genesis
+    assert!(chain.head().is_none());
+
+    // block should be the head
+    chain.include(block);
+    assert!(chain.head().is_some());
+    assert_eq!(hash, chain.head().unwrap().hash().unwrap());
+
+    let block2 =
+      block::Produced::new(&keypair, 2, hash, "three".to_string(), vec![])
+        .unwrap();
+    let hash2 = block2.hash().unwrap();
+
+    let block3 =
+      block::Produced::new(&keypair, 3, hash2, "four".to_string(), vec![])
+        .unwrap();
+    let hash3 = block3.hash().unwrap();
+
+    // out of order insertion, the head should not change
+    // after block3, instead it should be stored as an orphan
+    chain.include(block3);
+    assert_eq!(hash, chain.head().unwrap().hash().unwrap());
+
+    // include the missing parent, now the chain should match
+    // it with the orphan and block3 shold be the new head
+    chain.include(block2);
+    assert_eq!(hash3, chain.head().unwrap().hash().unwrap());
   }
 }

@@ -1,12 +1,17 @@
 use super::{
   block::{self, Block, BlockData},
   vote::Vote,
+  ToBase58String,
 };
 use crate::keys::Pubkey;
 use multihash::Multihash;
-use std::{cell::RefCell, cmp::Ordering, collections::HashSet, rc::Rc};
-use thiserror::Error;
-use tracing::warn;
+use std::{
+  cell::RefCell,
+  cmp::Ordering,
+  collections::{hash_map::Entry, HashMap, HashSet},
+  rc::Rc,
+};
+use tracing::{debug, info, warn};
 
 /// Represents a single block in the volatile blockchain state
 ///
@@ -64,20 +69,17 @@ impl<D: BlockData> TreeNode<D> {
   /// SAFETY: This struct and its methods are internal to this module
   /// and the node pointed to by the returned poineter is never reclaimed
   /// while reading the value retuned.
-  pub unsafe fn get_mut(
-    &mut self,
-    hash: &Multihash,
-  ) -> Result<Option<*mut Self>, std::io::Error> {
-    if self.value.block.hash()? == *hash {
-      Ok(Some(self as *mut Self))
+  pub unsafe fn get_mut(&mut self, hash: &Multihash) -> Option<*mut Self> {
+    if self.value.block.hash().expect("previously veriefied") == *hash {
+      Some(self as *mut Self)
     } else {
       for child in self.children.iter_mut() {
         let mut child = child.borrow_mut();
-        if let Some(b) = child.get_mut(hash)? {
-          return Ok(Some(b));
+        if let Some(b) = child.get_mut(hash) {
+          return Some(b);
         }
       }
-      Ok(None)
+      None
     }
   }
 
@@ -124,17 +126,13 @@ impl<D: BlockData> TreeNode<D> {
   }
 
   /// Adds an immediate child to this forktree node.
-  pub fn add_child(
-    &mut self,
-    block: VolatileBlock<D>,
-  ) -> Result<(), std::io::Error> {
-    assert!(block.block.parent()? == self.value.block.hash()?);
+  pub fn add_child(&mut self, block: VolatileBlock<D>) {
+    assert!(block.block.parent().unwrap() == self.value.block.hash().unwrap());
 
-    let blockhash = block.block.hash()?;
+    let blockhash = block.block.hash().unwrap();
     for child in self.children.iter() {
-      if child.borrow().value.block.hash()? == blockhash {
-        // block already a child of this block
-        return Ok(());
+      if child.borrow().value.block.hash().unwrap() == blockhash {
+        return;
       }
     }
 
@@ -146,8 +144,6 @@ impl<D: BlockData> TreeNode<D> {
     }));
 
     self.children.push(block);
-
-    Ok(())
   }
 
   /// Applies votes to a block, and all its ancestors until the
@@ -190,7 +186,27 @@ struct VolatileBlock<D: BlockData> {
 /// fork choice rules and voting.
 #[derive(Debug)]
 pub struct VolatileState<D: BlockData> {
+  /// Hash of the last justified block.
+  /// Only blocks descending from this root are
+  /// subject to the fork choice rules.
   root: Multihash,
+
+  /// Blocks that were received but their parent
+  /// block was not included in the forrest (yet).
+  ///
+  /// We keep those blocs in this dictionary, where
+  /// the key is the hash of their parent.
+  ///
+  /// If such parent arrives, then those orphas are
+  /// removed from this collection and attached as
+  /// children of that parent.
+  ///
+  /// Otherwise, incoming blocks that have a parent inside
+  /// the orphans collection are attached to the orphan tree.
+  orphans: HashMap<Multihash, Vec<VolatileBlock<D>>>,
+
+  /// A list of blockchain that have the justified block
+  /// as their parent.
   forrest: Vec<Rc<RefCell<TreeNode<D>>>>,
 }
 
@@ -198,6 +214,7 @@ impl<D: BlockData> VolatileState<D> {
   pub fn new(root: Multihash) -> Self {
     Self {
       root,
+      orphans: HashMap::new(),
       forrest: vec![],
     }
   }
@@ -228,15 +245,11 @@ impl<D: BlockData> VolatileState<D> {
     Some(unsafe { &*top_tree.borrow().head() }.clone())
   }
 
-  /// Inserts a block into the current unfinalized fork tree.
+  /// Includes a newly received block into the volatile state
   ///
-  /// The stake parameter is the stake of the block proposer. We're
-  /// treating block proposal as an implicit vote on it.
-  pub fn append(
-    &mut self,
-    block: block::Produced<D>,
-    stake: u64,
-  ) -> Result<(), VolatileStateError> {
+  /// The block might end up as part of one of the block trees
+  /// in the fork tree or as an orphan if its parent is not found.
+  pub fn include(&mut self, block: block::Produced<D>, stake: u64) {
     let voter = block.signature.0.clone();
     let block = VolatileBlock {
       block,
@@ -244,72 +257,118 @@ impl<D: BlockData> VolatileState<D> {
       voters: [voter].into_iter().collect(),
     };
 
-    let parent = block.block.parent()?;
-
-    // if we're the first block in the volatile state
-    if self.forrest.is_empty() {
-      if parent == self.root {
-        self
-          .forrest
-          .push(Rc::new(RefCell::new(TreeNode::new(block))));
-        Ok(())
-      } else {
-        warn!(
-          "rejecting block. cannot find parent {}",
-          bs58::encode(parent.to_bytes()).into_string()
-        );
-        Err(VolatileStateError::ParentBlockNotFound)
-      }
+    let hash = block.block.hash().unwrap();
+    if let Some(block) = self.append_or_return(block) {
+      // the block was not accepted because its parent
+      // was not found. store as orphan.
+      // Maybe later we will have a block that turns
+      // out to be its parent but is delayed due to
+      // network or other reasons.
+      self.add_orphan(block);
     } else {
-      // we already have some unfinalized blocks
-      for root in self.forrest.iter_mut() {
-        if let Some(b) = unsafe { root.borrow_mut().get_mut(&parent)? } {
-          let b = unsafe { &mut *b as &mut TreeNode<D> };
-          b.add_child(block)?;
-          return Ok(());
-        }
-      }
-      Err(VolatileStateError::ParentBlockNotFound)
+      info!("Block {} included successfully.", hash.to_b58());
+      // check if the successfully included block has any
+      // orphan blocks that are its descendants
+      self.match_orphans(hash);
     }
+  }
+
+  /// Tries to inserts a block into the current unfinalized fork tree.
+  ///
+  /// Returns None if block was successfully appended and it was inserted
+  /// as a descendant of an existing block. Otherwise this method will move
+  /// back the the volatile block object to the caller.
+  ///
+  /// The VolatileBlock type is not [`Clone`] or [`Copy`] intentionally,
+  /// because there can exist only one valid instance of this type at any
+  /// time and this is inforced by the type system.
+  fn append_or_return(
+    &mut self,
+    block: VolatileBlock<D>,
+  ) -> Option<VolatileBlock<D>> {
+    let parent_hash = block.block.parent().expect("already verified");
+
+    // is this block building right off the last finalized block?
+    if parent_hash == self.root {
+      let node = Rc::new(RefCell::new(TreeNode::new(block)));
+      self.forrest.push(node);
+      return None;
+    }
+
+    // try to append this block to one of the trees in the volatile
+    // state by looking up its parent in every try, then inserting
+    // it as a child of the found parent.
+    for root in self.forrest.iter_mut() {
+      if let Some(b) = unsafe { root.borrow_mut().get_mut(&parent_hash) } {
+        let b = unsafe { &mut *b as &mut TreeNode<D> };
+        b.add_child(block);
+        return None;
+      }
+    }
+
+    Some(block)
   }
 
   /// Adds a vote for a given target block in the history.
   ///
   /// The justification must be the last finalized block,
   /// and the target block must be one of its descendants.
-  pub fn vote(
-    &mut self,
-    vote: Vote,
-    stake: u64,
-  ) -> Result<(), VolatileStateError> {
+  pub fn vote(&mut self, vote: Vote, stake: u64) {
     if vote.justification != self.root {
       warn!("Not justified by the last finalized block: {vote:?}");
-      return Err(VolatileStateError::InvalidJustification);
+      return;
     }
 
     for root in self.forrest.iter_mut() {
-      if let Some(b) = unsafe { root.borrow_mut().get_mut(&vote.target)? } {
+      if let Some(b) = unsafe { root.borrow_mut().get_mut(&vote.target) } {
         let b = unsafe { &mut *b as &mut TreeNode<D> };
         b.add_votes(stake, vote.validator);
-        return Ok(());
+        return;
       }
     }
-
-    Err(VolatileStateError::VoteTargetNotFound)
   }
-}
 
-#[derive(Debug, Error)]
-pub enum VolatileStateError {
-  #[error("Block's parent hash is invalid: {0}")]
-  InvalidParentBockHash(#[from] std::io::Error),
+  /// Orphan blocks are blocks that were received by the network
+  /// gossip but we don't have their parent block, so we can't
+  /// attach them to any current block in the volatile state.
+  ///
+  /// This happens more often with shorter block times (under 2 sec)
+  /// as later blocks might arrive before earlier blocks.
+  ///
+  /// We store those blocks in a special collection, indexed
+  /// by their parent block. Whenever a block is correctly
+  /// appended to the chain, we also look for any orphans that
+  /// could be its children and append them to the chain.
+  fn add_orphan(&mut self, block: VolatileBlock<D>) {
+    let parent = block.block.parent;
+    warn!(
+      "parent block {} for {} not found (or has not arrived yet)",
+      parent.to_b58(),
+      block.block
+    );
+    match self.orphans.entry(parent) {
+      Entry::Occupied(mut orphans) => {
+        orphans.get_mut().push(block);
+      }
+      Entry::Vacant(v) => {
+        v.insert(vec![block]);
+      }
+    };
+  }
 
-  #[error("Parent block not found")]
-  ParentBlockNotFound,
-
-  #[error("Invalid justification for vote")]
-  InvalidJustification,
-
-  #[error("The block hash being voted on is not found")]
-  VoteTargetNotFound,
+  /// For a given block hash, checks if we are aware of any
+  /// orphan blocks that found its parent and if so, inserts
+  /// them recursively into the forktree.
+  fn match_orphans(&mut self, parent_hash: Multihash) {
+    if let Some(orphans) = self.orphans.remove(&parent_hash) {
+      debug!(
+        "found {} orphan(s) of block {}",
+        orphans.len(),
+        parent_hash.to_b58()
+      );
+      for orphan in orphans {
+        self.include(orphan.block, orphan.votes);
+      }
+    }
+  }
 }

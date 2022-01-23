@@ -1,4 +1,4 @@
-use super::{block::BlockData, chain::Chain};
+use super::{block::BlockData, chain::Chain, ToBase58String};
 use crate::keys::{Keypair, Pubkey};
 use ed25519_dalek::{PublicKey, Signature, Signer, Verifier};
 use futures_lite::Stream;
@@ -66,18 +66,9 @@ impl std::fmt::Debug for Vote {
   fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
     f.debug_struct("Vote")
       .field("validator", &self.validator)
-      .field(
-        "target",
-        &bs58::encode(self.target.to_bytes()).into_string(),
-      )
-      .field(
-        "justification",
-        &bs58::encode(self.justification.to_bytes()).into_string(),
-      )
-      .field(
-        "signature",
-        &bs58::encode(self.signature.to_bytes()).into_string(),
-      )
+      .field("target", &self.target.to_b58())
+      .field("justification", &self.justification.to_b58())
+      .field("signature", &self.signature.to_b58())
       .finish()
   }
 }

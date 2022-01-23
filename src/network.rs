@@ -19,7 +19,7 @@ use libp2p_episub::{
   Config, Episub, EpisubEvent, EpisubHandlerError, PeerAuthorizer,
 };
 use std::{collections::HashSet, io::ErrorKind, marker::PhantomData};
-use tracing::{error, warn};
+use tracing::{debug, error, warn};
 
 type BoxedTransport = Boxed<(PeerId, StreamMuxerBox)>;
 
@@ -106,6 +106,11 @@ impl<D: BlockData> Network<D> {
       create_transport(&keypair).await?,
       Episub::new(Config {
         authorizer,
+        // 2 epochs are needed until block finalization
+        history_window: genesis.slot_interval
+          * (genesis.epoch_slots as u32 * 2),
+        // keep informing all peers about all messages received for the last epoch
+        lazy_push_interval: genesis.slot_interval * genesis.epoch_slots as u32,
         network_size: genesis.validators.len(),
         ..Config::default()
       }),
@@ -176,6 +181,7 @@ impl<D: BlockData> Network<D> {
       } else if topic == format!("/{}/block", self.chainid) {
         match bincode::deserialize(&payload) {
           Ok(block) => {
+            debug!("received block {block} through gossip");
             return Some(NetworkEvent::BlockReceived(block));
           }
           Err(e) => error!("Failed to deserialize block: {e}"),

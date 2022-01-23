@@ -7,7 +7,10 @@ pub mod rpc;
 pub mod storage;
 pub mod transaction;
 
-use crate::{consensus::block::Block, network::NetworkEvent};
+use crate::{
+  consensus::{block::Block, ToBase58String},
+  network::NetworkEvent,
+};
 use clap::StructOpt;
 use cli::CliOpts;
 use consensus::{
@@ -33,10 +36,7 @@ fn print_essentials(opts: &CliOpts) -> anyhow::Result<()> {
   let genesis = opts.genesis()?;
 
   info!("Genesis: {:#?}", genesis);
-  info!(
-    "Genesis hash: {}",
-    bs58::encode(&genesis.hash()?.to_bytes()).into_string()
-  );
+  info!("Genesis hash: {}", genesis.hash()?.to_b58());
 
   Ok(())
 }
@@ -95,13 +95,13 @@ async fn main() -> anyhow::Result<()> {
       Some(event) = network.driver().next() => {
         if let Some(event) = network.relevant_event(event) {
           match event {
-            NetworkEvent::BlockReceived(block) => chain.append(block),
+            NetworkEvent::BlockReceived(block) => chain.include(block),
             NetworkEvent::VoteReceived(vote) => chain.vote(vote),
           }
         }
       },
       Some(block) = producer.next() => {
-        chain.append(block.clone());
+        chain.include(block.clone());
         network.gossip_block(&block)?;
       }
       Some(vote) = voter.next() => {
