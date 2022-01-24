@@ -4,7 +4,7 @@ use multihash::Multihash;
 use std::collections::HashMap;
 
 pub struct StateDiff {
-  data: HashMap<Pubkey, Account>,
+  pub(super) data: HashMap<Pubkey, Account>,
 }
 
 impl Default for StateDiff {
@@ -67,30 +67,30 @@ mod test {
       .parse()
       .unwrap();
 
-    assert!(s1.set(key1.clone(), Account { data: vec![1] }).is_ok());
-    assert!(s2.set(key2.clone(), Account { data: vec![2] }).is_ok());
-    assert!(s3.set(key1.clone(), Account { data: vec![3] }).is_ok());
+    assert!(s1.set(key1.clone(), Account::test_new(1)).is_ok());
+    assert!(s2.set(key2.clone(), Account::test_new(2)).is_ok());
+    assert!(s3.set(key1.clone(), Account::test_new(3)).is_ok());
 
     assert!(s1.get(&key3).is_none());
     assert!(s1.get(&key2).is_none());
-    assert_eq!(s1.get(&key1), Some(&Account { data: vec![1] }));
+    assert_eq!(s1.get(&key1), Some(&Account::test_new(1)));
 
     assert!(s2.get(&key1).is_none());
     assert!(s2.get(&key3).is_none());
-    assert_eq!(s2.get(&key2), Some(&Account { data: vec![2] }));
+    assert_eq!(s2.get(&key2), Some(&Account::test_new(2)));
 
     assert!(s3.get(&key2).is_none());
     assert!(s3.get(&key3).is_none());
-    assert_eq!(s3.get(&key1), Some(&Account { data: vec![3] }));
+    assert_eq!(s3.get(&key1), Some(&Account::test_new(3)));
 
     let m12 = s1.merge(s2);
     assert!(m12.get(&key3).is_none());
-    assert_eq!(m12.get(&key1), Some(&Account { data: vec![1] }));
-    assert_eq!(m12.get(&key2), Some(&Account { data: vec![2] }));
+    assert_eq!(m12.get(&key1), Some(&Account::test_new(1)));
+    assert_eq!(m12.get(&key2), Some(&Account::test_new(2)));
 
     let m123 = m12.merge(s3);
     assert!(m123.get(&key3).is_none());
-    assert_eq!(m123.get(&key2), Some(&Account { data: vec![2] }));
-    assert_eq!(m123.get(&key1), Some(&Account { data: vec![3] })); // must override
+    assert_eq!(m123.get(&key2), Some(&Account::test_new(2)));
+    assert_eq!(m123.get(&key1), Some(&Account::test_new(3))); // must override
   }
 }

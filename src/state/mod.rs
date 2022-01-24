@@ -44,7 +44,7 @@ pub trait State {
   fn hash(&self) -> Multihash;
 }
 
-/// Represents a view of two overlayed states.
+/// Represents a view of two overlayed states without modifying any of them.
 ///
 /// The entire state of the chain can be represented as a chain
 /// of combined partial states produced by all transactions or blocks
@@ -106,43 +106,43 @@ mod test {
       .parse()
       .unwrap();
 
-    assert!(s1.set(key1.clone(), Account { data: vec![1] }).is_ok());
-    assert!(s2.set(key2.clone(), Account { data: vec![2] }).is_ok());
-    assert!(s3.set(key1.clone(), Account { data: vec![3] }).is_ok());
+    assert!(s1.set(key1.clone(), Account::test_new(1)).is_ok());
+    assert!(s2.set(key2.clone(), Account::test_new(2)).is_ok());
+    assert!(s3.set(key1.clone(), Account::test_new(3)).is_ok());
 
     assert!(s1.get(&key3).is_none());
     assert!(s1.get(&key2).is_none());
-    assert_eq!(s1.get(&key1), Some(&Account { data: vec![1] }));
+    assert_eq!(s1.get(&key1), Some(&Account::test_new(1)));
 
     assert!(s2.get(&key1).is_none());
     assert!(s2.get(&key3).is_none());
-    assert_eq!(s2.get(&key2), Some(&Account { data: vec![2] }));
+    assert_eq!(s2.get(&key2), Some(&Account::test_new(2)));
 
     assert!(s3.get(&key2).is_none());
     assert!(s3.get(&key3).is_none());
-    assert_eq!(s3.get(&key1), Some(&Account { data: vec![3] }));
+    assert_eq!(s3.get(&key1), Some(&Account::test_new(3)));
 
     let c12 = Overlayed::new(&s1, &s2);
     assert!(c12.get(&key3).is_none());
-    assert_eq!(c12.get(&key1), Some(&Account { data: vec![1] }));
-    assert_eq!(c12.get(&key2), Some(&Account { data: vec![2] }));
+    assert_eq!(c12.get(&key1), Some(&Account::test_new(1)));
+    assert_eq!(c12.get(&key2), Some(&Account::test_new(2)));
 
     let c31 = Overlayed::new(&s3, &s1);
     assert!(c31.get(&key2).is_none());
     assert!(c31.get(&key3).is_none());
-    assert_eq!(c31.get(&key1), Some(&Account { data: vec![1] }));
+    assert_eq!(c31.get(&key1), Some(&Account::test_new(1)));
 
     let c13 = Overlayed::new(&s1, &s3);
     assert!(c13.get(&key2).is_none());
     assert!(c13.get(&key3).is_none());
-    assert_eq!(c13.get(&key1), Some(&Account { data: vec![3] }));
+    assert_eq!(c13.get(&key1), Some(&Account::test_new(3)));
 
     let c123 = Overlayed::new(&c12, &s3);
     assert!(c123.get(&key3).is_none());
-    assert_eq!(c123.get(&key2), Some(&Account { data: vec![2] }));
-    assert_eq!(c123.get(&key1), Some(&Account { data: vec![3] })); // newer wins
+    assert_eq!(c123.get(&key2), Some(&Account::test_new(2)));
+    assert_eq!(c123.get(&key1), Some(&Account::test_new(3))); // newer wins
 
     let mut c12 = c12; // writes disabled on combined view
-    assert!(c12.set(key3, Account { data: vec![4] }).is_err()); 
+    assert!(c12.set(key3, Account::test_new(4)).is_err());
   }
 }

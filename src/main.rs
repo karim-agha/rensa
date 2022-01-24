@@ -29,7 +29,7 @@ fn print_essentials(opts: &CliOpts) -> anyhow::Result<()> {
     "P2P identity: {}",
     opts.p2p_identity().public().to_peer_id()
   );
-
+  
   let genesis = opts.genesis()?;
 
   info!("Genesis: {:#?}", genesis);
