@@ -122,10 +122,6 @@ impl<D: BlockData> Network<D> {
       id.public().to_peer_id(),
     );
 
-    listenaddrs.for_each(|addr| {
-      swarm.listen_on(addr).unwrap();
-    });
-
     let chainid = genesis.chain_id.clone();
 
     swarm
@@ -135,6 +131,10 @@ impl<D: BlockData> Network<D> {
       .behaviour_mut()
       .subscribe(format!("/{}/block", &chainid));
     swarm.behaviour_mut().subscribe(format!("/{}/tx", &chainid));
+
+    listenaddrs.for_each(|addr| {
+      swarm.listen_on(addr).unwrap();
+    });
 
     Ok(Self {
       swarm,

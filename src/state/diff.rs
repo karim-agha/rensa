@@ -3,17 +3,11 @@ use crate::primitives::{Account, Pubkey};
 use multihash::Multihash;
 use std::collections::HashMap;
 
+#[derive(Debug, Default)]
 pub struct StateDiff {
   pub(super) data: HashMap<Pubkey, Account>,
 }
 
-impl Default for StateDiff {
-  fn default() -> Self {
-    Self {
-      data: HashMap::new(),
-    }
-  }
-}
 
 impl StateDiff {
   pub fn merge(self, newer: StateDiff) -> StateDiff {

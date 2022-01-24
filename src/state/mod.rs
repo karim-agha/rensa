@@ -1,14 +1,16 @@
 mod diff;
+mod executed;
 mod finalized;
 mod isolated;
 mod machine;
 
-use crate::primitives::{Account, Pubkey};
-use multihash::Multihash;
-
 pub use diff::StateDiff;
+pub use finalized::{Finalized, FinalizedState};
 pub use isolated::IsolatedState;
 pub use machine::Machine;
+
+use crate::primitives::{Account, Pubkey};
+use multihash::Multihash;
 use thiserror::Error;
 
 #[derive(Debug, Error)]

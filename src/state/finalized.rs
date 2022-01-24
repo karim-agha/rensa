@@ -1,6 +1,10 @@
 use super::{Result, State, StateDiff, StateError};
-use crate::primitives::{Account, Pubkey};
+use crate::{
+  consensus::block::{self, BlockData},
+  primitives::{Account, Pubkey},
+};
 use multihash::Multihash;
+use std::ops::Deref;
 
 /// Represents state of the blockchain at the last finalized
 /// block. This state is persisted to disk and is not affected
@@ -8,6 +12,7 @@ use multihash::Multihash;
 ///
 /// Data in this state is large (counted in GBs). It gets updated
 /// by applying StateDiffs to it from newly finalized blocks.
+#[derive(Debug)]
 pub struct FinalizedState;
 
 impl FinalizedState {
@@ -36,5 +41,20 @@ impl State for FinalizedState {
   /// or from external IPFS pinning services.
   fn hash(&self) -> Multihash {
     todo!()
+  }
+}
+
+/// Represents a block that has been finalized and is guaranteed
+/// to never be reverted. It contains the global blockchain state.
+#[derive(Debug)]
+pub struct Finalized<D: BlockData> {
+  underlying: block::Produced<D>,
+  _state: FinalizedState,
+}
+
+impl<D: BlockData> Deref for Finalized<D> {
+  type Target = block::Produced<D>;
+  fn deref(&self) -> &Self::Target {
+    &self.underlying
   }
 }

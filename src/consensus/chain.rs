@@ -4,16 +4,40 @@ use super::{
   volatile::VolatileState,
   vote::Vote,
 };
-use crate::primitives::Pubkey;
+use crate::{primitives::Pubkey, state::Finalized};
 use dashmap::DashMap;
 use multihash::Multihash;
 use tracing::{info, warn};
 
 /// Represents the state of the consensus protocol
 pub struct Chain<'g, D: BlockData> {
+  /// The very first block in the chain.
+  ///
+  /// This comes from a configuration file, is always considered
+  /// as finalized and has special fields not present in produced blocks
+  /// that configure the behaviour of the chain.
   genesis: &'g block::Genesis<D>,
+
+  /// This is a dynamic collection of all known validators along
+  /// with the amount of tokens they are staking (and their voting power).
   stakes: DashMap<Pubkey, u64>,
-  finalized: Vec<block::Produced<D>>,
+
+  /// This is the last block that was finalized and we are
+  /// guaranteed that it will never be reverted. The runtime
+  /// and the validator cares only about the state of the system
+  /// at the last block. Archiving historical blocks can be delegated
+  /// to an external interface for explorers and other use cases if
+  /// an archiver is specified.
+  finalized: Option<Finalized<D>>,
+
+  /// This tree represents all chains (forks) that were created
+  /// since the last finalized block. None of those blocks are
+  /// guaranteed to be finalized and each fork operates on a different
+  /// view of the global state specific to the transactions executed
+  /// within its path from the last finalized block.
+  ///
+  /// Those blocks are voted on by validators, once the finalization
+  /// requirements are met, they get finalized.
   volatile: VolatileState<D>,
 }
 
@@ -21,7 +45,7 @@ impl<'g, D: BlockData> Chain<'g, D> {
   pub fn new(genesis: &'g block::Genesis<D>) -> Self {
     Self {
       genesis,
-      finalized: vec![],
+      finalized: None,
       volatile: VolatileState::new(genesis.hash().unwrap()),
       stakes: genesis
         .validators
@@ -49,8 +73,8 @@ impl<'g, D: BlockData> Chain<'g, D> {
   /// blocks, also the last finalized block is the root of the
   /// current fork tree.
   pub fn finalized(&self) -> Multihash {
-    match self.finalized.last() {
-      Some(b) => b
+    match self.finalized {
+      Some(ref b) => b
         .hash()
         .expect("a block with invalid hash would not get finalized"),
       None => self
@@ -76,12 +100,12 @@ impl<'g, D: BlockData> Chain<'g, D> {
   /// This method returns None when the volatile history
   /// is empty and no blocks were finalized so far, which
   /// means that we are still at the genesis block.
-  pub fn head(&self) -> Option<block::Produced<D>> {
+  pub fn head(&self) -> Option<&block::Produced<D>> {
     // no volatile state, either all blocks are finalized
     // or we are still at genesis block.
     match self.volatile.head() {
       Some(head) => Some(head),
-      None => self.finalized.last().cloned(),
+      None => self.finalized.as_ref().map(|b| b as _),
     }
   }
 

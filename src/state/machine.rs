@@ -11,7 +11,8 @@ pub enum MachineError {
 type Result<T> = std::result::Result<T, MachineError>;
 
 /// Represents a state machine that takes as an input a state
-/// and a transaction and outputs a new state.
+/// and a transaction and outputs a new state. This is the API
+/// entry point to the virtual machine that runs contracts.
 pub struct Machine;
 
 impl Machine {

@@ -106,7 +106,7 @@ async fn main() -> anyhow::Result<()> {
       Some((slot, validator)) = schedule.next() => {
         if validator.pubkey == me {
           producer.produce(slot, match chain.head() {
-            Some(ref b) => b,
+            Some(b) => b,
             None => chain.genesis(),
           });
         }

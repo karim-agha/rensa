@@ -218,7 +218,7 @@ impl<D: BlockData> VolatileState<D> {
     }
   }
 
-  pub fn head(&self) -> Option<block::Produced<D>> {
+  pub fn head(&self) -> Option<&block::Produced<D>> {
     if self.forrest.is_empty() {
       return None;
     }
@@ -241,7 +241,7 @@ impl<D: BlockData> VolatileState<D> {
     // then from that tree get the most voted on
     // child block or the one with the most recent
     // slot number of there is a draw in votes.
-    Some(unsafe { &*top_tree.borrow().head() }.clone())
+    Some(unsafe { &*top_tree.borrow().head() })
   }
 
   /// Includes a newly received block into the volatile state
