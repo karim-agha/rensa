@@ -18,13 +18,13 @@ use std::{
 /// Essentially we need to be able to serialize and deserialize this data,
 /// compare it for exact equality and print it in debug logs.
 pub trait BlockData:
-  Eq + Clone + Debug + Serialize + for<'a> Deserialize<'a>
+  Eq + Clone + Debug + Serialize + for<'a> Deserialize<'a> + Send + 'static
 {
 }
 
 /// Blanket implementation for all types that fulfill those requirements
 impl<T> BlockData for T where
-  T: Eq + Clone + Debug + Serialize + for<'a> Deserialize<'a>
+  T: Eq + Clone + Debug + Serialize + for<'a> Deserialize<'a> + Send + 'static
 {
 }
 

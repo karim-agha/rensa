@@ -5,24 +5,21 @@ use crate::{
   },
   primitives::{Keypair, Pubkey},
 };
-use futures::{Stream, StreamExt};
+use futures::StreamExt;
 use libp2p::{
   core::{muxing::StreamMuxerBox, transport::Boxed, upgrade::Version},
   dns::{DnsConfig, ResolverConfig, ResolverOpts},
   identity::{self, ed25519::SecretKey},
   noise,
-  swarm::{DialError, SwarmEvent},
+  swarm::SwarmEvent,
   tcp::TcpConfig,
   yamux::YamuxConfig,
   Multiaddr, PeerId, Swarm, Transport,
 };
 use libp2p_episub::{Config, Episub, EpisubEvent, PeerAuthorizer};
-use std::{
-  collections::HashSet,
-  io::ErrorKind,
-  marker::PhantomData,
-  pin::Pin,
-  task::{Context, Poll},
+use std::collections::HashSet;
+use tokio::sync::mpsc::{
+  error::SendError, unbounded_channel, UnboundedReceiver, UnboundedSender,
 };
 use tracing::{debug, error, warn};
 
@@ -68,11 +65,20 @@ pub enum NetworkEvent<D: BlockData> {
   BlockReceived(block::Produced<D>),
   VoteReceived(Vote),
 }
+// this is a bug in clippy, I filed an issue on GH:
+// https://github.com/rust-lang/rust-clippy/issues/8321
+// remove this when the issue gets closed.
+#[allow(clippy::large_enum_variant)]
+#[derive(Debug, Clone)]
+pub enum NetworkCommand<D: BlockData> {
+  Connect(Multiaddr),
+  GossipBlock(block::Produced<D>),
+  GossipVote(Vote),
+}
 
 pub struct Network<D: BlockData> {
-  swarm: Swarm<Episub>,
-  chainid: String,
-  _marker: PhantomData<D>,
+  netin: UnboundedReceiver<NetworkEvent<D>>,
+  netout: UnboundedSender<NetworkCommand<D>>,
 }
 
 impl<D: BlockData> Network<D> {
@@ -136,71 +142,96 @@ impl<D: BlockData> Network<D> {
       swarm.listen_on(addr).unwrap();
     });
 
+    let (netin_tx, netin_rx) = unbounded_channel();
+    let (netout_tx, mut netout_rx) = unbounded_channel();
+
+    tokio::spawn(async move {
+      loop {
+        tokio::select! {
+          Some(event) = swarm.next() => {
+            if let SwarmEvent::Behaviour(EpisubEvent::Message {
+              topic,
+              payload,
+              ..
+            }) = event
+            {
+              if topic == format!("/{}/vote", chainid) {
+                match bincode::deserialize(&payload) {
+                  Ok(vote) => {
+                    netin_tx.send(NetworkEvent::VoteReceived(vote)).unwrap();
+                  }
+                  Err(e) => error!("Failed to deserialize vote: {e}"),
+                }
+              } else if topic == format!("/{}/block", chainid) {
+                match bincode::deserialize(&payload) {
+                  Ok(block) => {
+                    debug!("received block {block} through gossip");
+                    netin_tx.send(NetworkEvent::BlockReceived(block)).unwrap();
+                  }
+                  Err(e) => error!("Failed to deserialize block: {e}"),
+                }
+              } else {
+                warn!("Received a message on an unexpected topic {topic}");
+              }
+            }
+          },
+          Some(event) = netout_rx.recv() => {
+            match event {
+              NetworkCommand::Connect(addr)=>{
+                if let Err(e) = swarm.dial(addr.clone()) {
+                  error!("Dialing peer {addr} failed: {e}");
+                }
+              }
+              NetworkCommand::GossipBlock(block) => {
+                swarm
+                .behaviour_mut()
+                .publish(
+                  &format!("/{}/block", chainid),
+                  block.to_bytes().expect("Produced malformed block"))
+                .unwrap();
+              },
+              NetworkCommand::GossipVote(vote) => {
+                swarm
+                .behaviour_mut()
+                .publish(
+                  &format!("/{}/vote", chainid),
+                  vote.to_bytes().expect("Produced malformed vote"))
+                .unwrap();
+              }
+            }
+          }
+        }
+      }
+    });
+
     Ok(Self {
-      swarm,
-      chainid,
-      _marker: PhantomData,
+      netin: netin_rx,
+      netout: netout_tx,
     })
   }
 
-  pub fn connect(&mut self, addr: Multiaddr) -> Result<(), DialError> {
-    self.swarm.dial(addr)
+  pub fn connect(
+    &mut self,
+    addr: Multiaddr,
+  ) -> Result<(), SendError<NetworkCommand<D>>> {
+    self.netout.send(NetworkCommand::Connect(addr))
   }
 
-  pub fn gossip_vote(&mut self, vote: &Vote) -> Result<u128, std::io::Error> {
-    self
-      .swarm
-      .behaviour_mut()
-      .publish(&format!("/{}/vote", self.chainid), vote.to_bytes()?)
-      .map_err(|e| std::io::Error::new(ErrorKind::InvalidInput, e))
+  pub fn gossip_vote(
+    &mut self,
+    vote: Vote,
+  ) -> Result<(), SendError<NetworkCommand<D>>> {
+    self.netout.send(NetworkCommand::GossipVote(vote))
   }
 
   pub fn gossip_block(
     &mut self,
-    block: &impl Block<D>,
-  ) -> Result<u128, std::io::Error> {
-    self
-      .swarm
-      .behaviour_mut()
-      .publish(&format!("/{}/block", self.chainid), block.to_bytes()?)
-      .map_err(|e| std::io::Error::new(ErrorKind::InvalidInput, e))
+    block: block::Produced<D>,
+  ) -> Result<(), SendError<NetworkCommand<D>>> {
+    self.netout.send(NetworkCommand::GossipBlock(block))
   }
-}
 
-impl<D: BlockData> Unpin for Network<D> {}
-impl<D: BlockData> Stream for Network<D> {
-  type Item = NetworkEvent<D>;
-
-  fn poll_next(
-    mut self: Pin<&mut Self>,
-    cx: &mut Context<'_>,
-  ) -> Poll<Option<Self::Item>> {
-    if let Poll::Ready(Some(SwarmEvent::Behaviour(EpisubEvent::Message {
-      topic,
-      payload,
-      ..
-    }))) = self.swarm.poll_next_unpin(cx)
-    {
-      if topic == format!("/{}/vote", self.chainid) {
-        match bincode::deserialize(&payload) {
-          Ok(vote) => {
-            return Poll::Ready(Some(NetworkEvent::VoteReceived(vote)))
-          }
-          Err(e) => error!("Failed to deserialize vote: {e}"),
-        }
-      } else if topic == format!("/{}/block", self.chainid) {
-        match bincode::deserialize(&payload) {
-          Ok(block) => {
-            debug!("received block {block} through gossip");
-            return Poll::Ready(Some(NetworkEvent::BlockReceived(block)));
-          }
-          Err(e) => error!("Failed to deserialize block: {e}"),
-        }
-      } else {
-        warn!("something else on the network!");
-      }
-    }
-
-    Poll::Pending
+  pub async fn next(&mut self) -> Option<NetworkEvent<D>> {
+    self.netin.recv().await
   }
 }

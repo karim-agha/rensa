@@ -29,7 +29,7 @@ fn print_essentials(opts: &CliOpts) -> anyhow::Result<()> {
     "P2P identity: {}",
     opts.p2p_identity().public().to_peer_id()
   );
-  
+
   let genesis = opts.genesis()?;
 
   info!("Genesis: {:#?}", genesis);
@@ -63,13 +63,13 @@ async fn main() -> anyhow::Result<()> {
     opts.keypair.clone(),
     opts.listen_multiaddrs().into_iter(),
   )
-  .await?;
+  .await
+  .unwrap();
 
   // connect to bootstrap nodes if specified
-  opts
-    .peers()
-    .into_iter()
-    .for_each(|p| network.connect(p).unwrap());
+  for peer in opts.peers() {
+    network.connect(peer)?;
+  }
 
   let me = opts.keypair.public();
   let seed = genesis.hash()?.digest().try_into()?;
@@ -89,6 +89,14 @@ async fn main() -> anyhow::Result<()> {
   // validator runloop
   loop {
     tokio::select! {
+      Some((slot, validator)) = schedule.next() => {
+        if validator.pubkey == me {
+          producer.produce(slot, match chain.head() {
+            Some(b) => b,
+            None => chain.genesis(),
+          });
+        }
+      }
       Some(event) = network.next() => {
         match event {
           NetworkEvent::BlockReceived(block) => chain.include(block),
@@ -97,19 +105,11 @@ async fn main() -> anyhow::Result<()> {
       },
       Some(block) = producer.next() => {
         chain.include(block.clone());
-        network.gossip_block(&block)?;
+        network.gossip_block(block)?;
       }
       Some(vote) = voter.next() => {
         chain.vote(vote.clone());
-        network.gossip_vote(&vote)?;
-      }
-      Some((slot, validator)) = schedule.next() => {
-        if validator.pubkey == me {
-          producer.produce(slot, match chain.head() {
-            Some(b) => b,
-            None => chain.genesis(),
-          });
-        }
+        network.gossip_vote(vote)?;
       }
     }
   }
