@@ -1,6 +1,6 @@
 use super::{Result, State, StateDiff, StateError};
 use crate::{
-  consensus::block::{self, BlockData},
+  consensus::block::{Block, BlockData},
   primitives::{Account, Pubkey},
 };
 use multihash::Multihash;
@@ -47,13 +47,13 @@ impl State for FinalizedState {
 /// Represents a block that has been finalized and is guaranteed
 /// to never be reverted. It contains the global blockchain state.
 #[derive(Debug)]
-pub struct Finalized<D: BlockData> {
-  underlying: block::Produced<D>,
-  _state: FinalizedState,
+pub struct Finalized<'b, D: BlockData> {
+  pub underlying: &'b dyn Block<D>,
+  pub state: FinalizedState,
 }
 
-impl<D: BlockData> Deref for Finalized<D> {
-  type Target = block::Produced<D>;
+impl<'b, D: BlockData> Deref for Finalized<'b, D> {
+  type Target = &'b dyn Block<D>;
   fn deref(&self) -> &Self::Target {
     &self.underlying
   }

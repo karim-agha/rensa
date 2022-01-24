@@ -231,7 +231,7 @@ impl<D: BlockData> Network<D> {
     self.netout.send(NetworkCommand::GossipBlock(block))
   }
 
-  pub async fn next(&mut self) -> Option<NetworkEvent<D>> {
+  pub async fn poll(&mut self) -> Option<NetworkEvent<D>> {
     self.netin.recv().await
   }
 }

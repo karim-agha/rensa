@@ -2,7 +2,10 @@ use super::{
   block::{self, Block, BlockData},
   vote::Vote,
 };
-use crate::primitives::{Pubkey, ToBase58String};
+use crate::{
+  primitives::{Pubkey, ToBase58String},
+  state::Finalized,
+};
 use multihash::Multihash;
 use std::{
   cell::RefCell,
@@ -184,11 +187,13 @@ struct VolatileBlock<D: BlockData> {
 /// Blocks in this state can be overriden using
 /// fork choice rules and voting.
 #[derive(Debug)]
-pub struct VolatileState<D: BlockData> {
-  /// Hash of the last justified block.
+pub struct VolatileState<'r, D: BlockData> {
+  /// Hash of the last finalized block.
+  /// 
   /// Only blocks descending from this root are
-  /// subject to the fork choice rules.
-  root: Multihash,
+  /// subject to the fork choice rules and could
+  /// be reverted.
+  root: &'r Finalized<'r, D>,
 
   /// Blocks that were received but their parent
   /// block was not included in the forrest (yet).
@@ -209,8 +214,8 @@ pub struct VolatileState<D: BlockData> {
   forrest: Vec<Rc<RefCell<TreeNode<D>>>>,
 }
 
-impl<D: BlockData> VolatileState<D> {
-  pub fn new(root: Multihash) -> Self {
+impl<'r, D: BlockData> VolatileState<'r, D> {
+  pub fn new(root: &'r Finalized<D>) -> Self {
     Self {
       root,
       orphans: HashMap::new(),
@@ -288,7 +293,7 @@ impl<D: BlockData> VolatileState<D> {
     let parent_hash = block.block.parent().expect("already verified");
 
     // is this block building right off the last finalized block?
-    if parent_hash == self.root {
+    if parent_hash == self.root.hash().unwrap() {
       let node = Rc::new(RefCell::new(TreeNode::new(block)));
       self.forrest.push(node);
       return None;
@@ -313,7 +318,7 @@ impl<D: BlockData> VolatileState<D> {
   /// The justification must be the last finalized block,
   /// and the target block must be one of its descendants.
   pub fn vote(&mut self, vote: Vote, stake: u64) {
-    if vote.justification != self.root {
+    if vote.justification != self.root.hash().unwrap() {
       warn!("Not justified by the last finalized block: {vote:?}");
       return;
     }

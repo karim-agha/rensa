@@ -18,6 +18,7 @@ use consensus::{
 };
 use futures::StreamExt;
 use network::Network;
+use state::{Finalized, FinalizedState};
 use tracing::{info, Level};
 
 fn print_essentials(opts: &CliOpts) -> anyhow::Result<()> {
@@ -57,7 +58,9 @@ async fn main() -> anyhow::Result<()> {
   // read the genesis configuration
   let genesis = opts.genesis()?;
 
-  // Create the P2P networking layer
+  // Create the P2P networking layer.
+  // Networking runs on its own separate thread,
+  // and emits events by calling .poll()
   let mut network = Network::new(
     &genesis,
     opts.keypair.clone(),
@@ -74,8 +77,14 @@ async fn main() -> anyhow::Result<()> {
   let me = opts.keypair.public();
   let seed = genesis.hash()?.digest().try_into()?;
 
-  // the blockchain, no persistance yet
-  let mut chain = Chain::new(&genesis);
+  // the blockchain state.
+  // Persistance is not implemented yet, so using
+  // the gensis block as the last finalized block
+  let finalized = Finalized {
+    underlying: &genesis,
+    state: FinalizedState,
+  };
+  let mut chain = Chain::new(&genesis, &finalized);
 
   // componsents of the consensus
   let mut voter = VoteProducer::new(&chain);
@@ -91,13 +100,10 @@ async fn main() -> anyhow::Result<()> {
     tokio::select! {
       Some((slot, validator)) = schedule.next() => {
         if validator.pubkey == me {
-          producer.produce(slot, match chain.head() {
-            Some(b) => b,
-            None => chain.genesis(),
-          });
+          producer.produce(slot, chain.head());
         }
       }
-      Some(event) = network.next() => {
+      Some(event) = network.poll() => {
         match event {
           NetworkEvent::BlockReceived(block) => chain.include(block),
           NetworkEvent::VoteReceived(vote) => chain.vote(vote),

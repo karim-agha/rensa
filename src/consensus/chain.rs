@@ -6,11 +6,11 @@ use super::{
 };
 use crate::{primitives::Pubkey, state::Finalized};
 use dashmap::DashMap;
-use multihash::Multihash;
+use std::ops::Deref;
 use tracing::{info, warn};
 
 /// Represents the state of the consensus protocol
-pub struct Chain<'g, D: BlockData> {
+pub struct Chain<'g, 'f, D: BlockData> {
   /// The very first block in the chain.
   ///
   /// This comes from a configuration file, is always considered
@@ -25,10 +25,10 @@ pub struct Chain<'g, D: BlockData> {
   /// This is the last block that was finalized and we are
   /// guaranteed that it will never be reverted. The runtime
   /// and the validator cares only about the state of the system
-  /// at the last block. Archiving historical blocks can be delegated
-  /// to an external interface for explorers and other use cases if
-  /// an archiver is specified.
-  finalized: Option<Finalized<D>>,
+  /// at the last finalized block. Archiving historical blocks
+  /// can be delegated to an external interface for explorers
+  /// and other use cases if an archiver is specified.
+  finalized: &'f Finalized<'f, D>,
 
   /// This tree represents all chains (forks) that were created
   /// since the last finalized block. None of those blocks are
@@ -38,15 +38,18 @@ pub struct Chain<'g, D: BlockData> {
   ///
   /// Those blocks are voted on by validators, once the finalization
   /// requirements are met, they get finalized.
-  volatile: VolatileState<D>,
+  volatile: VolatileState<'f, D>,
 }
 
-impl<'g, D: BlockData> Chain<'g, D> {
-  pub fn new(genesis: &'g block::Genesis<D>) -> Self {
+impl<'g, 'f, D: BlockData> Chain<'g, 'f, D> {
+  pub fn new(
+    genesis: &'g block::Genesis<D>,
+    finalized: &'f Finalized<'f, D>,
+  ) -> Self {
     Self {
       genesis,
-      finalized: None,
-      volatile: VolatileState::new(genesis.hash().unwrap()),
+      finalized,
+      volatile: VolatileState::new(finalized),
       stakes: genesis
         .validators
         .iter()
@@ -62,7 +65,8 @@ impl<'g, D: BlockData> Chain<'g, D> {
     self.genesis
   }
 
-  /// Returns the hash of the last finalized block in the chain.
+  /// Returns the last finalized block in the chain.
+  ///
   /// Blocks that reached finality will never be reverted under
   /// any circumstances.
   ///
@@ -72,16 +76,8 @@ impl<'g, D: BlockData> Chain<'g, D> {
   /// This value is used as the justification when voting for new
   /// blocks, also the last finalized block is the root of the
   /// current fork tree.
-  pub fn finalized(&self) -> Multihash {
-    match self.finalized {
-      Some(ref b) => b
-        .hash()
-        .expect("a block with invalid hash would not get finalized"),
-      None => self
-        .genesis
-        .hash()
-        .expect("invalid genesis hash would have crashed the system already"),
-    }
+  pub fn finalized(&self) -> &Finalized<'f, D> {
+    self.finalized
   }
 
   /// Returns the block that is currently considered the
@@ -97,15 +93,14 @@ impl<'g, D: BlockData> Chain<'g, D> {
   /// a new block and wants to know the parent block it needs
   /// to build on and use it as its parent.
   ///
-  /// This method returns None when the volatile history
-  /// is empty and no blocks were finalized so far, which
-  /// means that we are still at the genesis block.
-  pub fn head(&self) -> Option<&block::Produced<D>> {
+  /// This method returns the last finalized block if the 
+  /// volatile history is empty ingested or produced so far.
+  pub fn head(&self) -> &dyn Block<D> {
     // no volatile state, either all blocks are finalized
     // or we are still at genesis block.
     match self.volatile.head() {
-      Some(head) => Some(head),
-      None => self.finalized.as_ref().map(|b| b as _),
+      Some(head) => head,
+      None => *self.finalized.deref() as _,
     }
   }
 
@@ -126,7 +121,7 @@ impl<'g, D: BlockData> Chain<'g, D> {
   }
 }
 
-impl<'g, D: BlockData> Chain<'g, D> {
+impl<'g, 'f, D: BlockData> Chain<'g, 'f, D> {
   /// Called whenever a new block is received on the p2p layer.
   ///
   /// This method will validate signatures on the block and attempt
@@ -182,6 +177,7 @@ mod test {
       validator::Validator,
     },
     primitives::Keypair,
+    state::{Finalized, FinalizedState},
   };
   use chrono::Utc;
   use ed25519_dalek::{PublicKey, SecretKey};
@@ -212,7 +208,12 @@ mod test {
       }],
     };
 
-    let mut chain = Chain::new(&genesis);
+    let finalized = Finalized {
+      underlying: &genesis,
+      state: FinalizedState,
+    };
+
+    let mut chain = Chain::new(&genesis, &finalized);
     let block = block::Produced::new(
       &keypair,
       1,
@@ -222,18 +223,17 @@ mod test {
     )
     .unwrap();
 
-    assert!(chain.head().is_none());
+    assert_eq!(chain.head().hash().unwrap(), genesis.hash().unwrap());
 
     let hash = block.hash().unwrap();
 
     chain.include(block);
-    assert!(chain.head().is_some());
-    assert_eq!(hash, chain.head().unwrap().hash().unwrap());
+    assert_eq!(hash, chain.head().hash().unwrap());
 
     let block2 = block::Produced::new(
       &keypair,
       2,
-      chain.head().unwrap().hash().unwrap(),
+      chain.head().hash().unwrap(),
       "three".to_string(),
       vec![],
     )
@@ -241,7 +241,7 @@ mod test {
 
     let hash2 = block2.hash().unwrap();
     chain.include(block2);
-    assert_eq!(hash2, chain.head().unwrap().hash().unwrap());
+    assert_eq!(hash2, chain.head().hash().unwrap());
   }
 
   #[test]
@@ -269,7 +269,13 @@ mod test {
       }],
     };
 
-    let mut chain = Chain::new(&genesis);
+    let finalized = Finalized {
+      underlying: &genesis,
+      state: FinalizedState,
+    };
+
+    let mut chain = Chain::new(&genesis, &finalized);
+
     let block = block::Produced::new(
       &keypair,
       1,
@@ -281,12 +287,11 @@ mod test {
     let hash = block.hash().unwrap();
 
     // no we should have only genesis
-    assert!(chain.head().is_none());
+    assert_eq!(chain.head().hash().unwrap(), genesis.hash().unwrap());
 
     // block should be the head
     chain.include(block);
-    assert!(chain.head().is_some());
-    assert_eq!(hash, chain.head().unwrap().hash().unwrap());
+    assert_eq!(hash, chain.head().hash().unwrap());
 
     let block2 =
       block::Produced::new(&keypair, 2, hash, "three".to_string(), vec![])
@@ -301,11 +306,11 @@ mod test {
     // out of order insertion, the head should not change
     // after block3, instead it should be stored as an orphan
     chain.include(block3);
-    assert_eq!(hash, chain.head().unwrap().hash().unwrap());
+    assert_eq!(hash, chain.head().hash().unwrap());
 
     // include the missing parent, now the chain should match
     // it with the orphan and block3 shold be the new head
     chain.include(block2);
-    assert_eq!(hash3, chain.head().unwrap().hash().unwrap());
+    assert_eq!(hash3, chain.head().hash().unwrap());
   }
 }
