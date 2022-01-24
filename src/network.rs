@@ -3,7 +3,7 @@ use crate::{
     block::{self, Block, BlockData},
     vote::Vote,
   },
-  keys::{Keypair, Pubkey},
+  primitives::{Keypair, Pubkey},
 };
 use futures::{Stream, StreamExt};
 use libp2p::{

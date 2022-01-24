@@ -1,4 +1,4 @@
-use crate::{consensus::block::Genesis, keys::Keypair};
+use crate::{consensus::block::Genesis, primitives::Keypair};
 use clap::Parser;
 use libp2p::{multiaddr::Protocol, Multiaddr};
 use std::{

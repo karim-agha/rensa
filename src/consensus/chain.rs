@@ -4,7 +4,7 @@ use super::{
   volatile::VolatileState,
   vote::Vote,
 };
-use crate::keys::Pubkey;
+use crate::primitives::Pubkey;
 use dashmap::DashMap;
 use multihash::Multihash;
 use tracing::{info, warn};
@@ -157,7 +157,7 @@ mod test {
       block::{self, Block, Genesis},
       validator::Validator,
     },
-    keys::Keypair,
+    primitives::Keypair,
   };
   use chrono::Utc;
   use ed25519_dalek::{PublicKey, SecretKey};

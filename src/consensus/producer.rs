@@ -1,5 +1,5 @@
 use super::block;
-use crate::{consensus::ToBase58String, keys::Keypair};
+use crate::primitives::{Keypair, ToBase58String};
 use futures::Stream;
 use multihash::{Sha3_256, StatefulHasher};
 use std::{

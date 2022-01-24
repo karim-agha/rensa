@@ -1,9 +1,8 @@
 use super::{
   block::{self, Block, BlockData},
   vote::Vote,
-  ToBase58String,
 };
-use crate::keys::Pubkey;
+use crate::primitives::{Pubkey, ToBase58String};
 use multihash::Multihash;
 use std::{
   cell::RefCell,

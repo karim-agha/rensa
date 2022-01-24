@@ -1,5 +1,5 @@
-use super::{validator::Validator, vote::Vote, ToBase58String};
-use crate::keys::{Keypair, Pubkey};
+use super::{validator::Validator, vote::Vote};
+use crate::primitives::{Keypair, Pubkey, ToBase58String};
 use chrono::{DateTime, Utc};
 use ed25519_dalek::{PublicKey, Signature, Signer, Verifier};
 use multihash::{Code as MultihashCode, Multihash, MultihashDigest};

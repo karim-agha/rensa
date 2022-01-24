@@ -1,5 +1,5 @@
-use super::{block::BlockData, chain::Chain, ToBase58String};
-use crate::keys::{Keypair, Pubkey};
+use super::{block::BlockData, chain::Chain};
+use crate::primitives::{Keypair, Pubkey, ToBase58String};
 use ed25519_dalek::{PublicKey, Signature, Signer, Verifier};
 use futures::Stream;
 use multihash::Multihash;

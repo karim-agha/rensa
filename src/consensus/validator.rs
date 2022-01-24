@@ -1,6 +1,6 @@
 use std::cmp::Ordering;
 
-use crate::keys::Pubkey;
+use crate::primitives::Pubkey;
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

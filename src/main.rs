@@ -1,15 +1,12 @@
 mod cli;
 pub mod consensus;
-pub mod execution;
-pub mod keys;
 pub mod network;
+pub mod primitives;
 pub mod rpc;
+pub mod state;
 pub mod storage;
-pub mod transaction;
-
 use crate::{
-  consensus::{block::Block, ToBase58String},
-  network::NetworkEvent,
+  consensus::block::Block, network::NetworkEvent, primitives::ToBase58String,
 };
 use clap::StructOpt;
 use cli::CliOpts;
