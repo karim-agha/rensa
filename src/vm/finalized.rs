@@ -4,6 +4,7 @@ use crate::{
   primitives::{Account, Pubkey},
 };
 use multihash::Multihash;
+use serde::{Deserialize, Serialize};
 use std::ops::Deref;
 
 /// Represents state of the blockchain at the last finalized
@@ -12,7 +13,7 @@ use std::ops::Deref;
 ///
 /// Data in this state is large (counted in GBs). It gets updated
 /// by applying StateDiffs to it from newly finalized blocks.
-#[derive(Debug)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct FinalizedState;
 
 impl FinalizedState {

@@ -40,7 +40,7 @@ mod test {
   use super::StateDiff;
   use crate::{
     primitives::{Account, Pubkey},
-    state::State,
+    vm::State,
   };
 
   #[test]

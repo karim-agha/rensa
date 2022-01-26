@@ -4,7 +4,7 @@ use super::{
   volatile::VolatileState,
   vote::Vote,
 };
-use crate::{primitives::Pubkey, state::Finalized};
+use crate::{primitives::Pubkey, vm::Finalized};
 use dashmap::DashMap;
 use std::ops::Deref;
 use tracing::{info, warn};
@@ -93,7 +93,7 @@ impl<'g, 'f, D: BlockData> Chain<'g, 'f, D> {
   /// a new block and wants to know the parent block it needs
   /// to build on and use it as its parent.
   ///
-  /// This method returns the last finalized block if the 
+  /// This method returns the last finalized block if the
   /// volatile history is empty ingested or produced so far.
   pub fn head(&self) -> &dyn Block<D> {
     // no volatile state, either all blocks are finalized
@@ -177,11 +177,11 @@ mod test {
       validator::Validator,
     },
     primitives::Keypair,
-    state::{Finalized, FinalizedState},
+    vm::{Finalized, FinalizedState, Transaction},
   };
   use chrono::Utc;
   use ed25519_dalek::{PublicKey, SecretKey};
-  use std::time::Duration;
+  use std::{collections::HashMap, marker::PhantomData, time::Duration};
 
   #[test]
   fn append_block_smoke() {
@@ -195,17 +195,19 @@ mod test {
     let public: PublicKey = (&secret).into();
     let keypair: Keypair = ed25519_dalek::Keypair { secret, public }.into();
 
-    let genesis = Genesis {
+    let genesis = Genesis::<Vec<Transaction>> {
       chain_id: "1".to_owned(),
-      data: "test".to_owned(),
       epoch_slots: 32,
       genesis_time: Utc::now(),
       hasher: multihash::Code::Sha3_256,
       slot_interval: Duration::from_secs(2),
+      state: HashMap::new(),
+      builtins: vec![],
       validators: vec![Validator {
         pubkey: keypair.public(),
         stake: 200000,
       }],
+      _marker: PhantomData,
     };
 
     let finalized = Finalized {
@@ -218,7 +220,7 @@ mod test {
       &keypair,
       1,
       genesis.hash().unwrap(),
-      "two".to_string(),
+      vec![],
       vec![],
     )
     .unwrap();
@@ -234,7 +236,7 @@ mod test {
       &keypair,
       2,
       chain.head().hash().unwrap(),
-      "three".to_string(),
+      vec![],
       vec![],
     )
     .unwrap();
@@ -258,15 +260,17 @@ mod test {
 
     let genesis = Genesis {
       chain_id: "1".to_owned(),
-      data: "test".to_owned(),
       epoch_slots: 32,
       genesis_time: Utc::now(),
       hasher: multihash::Code::Sha3_256,
       slot_interval: Duration::from_secs(2),
+      state: HashMap::new(),
+      builtins: vec![],
       validators: vec![Validator {
         pubkey: keypair.public(),
         stake: 200000,
       }],
+      _marker: PhantomData,
     };
 
     let finalized = Finalized {

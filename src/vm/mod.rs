@@ -1,13 +1,17 @@
+mod builtin;
+mod contract;
 mod diff;
 mod executed;
 mod finalized;
 mod isolated;
 mod machine;
+mod transaction;
 
 pub use diff::StateDiff;
 pub use finalized::{Finalized, FinalizedState};
 pub use isolated::IsolatedState;
 pub use machine::Machine;
+pub use transaction::{AccountRef, Transaction};
 
 use crate::primitives::{Account, Pubkey};
 use multihash::Multihash;
@@ -87,7 +91,7 @@ mod test {
   use super::StateDiff;
   use crate::{
     primitives::{Account, Pubkey},
-    state::{Overlayed, State},
+    vm::{Overlayed, State},
   };
 
   #[test]

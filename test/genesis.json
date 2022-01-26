@@ -4,7 +4,22 @@
   "slotInterval": "1s",
   "epochSlots": 32,
   "hasher": "sha3-256",
-  "data": "genesis-value-1",
+  "state": {
+    "CKDN1WjimfErkbgecnEfoPfs7CU1TknwMhpgbiXNknGC": {
+      "owner": null,
+      "data": null,
+      "executable": false,
+      "balance": 400000000000
+    },
+    "4AKRabNsRm6fgum4zmj5KH5qXGVLAKkxwr3U2Pt5ZXwF": {
+      "owner": null,
+      "data": null,
+      "balance": 4000000000
+    }
+  },
+  "builtins": [
+    "Sha3111111111111111111111111111111111111111"
+  ],
   "validators": [
     {
       "pubkey": "4AKRabNsRm6fgum4zmj5KH5qXGVLAKkxwr3U2Pt5ZXwF",

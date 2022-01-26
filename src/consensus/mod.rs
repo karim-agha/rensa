@@ -5,7 +5,6 @@ pub mod block;
 pub mod chain;
 pub mod epoch;
 pub mod fault;
-pub mod producer;
 pub mod schedule;
 pub mod validator;
 mod volatile;

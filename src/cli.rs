@@ -1,4 +1,6 @@
-use crate::{consensus::block::Genesis, primitives::Keypair};
+use crate::{
+  consensus::block::Genesis, primitives::Keypair, vm::Transaction,
+};
 use clap::Parser;
 use libp2p::{multiaddr::Protocol, Multiaddr};
 use std::{
@@ -93,10 +95,10 @@ impl CliOpts {
 
   /// Retreives the genesis block config from its JSON
   /// serialized form from the path provided by the user.
-  pub fn genesis(&self) -> Result<Genesis<String>, std::io::Error> {
+  pub fn genesis(&self) -> Result<Genesis<Vec<Transaction>>, std::io::Error> {
     let json =
       std::fs::read_to_string(&self.genesis).map_err(std::io::Error::from)?;
-    let mut genesis: Genesis<String> =
+    let mut genesis: Genesis<Vec<Transaction>> =
       serde_json::from_str(&json).map_err(std::io::Error::from)?;
 
     // we're sorting validators in the genesis because we want the same

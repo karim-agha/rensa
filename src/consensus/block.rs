@@ -1,12 +1,14 @@
 use super::{validator::Validator, vote::Vote};
-use crate::primitives::{Keypair, Pubkey, ToBase58String};
+use crate::primitives::{Account, Keypair, Pubkey, ToBase58String};
 use chrono::{DateTime, Utc};
 use ed25519_dalek::{PublicKey, Signature, Signer, Verifier};
 use multihash::{Code as MultihashCode, Multihash, MultihashDigest};
 use serde::{Deserialize, Serialize};
 use std::{
+  collections::HashMap,
   fmt::Debug,
   io::{Error as StdIoError, ErrorKind},
+  marker::PhantomData,
   time::Duration,
 };
 
@@ -55,7 +57,7 @@ pub trait Block<D: BlockData>: Debug {
 
   /// Block contents, that are opaque to the consensus.
   /// In most cases this is a list of transactions.
-  fn data(&self) -> &D;
+  fn payload(&self) -> &D;
 
   /// All valid votes accumulated for this target block from other
   /// validators. A vote on a block is also implicitly a vote on
@@ -111,17 +113,33 @@ pub struct Genesis<D: BlockData> {
   /// be considered forever immutable.
   pub epoch_slots: u64,
 
+  /// The set of enabled builtin contracts.
+  /// Builtins are special contracts implemented by the VM in
+  /// native code. They are there for handling some computationally
+  /// heavy operations like hashing or signature verification.
+  ///
+  /// The genesis block can enable those contracts by listing
+  /// their pubkeys. See the [`vm/builtin`] module for more info.
+  pub builtins: Vec<Pubkey>,
+
   /// The set of validators participating in the consensus along
   /// with their attributed stakes. Validators are always sorted
   /// so that the order of their appearance in the genesis file
   /// does not change the hash of the genesis.
   pub validators: Vec<Validator>,
 
+  /// The initial accounts state of the chain at the very first block.
+  /// This is a list of accounts along with their balances, owners and
+  /// data. This is the very first finalized state in the chain before
+  /// any produced block gets finalized.
+  pub state: HashMap<Pubkey, Account>,
+
   /// Block data stored in the first block.
   ///
   /// This is specific to the execution layer that is responsible
   /// for executing blocks and building state.
-  pub data: D,
+  #[serde(skip)]
+  pub _marker: PhantomData<D>,
 }
 
 /// A block produced by one of the validators after Genesis.
@@ -208,8 +226,8 @@ impl<D: BlockData> Block<D> for Genesis<D> {
   /// The initial set of data stored in the genesis.
   /// This data is specific to the execution layer
   /// that drives the chain
-  fn data(&self) -> &D {
-    &self.data
+  fn payload(&self) -> &D {
+    panic!("genesis block has no payload!");
   }
 
   /// The gensis block has no votes because it is a
@@ -295,7 +313,7 @@ impl<D: BlockData> Block<D> for Produced<D> {
   /// Most often this is a list of transactions, unless some
   /// special variations are used for testing. The interpretation
   /// of the data is left to the execution layer.
-  fn data(&self) -> &D {
+  fn payload(&self) -> &D {
     &self.data
   }
 

@@ -4,7 +4,7 @@ use super::{
 };
 use crate::{
   primitives::{Pubkey, ToBase58String},
-  state::Finalized,
+  vm::Finalized,
 };
 use multihash::Multihash;
 use std::{

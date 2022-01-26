@@ -2,9 +2,11 @@ mod cli;
 pub mod consensus;
 pub mod network;
 pub mod primitives;
+pub mod producer;
 pub mod rpc;
-pub mod state;
+pub mod vm;
 pub mod storage;
+
 use crate::{
   consensus::block::Block, network::NetworkEvent, primitives::ToBase58String,
 };
@@ -12,13 +14,13 @@ use clap::StructOpt;
 use cli::CliOpts;
 use consensus::{
   chain::Chain,
-  producer::BlockProducer,
   schedule::{ValidatorSchedule, ValidatorScheduleStream},
   vote::VoteProducer,
 };
 use futures::StreamExt;
 use network::Network;
-use state::{Finalized, FinalizedState};
+use producer::BlockProducer;
+use vm::{Finalized, FinalizedState};
 use tracing::{info, Level};
 
 fn print_essentials(opts: &CliOpts) -> anyhow::Result<()> {
