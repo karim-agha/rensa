@@ -31,6 +31,10 @@ impl BlockProducer {
   ) {
     let prevhash = prev.hash().unwrap();
 
+    let payer = "6MiU5w4RZVvCDqvmitDqFdU5QMoeS7ywA6cAnSeEFdW"
+      .parse()
+      .unwrap();
+
     // private key of account CKDN1WjimfErkbgecnEfoPfs7CU1TknwMhpgbiXNknGC
     let signer = "9XhCqH1LxmziWmBb8WnqzuvKFjX7koBuyzwdcFkL1ym7"
       .parse()
@@ -40,14 +44,15 @@ impl BlockProducer {
       "Sha3111111111111111111111111111111111111111"
         .parse()
         .unwrap(),
+      &payer,
       vec![AccountRef {
-        address: "Test111111111111111111111111111111111111111"
+        address: "CKDN1WjimfErkbgecnEfoPfs7CU1TknwMhpgbiXNknGC"
           .parse()
           .unwrap(),
         writable: true,
       }],
       b"initial-seed".to_vec(),
-      &[signer],
+      &[&signer],
     );
 
     let block =

@@ -183,7 +183,14 @@ impl<D: BlockData> Debug for Produced<D> {
     f.debug_struct("Produced")
       .field("parent", &self.parent.to_b58())
       .field("height", &self.height)
-      .field("signature", &self.signature)
+      .field(
+        "signature",
+        &format!(
+          "Pubkey({}), ed25519({})",
+          self.signature.0,
+          self.signature.1.to_b58()
+        ),
+      )
       .field("data", &self.data)
       .field("votes", &self.votes)
       .field("hash", &self.hash().unwrap().to_b58())

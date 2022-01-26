@@ -1,6 +1,7 @@
 use super::{contract::Environment, State};
 use crate::primitives::{Keypair, Pubkey, ToBase58String};
 use ed25519_dalek::{Signature, Signer};
+use multihash::{Sha3_256, StatefulHasher};
 use serde::{Deserialize, Serialize};
 
 /// This is a parameter on the transaction that indicates that
@@ -18,6 +19,7 @@ pub struct AccountRef {
 #[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Transaction {
   pub contract: Pubkey,
+  pub payer: Pubkey,
   pub accounts: Vec<AccountRef>,
   pub params: Vec<u8>,
   pub signatures: Vec<Signature>,
@@ -26,30 +28,38 @@ pub struct Transaction {
 impl Transaction {
   pub fn new(
     contract: Pubkey,
+    payer: &Keypair,
     accounts: Vec<AccountRef>,
     params: Vec<u8>,
-    signers: &[Keypair],
+    signers: &[&Keypair],
   ) -> Self {
-    let mut buffer = Vec::new();
-    let mut signatures = Vec::new();
-
-    buffer.append(&mut contract.to_vec());
+    let mut hasher = Sha3_256::default();
+    hasher.update(&contract);
+    hasher.update(&payer.public());
 
     for accref in &accounts {
-      buffer.append(&mut accref.address.to_vec());
-      buffer.push(match accref.writable {
+      hasher.update(&accref.address);
+      hasher.update(&[match accref.writable {
         true => 1,
         false => 0,
-      });
+      }]);
     }
-    buffer.append(&mut params.clone());
+    hasher.update(&params);
+    let fields_hash = hasher.finalize();
 
+    let mut signatures = Vec::new();
+
+    // payers signature alwyas goes first
+    signatures.push(payer.sign(fields_hash.as_ref()));
+
+    // then signatures of all writable account owners
     for signer in signers {
-      signatures.push(signer.sign(&buffer));
+      signatures.push(signer.sign(fields_hash.as_ref()));
     }
 
     Self {
       contract,
+      payer: payer.public(),
       accounts,
       params,
       signatures,
@@ -68,15 +78,42 @@ impl Transaction {
         .collect(),
     }
   }
+
+  pub fn hash(&self) -> Vec<u8> {
+    let mut hasher = Sha3_256::default();
+    hasher.update(&self.contract);
+    hasher.update(&self.payer);
+    for accref in &self.accounts {
+      hasher.update(&accref.address);
+      hasher.update(&[match accref.writable {
+        true => 1,
+        false => 0,
+      }]);
+    }
+    hasher.update(&self.params);
+    for sig in &self.signatures {
+      hasher.update(sig.as_ref());
+    }
+    hasher.finalize().as_ref().to_vec()
+  }
 }
 
 impl std::fmt::Debug for Transaction {
   fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
     f.debug_struct("Transaction")
       .field("contract", &self.contract)
+      .field("payer", &self.payer)
       .field("accounts", &self.accounts)
-      .field("params", &self.params.as_slice().to_b58())
-      .field("signatures", &self.signatures)
+      .field("params", &format!("{:02x?}", &self.params.as_slice()))
+      .field(
+        "signatures",
+        &self
+          .signatures
+          .iter()
+          .map(|s| format!("ed25519({})", s.to_b58()))
+          .collect::<Vec<_>>(),
+      )
+      .field("hash", &self.hash().to_b58())
       .finish()
   }
 }
