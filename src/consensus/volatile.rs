@@ -138,6 +138,9 @@ impl<D: BlockData> TreeNode<D> {
       }
     }
 
+    let votes = block.votes;
+    let voter = block.block.signature.0.clone();
+
     // set parent link to ourself
     let block = Rc::new(RefCell::new(TreeNode {
       value: block,
@@ -145,7 +148,13 @@ impl<D: BlockData> TreeNode<D> {
       children: vec![],
     }));
 
+    // insert the block into this fork subtree as a leaf
     self.children.push(block);
+
+    // propagate its votes up the tree until the
+    // last finalized block. Producing a block is
+    // also an implicit vote on it by its producer.
+    self.add_votes(votes, voter);
   }
 
   /// Applies votes to a block, and all its ancestors until the
@@ -189,7 +198,7 @@ struct VolatileBlock<D: BlockData> {
 #[derive(Debug)]
 pub struct VolatileState<'r, D: BlockData> {
   /// Hash of the last finalized block.
-  /// 
+  ///
   /// Only blocks descending from this root are
   /// subject to the fork choice rules and could
   /// be reverted.
@@ -237,6 +246,25 @@ impl<'r, D: BlockData> VolatileState<'r, D> {
     // find the subtree that has accumulated the highes number
     // of votes in the fork forrest.
     for tree in &self.forrest {
+      match tree.borrow().value.votes.cmp(&max_votes) {
+        Ordering::Less => { /* nothing, we have a better tree */ }
+        Ordering::Equal => {
+          // if two trees have the same number of votes, select the one with
+          // the greater height.
+          let top_tree_head =
+            unsafe { &*top_tree.borrow().head() as &block::Produced<D> };
+          let current_tree_head =
+            unsafe { &*tree.borrow().head() as &block::Produced<D> };
+
+          if current_tree_head.height() > top_tree_head.height() {
+            top_tree = tree;
+          }
+        }
+        Ordering::Greater => {
+          max_votes = tree.borrow().value.votes;
+          top_tree = tree;
+        }
+      }
       if tree.borrow().value.votes > max_votes {
         max_votes = tree.borrow().value.votes;
         top_tree = tree;

@@ -4,8 +4,8 @@ pub mod network;
 pub mod primitives;
 pub mod producer;
 pub mod rpc;
-pub mod vm;
 pub mod storage;
+pub mod vm;
 
 use crate::{
   consensus::block::Block, network::NetworkEvent, primitives::ToBase58String,
@@ -20,8 +20,8 @@ use consensus::{
 use futures::StreamExt;
 use network::Network;
 use producer::BlockProducer;
-use vm::{Finalized, FinalizedState};
 use tracing::{info, Level};
+use vm::{Finalized, FinalizedState};
 
 fn print_essentials(opts: &CliOpts) -> anyhow::Result<()> {
   info!("Starting Rensa validator node");
