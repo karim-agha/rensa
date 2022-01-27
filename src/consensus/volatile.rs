@@ -93,9 +93,9 @@ impl<D: BlockData> TreeNode<D> {
   /// means that returns the last block from the subtree
   /// that has accumulated the largest amount of votes
   /// so far or highest slot number if there is a draw.
-  pub fn head(&self) -> *const block::Produced<D> {
+  pub fn head(&self) -> *const TreeNode<D> {
     if self.children.is_empty() {
-      return &self.value.block; // leaf block
+      return self; // leaf block
     }
 
     let mut max_votes = 0;
@@ -107,11 +107,9 @@ impl<D: BlockData> TreeNode<D> {
       match subtree.borrow().value.votes.cmp(&max_votes) {
         Ordering::Less => { /* nothing, we have a better tree */ }
         Ordering::Equal => {
-          // if two blocks have the same number of votes, select the one with
-          // the greater height.
-          if subtree.borrow().value.block.height()
-            > top_subtree.borrow().value.block.height()
-          {
+          // if two blocks have the same number of votes,
+          // select the one with the longest chain.
+          if subtree.borrow().depth() > top_subtree.borrow().depth() {
             top_subtree = subtree;
           }
         }
@@ -177,6 +175,18 @@ impl<D: BlockData> TreeNode<D> {
       }
       current = ancestor;
     }
+  }
+
+  /// The distance of this node from the root of the tree.
+  /// This is used in determining the longest current chain.
+  pub fn depth(&self) -> usize {
+    let mut depth = 0;
+    let mut current = self;
+    while let Some(ancestor) = current.parent {
+      current = unsafe { &mut *ancestor as &mut Self };
+      depth += 1;
+    }
+    depth
   }
 }
 
@@ -250,13 +260,13 @@ impl<'r, D: BlockData> VolatileState<'r, D> {
         Ordering::Less => { /* nothing, we have a better tree */ }
         Ordering::Equal => {
           // if two trees have the same number of votes, select the one with
-          // the greater height.
+          // the longest chain.
           let top_tree_head =
-            unsafe { &*top_tree.borrow().head() as &block::Produced<D> };
+            unsafe { &*top_tree.borrow().head() as &TreeNode<D> };
           let current_tree_head =
-            unsafe { &*tree.borrow().head() as &block::Produced<D> };
+            unsafe { &*tree.borrow().head() as &TreeNode<D> };
 
-          if current_tree_head.height() > top_tree_head.height() {
+          if current_tree_head.depth() > top_tree_head.depth() {
             top_tree = tree;
           }
         }
@@ -274,7 +284,9 @@ impl<'r, D: BlockData> VolatileState<'r, D> {
     // then from that tree get the most voted on
     // child block or the one with the most recent
     // slot number of there is a draw in votes.
-    Some(unsafe { &*top_tree.borrow().head() })
+    Some(unsafe {
+      &(*top_tree.borrow().head()).value.block as &block::Produced<D>
+    })
   }
 
   /// Includes a newly received block into the volatile state
@@ -322,6 +334,19 @@ impl<'r, D: BlockData> VolatileState<'r, D> {
 
     // is this block building right off the last finalized block?
     if parent_hash == self.root.hash().unwrap() {
+      for child in &self.forrest {
+        if child.borrow().value.block.hash().unwrap()
+          == block.block.hash().unwrap()
+        {
+          // already there, it is a duplicate
+          warn!(
+            "rejecting a duplicate block {}.",
+            block.block.hash().unwrap().to_b58()
+          );
+          return None;
+        }
+      }
+
       let node = Rc::new(RefCell::new(TreeNode::new(block)));
       self.forrest.push(node);
       return None;
@@ -345,19 +370,24 @@ impl<'r, D: BlockData> VolatileState<'r, D> {
   ///
   /// The justification must be the last finalized block,
   /// and the target block must be one of its descendants.
-  pub fn vote(&mut self, vote: Vote, stake: u64) {
+  pub fn vote(&mut self, vote: &Vote, stake: u64) -> bool {
     if vote.justification != self.root.hash().unwrap() {
-      warn!("Not justified by the last finalized block: {vote:?}");
-      return;
+      warn!(
+        "Not justified by the last finalized block {}: {vote:?}",
+        self.root.hash().unwrap().to_b58()
+      );
+      return false;
     }
 
     for root in self.forrest.iter_mut() {
       if let Some(b) = unsafe { root.borrow_mut().get_mut(&vote.target) } {
         let b = unsafe { &mut *b as &mut TreeNode<D> };
-        b.add_votes(stake, vote.validator);
-        return;
+        b.add_votes(stake, vote.validator.clone());
+        return true;
       }
     }
+
+    false
   }
 
   /// Orphan blocks are blocks that were received by the network

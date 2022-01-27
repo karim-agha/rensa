@@ -15,7 +15,7 @@ use cli::CliOpts;
 use consensus::{
   chain::Chain,
   schedule::{ValidatorSchedule, ValidatorScheduleStream},
-  vote::VoteProducer,
+  vote::{Vote, VoteProducer},
 };
 use futures::StreamExt;
 use network::Network;
@@ -90,7 +90,7 @@ async fn main() -> anyhow::Result<()> {
 
   // componsents of the consensus
   let mut voter = VoteProducer::new(&chain);
-  let mut producer = BlockProducer::new(opts.keypair);
+  let mut producer = BlockProducer::new(opts.keypair.clone());
   let mut schedule = ValidatorScheduleStream::new(
     ValidatorSchedule::new(seed, &genesis.validators)?,
     genesis.genesis_time,
@@ -101,14 +101,36 @@ async fn main() -> anyhow::Result<()> {
   loop {
     tokio::select! {
       Some((slot, validator)) = schedule.next() => {
+        let head = chain.head();
+        info!("[slot {}]: {} considers {} as head of chain @ {}",
+          slot, me, head.hash()?.to_b58(), head.height());
         if validator.pubkey == me {
-          producer.produce(slot, chain.head());
+          producer.produce(slot, head);
         }
       }
       Some(event) = network.poll() => {
         match event {
-          NetworkEvent::BlockReceived(block) => chain.include(block),
-          NetworkEvent::VoteReceived(vote) => chain.vote(vote),
+          NetworkEvent::BlockReceived(block) => {
+            let bhash = block.hash()?;
+            chain.include(block);
+
+            // if the newly inserted block have
+            // replaced our head of the chain,
+            // then vote for it.
+            if bhash == chain.head().hash()? {
+              let vote = Vote::new(
+                &opts.keypair,
+                bhash,
+                chain.finalized().hash()?);
+
+              if chain.vote(&vote) {
+                network.gossip_vote(vote)?;
+              }
+            }
+          },
+          NetworkEvent::VoteReceived(vote) => {
+            chain.vote(&vote);
+          },
         }
       },
       Some(block) = producer.next() => {
@@ -116,8 +138,9 @@ async fn main() -> anyhow::Result<()> {
         network.gossip_block(block)?;
       }
       Some(vote) = voter.next() => {
-        chain.vote(vote.clone());
-        network.gossip_vote(vote)?;
+        if chain.vote(&vote) {
+          network.gossip_vote(vote)?;
+        }
       }
     }
   }

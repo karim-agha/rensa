@@ -47,10 +47,8 @@ impl Transaction {
     hasher.update(&params);
     let fields_hash = hasher.finalize();
 
-    let mut signatures = Vec::new();
-
     // payers signature alwyas goes first
-    signatures.push(payer.sign(fields_hash.as_ref()));
+    let mut signatures = vec![payer.sign(fields_hash.as_ref())];
 
     // then signatures of all writable account owners
     for signer in signers {

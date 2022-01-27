@@ -5,8 +5,7 @@ use super::{
   vote::Vote,
 };
 use crate::{primitives::Pubkey, vm::Finalized};
-use dashmap::DashMap;
-use std::ops::Deref;
+use std::{collections::HashMap, ops::Deref};
 use tracing::{info, warn};
 
 /// Represents the state of the consensus protocol
@@ -20,7 +19,7 @@ pub struct Chain<'g, 'f, D: BlockData> {
 
   /// This is a dynamic collection of all known validators along
   /// with the amount of tokens they are staking (and their voting power).
-  stakes: DashMap<Pubkey, u64>,
+  stakes: HashMap<Pubkey, u64>,
 
   /// This is the last block that was finalized and we are
   /// guaranteed that it will never be reverted. The runtime
@@ -150,21 +149,26 @@ impl<'g, 'f, D: BlockData> Chain<'g, 'f, D> {
   ///
   /// This method will validate signatures on the vote and attempt
   /// to insert it into the volatile state of the chain.
-  pub fn vote(&mut self, vote: Vote) {
+  ///
+  /// This is also called when the current validator is voting,
+  /// it includes its own vote. Returns true if the vote was
+  /// accepted and it should be propagated to the rest of the
+  /// network, otherwise false.
+  pub fn vote(&mut self, vote: &Vote) -> bool {
     let stake = match self.stakes.get(&vote.validator) {
       Some(stake) => *stake,
       None => {
         warn!("rejecting vote from unknown validator: {}", vote.validator);
-        return;
+        return false;
       }
     };
 
     if !vote.verify_signature() {
       warn!("Rejecting vote {vote:?}. Signature verification failed");
-      return;
+      return false;
     }
 
-    self.volatile.vote(vote, stake);
+    self.volatile.vote(vote, stake)
   }
 }
 
@@ -181,7 +185,7 @@ mod test {
   };
   use chrono::Utc;
   use ed25519_dalek::{PublicKey, SecretKey};
-  use std::{collections::HashMap, marker::PhantomData, time::Duration};
+  use std::{collections::BTreeMap, marker::PhantomData, time::Duration};
 
   #[test]
   fn append_block_smoke() {
@@ -199,9 +203,8 @@ mod test {
       chain_id: "1".to_owned(),
       epoch_slots: 32,
       genesis_time: Utc::now(),
-      hasher: multihash::Code::Sha3_256,
       slot_interval: Duration::from_secs(2),
-      state: HashMap::new(),
+      state: BTreeMap::new(),
       builtins: vec![],
       validators: vec![Validator {
         pubkey: keypair.public(),
@@ -262,9 +265,8 @@ mod test {
       chain_id: "1".to_owned(),
       epoch_slots: 32,
       genesis_time: Utc::now(),
-      hasher: multihash::Code::Sha3_256,
       slot_interval: Duration::from_secs(2),
-      state: HashMap::new(),
+      state: BTreeMap::new(),
       builtins: vec![],
       validators: vec![Validator {
         pubkey: keypair.public(),

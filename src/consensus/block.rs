@@ -2,10 +2,12 @@ use super::{validator::Validator, vote::Vote};
 use crate::primitives::{Account, Keypair, Pubkey, ToBase58String};
 use chrono::{DateTime, Utc};
 use ed25519_dalek::{PublicKey, Signature, Signer, Verifier};
-use multihash::{Code as MultihashCode, Multihash, MultihashDigest};
+use multihash::{
+  Code as MultihashCode, Multihash, MultihashDigest, Sha3_256, StatefulHasher,
+};
 use serde::{Deserialize, Serialize};
 use std::{
-  collections::HashMap,
+  collections::BTreeMap,
   fmt::Debug,
   io::{Error as StdIoError, ErrorKind},
   marker::PhantomData,
@@ -22,12 +24,23 @@ use std::{
 pub trait BlockData:
   Eq + Clone + Debug + Serialize + for<'a> Deserialize<'a> + Send + 'static
 {
+  fn hash(&self) -> Result<Multihash, std::io::Error>;
 }
 
 /// Blanket implementation for all types that fulfill those requirements
-impl<T> BlockData for T where
-  T: Eq + Clone + Debug + Serialize + for<'a> Deserialize<'a> + Send + 'static
+impl<T> BlockData for T
+where
+  T: Eq + Clone + Debug + Serialize + for<'a> Deserialize<'a> + Send + 'static,
 {
+  fn hash(&self) -> Result<Multihash, std::io::Error> {
+    let mut sha3 = Sha3_256::default();
+    sha3.update(
+      // todo: make this zero-copy
+      &bincode::serialize(self)
+        .map_err(|e| std::io::Error::new(ErrorKind::InvalidData, e))?,
+    );
+    Ok(MultihashCode::multihash_from_digest(&sha3.finalize()))
+  }
 }
 
 /// Represents the type of values on which the consensus protocol
@@ -86,11 +99,6 @@ pub struct Genesis<D: BlockData> {
   /// completely independent blockchains.
   pub chain_id: String,
 
-  /// The hash function used in this blockchain for hasing
-  /// blocks, transactions, and signatures.
-  #[serde(with = "multihash_serde")]
-  pub hasher: MultihashCode,
-
   /// The timepoint int UTC timestamp which specifies when
   /// the blockchain is due to start. At this time validators
   /// are supposed to come online and start participating in the
@@ -132,7 +140,7 @@ pub struct Genesis<D: BlockData> {
   /// This is a list of accounts along with their balances, owners and
   /// data. This is the very first finalized state in the chain before
   /// any produced block gets finalized.
-  pub state: HashMap<Pubkey, Account>,
+  pub state: BTreeMap<Pubkey, Account>,
 
   /// Block data stored in the first block.
   ///
@@ -202,9 +210,40 @@ impl<D: BlockData> Block<D> for Genesis<D> {
   /// The hash of the genesis is used to determine a
   /// unique fingerprint of a blockchain configuration.
   fn hash(&self) -> Result<Multihash, StdIoError> {
-    // note: this could be optimized into zero-copy
-    let buffer = self.to_bytes()?;
-    Ok(self.hasher.digest(&buffer))
+    let mut sha3 = Sha3_256::default();
+    sha3.update(self.chain_id.as_bytes());
+    sha3.update(&self.genesis_time.timestamp_millis().to_le_bytes());
+    sha3.update(&self.slot_interval.as_millis().to_le_bytes());
+    sha3.update(&self.epoch_slots.to_le_bytes());
+
+    for builtin in &self.builtins {
+      sha3.update(builtin);
+    }
+
+    for validator in &self.validators {
+      sha3.update(&validator.pubkey);
+      sha3.update(&validator.stake.to_le_bytes());
+    }
+
+    for (addr, acc) in &self.state {
+      sha3.update(addr);
+      sha3.update(&acc.balance.to_le_bytes());
+      sha3.update(&match acc.executable {
+        true => [1],
+        false => [0],
+      });
+      match &acc.owner {
+        Some(o) => sha3.update(o),
+        None => sha3.update(&[0]),
+      };
+
+      match &acc.data {
+        Some(v) => sha3.update(v),
+        None => sha3.update(&[0]),
+      }
+    }
+
+    Ok(MultihashCode::multihash_from_digest(&sha3.finalize()))
   }
 
   /// Always errors because this is the very first
@@ -254,36 +293,19 @@ impl<D: BlockData> Block<D> for Genesis<D> {
 }
 
 impl<D: BlockData> Block<D> for Produced<D> {
-  /// Hashes the contents of the current block using the
-  /// same hashing algorithm that was used to hash its parent.
-  /// This way it will recursively reuse the same hashing algo
-  /// specified in the genesis block.
+  /// Hashes of the current block.
   ///
   /// This value is computed (as opposed to stored) intentionally
   /// to detect discrepancies between blocks and to avoid having
   /// to verify the correctness of the block hash.
   fn hash(&self) -> Result<Multihash, StdIoError> {
-    let buffer = Self::hash_bytes(
+    Self::hash_parts(
       &self.signature.0,
       &self.height,
       &self.parent,
       &self.data,
       &self.votes,
-    )?;
-
-    // all hashes in a given chain are always produced
-    // using the same hashing algorithm that was define
-    // in the genesis. Read the algorithm code from
-    // the parent block multihash and use it to hash
-    // the current block contents.
-    let hasher = MultihashCode::try_from(self.parent.code()).map_err(|e| {
-      std::io::Error::new(
-        ErrorKind::InvalidInput,
-        format!("Parent block is hashed using unsupported algorithm: {e}"),
-      )
-    })?;
-
-    Ok(hasher.digest(&buffer))
+    )
   }
 
   /// Hash of the first ancestor of this block.
@@ -352,12 +374,13 @@ impl<D: BlockData> Produced<D> {
     data: D,
     votes: Vec<Vote>,
   ) -> Result<Self, std::io::Error> {
-    let buffer =
-      Self::hash_bytes(&keypair.public(), &height, &parent, &data, &votes)?;
-    let hash = multihash::Code::try_from(parent.code())
-      .map_err(|e| std::io::Error::new(ErrorKind::InvalidInput, e))?
-      .digest(&buffer);
-    let signature = (keypair.public(), (*keypair).sign(&hash.to_bytes()));
+    let signature = (
+      keypair.public(),
+      (*keypair).sign(
+        &Self::hash_parts(&keypair.public(), &height, &parent, &data, &votes)?
+          .to_bytes(),
+      ),
+    );
 
     Ok(Self {
       parent,
@@ -382,26 +405,22 @@ impl<D: BlockData> Produced<D> {
   }
 
   /// Those are the bytes used to calculate block hash
-  fn hash_bytes(
+  fn hash_parts(
     validator: &Pubkey,
     height: &u64,
     parent: &Multihash,
     data: &D,
     votes: &[Vote],
-  ) -> Result<Vec<u8>, std::io::Error> {
-    let mut buffer = Vec::new();
-    buffer.append(&mut parent.to_bytes());
-    buffer.append(&mut height.to_le_bytes().to_vec());
-    buffer.append(
-      &mut bincode::serialize(data)
-        .map_err(|e| std::io::Error::new(ErrorKind::InvalidData, e))?,
-    );
-    buffer.append(
-      &mut bincode::serialize(votes)
-        .map_err(|e| std::io::Error::new(ErrorKind::InvalidData, e))?,
-    );
-    buffer.append(&mut validator.to_vec());
-    Ok(buffer)
+  ) -> Result<Multihash, std::io::Error> {
+    let mut sha3 = Sha3_256::default();
+    sha3.update(validator);
+    sha3.update(&parent.to_bytes());
+    sha3.update(&height.to_le_bytes());
+    sha3.update(&data.hash()?.to_bytes());
+    for vote in votes {
+      sha3.update(&vote.hash().to_bytes());
+    }
+    Ok(MultihashCode::multihash_from_digest(&sha3.finalize()))
   }
 }
 
@@ -416,85 +435,5 @@ impl<D: BlockData> std::fmt::Display for Genesis<D> {
   fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
     let hash = self.hash().map_err(|_| std::fmt::Error)?;
     write!(f, "Genesis([{} @ {}])", hash.to_b58(), self.height())
-  }
-}
-
-mod multihash_serde {
-  use multihash::Code as MultihashCode;
-  use serde::{
-    de::{self, Visitor},
-    Deserializer, Serializer,
-  };
-
-  pub fn serialize<S>(
-    code: &MultihashCode,
-    serializer: S,
-  ) -> Result<S::Ok, S::Error>
-  where
-    S: Serializer,
-  {
-    let code: u64 = u64::from(*code);
-    serializer.serialize_u64(code)
-  }
-
-  pub fn deserialize<'de, D>(deserializer: D) -> Result<MultihashCode, D::Error>
-  where
-    D: Deserializer<'de>,
-  {
-    /// In binary encoding we want to use the u64 format from the
-    /// multicodec registry: https://github.com/multiformats/multicodec/blob/master/table.csv
-    ///
-    /// However in human readable formats, like JSON, we want users to be able
-    /// to specify the hashing function using a human understandable string.
-    struct NumberOrString;
-
-    impl<'de> Visitor<'de> for NumberOrString {
-      type Value = MultihashCode;
-
-      fn expecting(
-        &self,
-        formatter: &mut std::fmt::Formatter,
-      ) -> std::fmt::Result {
-        formatter.write_str(concat!(
-          "Multihash numeric code or hashing algorithm name. ",
-          "See https://github.com/multiformats/multicodec/blob/master/table.csv"
-        ))
-      }
-
-      fn visit_str<E>(self, value: &str) -> Result<Self::Value, E>
-      where
-        E: de::Error,
-      {
-        match value.to_lowercase().as_str() {
-          "sha2-256" => Ok(MultihashCode::Sha2_256),
-          "sha2-512" => Ok(MultihashCode::Sha2_512),
-          "sha3-224" => Ok(MultihashCode::Sha3_224),
-          "sha3-256" => Ok(MultihashCode::Sha3_256),
-          "sha3-384" => Ok(MultihashCode::Sha3_384),
-          "sha3-512" => Ok(MultihashCode::Sha3_512),
-          "keccak-224" => Ok(MultihashCode::Keccak224),
-          "keccak-256" => Ok(MultihashCode::Keccak256),
-          "keccak-384" => Ok(MultihashCode::Keccak384),
-          "keccak-512" => Ok(MultihashCode::Keccak512),
-          "blake2b-256" => Ok(MultihashCode::Blake2b256),
-          "blake2b-512" => Ok(MultihashCode::Blake2b512),
-          "blake2s-256" => Ok(MultihashCode::Blake2s256),
-          "blake3" => Ok(MultihashCode::Blake3_256),
-          _ => Err(de::Error::custom(format!(
-            "unrecognized hash algorithm type {value}"
-          ))),
-        }
-      }
-
-      fn visit_u64<E>(self, v: u64) -> Result<Self::Value, E>
-      where
-        E: de::Error,
-      {
-        MultihashCode::try_from(v)
-          .map_err(|e| de::Error::custom(format!("{e:?}")))
-      }
-    }
-
-    deserializer.deserialize_any(NumberOrString)
   }
 }
