@@ -5,7 +5,7 @@ use crate::{
 };
 use multihash::Multihash;
 use serde::{Deserialize, Serialize};
-use std::ops::Deref;
+use std::{ops::Deref, rc::Rc};
 
 /// Represents state of the blockchain at the last finalized
 /// block. This state is persisted to disk and is not affected
@@ -48,13 +48,13 @@ impl State for FinalizedState {
 /// Represents a block that has been finalized and is guaranteed
 /// to never be reverted. It contains the global blockchain state.
 #[derive(Debug)]
-pub struct Finalized<'b, D: BlockData> {
-  pub underlying: &'b dyn Block<D>,
+pub struct Finalized<D: BlockData> {
+  pub underlying: Rc<dyn Block<D>>,
   pub state: FinalizedState,
 }
 
-impl<'b, D: BlockData> Deref for Finalized<'b, D> {
-  type Target = &'b dyn Block<D>;
+impl<D: BlockData> Deref for Finalized<D> {
+  type Target = Rc<dyn Block<D>>;
   fn deref(&self) -> &Self::Target {
     &self.underlying
   }

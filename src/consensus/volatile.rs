@@ -1,17 +1,23 @@
 use super::{
   block::{self, Block, BlockData},
+  chain::ChainEvent,
+  validator::Validator,
   vote::Vote,
 };
 use crate::{
   primitives::{Pubkey, ToBase58String},
-  vm::Finalized,
+  vm::{Finalized, FinalizedState},
 };
+use futures::Stream;
 use multihash::Multihash;
 use std::{
   cell::RefCell,
   cmp::Ordering,
-  collections::{hash_map::Entry, HashMap, HashSet},
+  collections::{hash_map::Entry, HashMap, HashSet, VecDeque},
+  mem::take,
+  pin::Pin,
   rc::Rc,
+  task::{Context, Poll},
 };
 use tracing::{debug, info, warn};
 
@@ -136,9 +142,6 @@ impl<D: BlockData> TreeNode<D> {
       }
     }
 
-    let votes = block.votes;
-    let voter = block.block.signature.0.clone();
-
     // set parent link to ourself
     let block = Rc::new(RefCell::new(TreeNode {
       value: block,
@@ -148,11 +151,6 @@ impl<D: BlockData> TreeNode<D> {
 
     // insert the block into this fork subtree as a leaf
     self.children.push(block);
-
-    // propagate its votes up the tree until the
-    // last finalized block. Producing a block is
-    // also an implicit vote on it by its producer.
-    self.add_votes(votes, voter);
   }
 
   /// Applies votes to a block, and all its ancestors until the
@@ -195,24 +193,34 @@ impl<D: BlockData> TreeNode<D> {
 ///
 /// Those blocks are not guaranteed to never be
 /// discarded by the blockchain yet.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 struct VolatileBlock<D: BlockData> {
   block: block::Produced<D>,
   votes: u64,
   voters: HashSet<Pubkey>,
 }
 
+impl<D: BlockData> VolatileBlock<D> {
+  pub fn new(block: block::Produced<D>) -> Self {
+    Self {
+      block,
+      votes: 0,
+      voters: HashSet::new(),
+    }
+  }
+}
+
 /// State of the unfinalized part of the chain.
 /// Blocks in this state can be overriden using
 /// fork choice rules and voting.
 #[derive(Debug)]
-pub struct VolatileState<'r, D: BlockData> {
+pub struct VolatileState<D: BlockData> {
   /// Hash of the last finalized block.
   ///
   /// Only blocks descending from this root are
   /// subject to the fork choice rules and could
   /// be reverted.
-  root: &'r Finalized<'r, D>,
+  pub(super) root: Finalized<D>,
 
   /// Blocks that were received but their parent
   /// block was not included in the forrest (yet).
@@ -228,16 +236,28 @@ pub struct VolatileState<'r, D: BlockData> {
   /// the orphans collection are attached to the orphan tree.
   orphans: HashMap<Multihash, Vec<VolatileBlock<D>>>,
 
+  /// This is a dynamic collection of all known validators along
+  /// with the amount of tokens they are staking (and their voting power).
+  stakes: HashMap<Pubkey, u64>,
+
   /// A list of blockchain that have the justified block
   /// as their parent.
   forrest: Vec<Rc<RefCell<TreeNode<D>>>>,
+
+  /// Events emitted by this chain instance
+  events: VecDeque<ChainEvent<D>>,
 }
 
-impl<'r, D: BlockData> VolatileState<'r, D> {
-  pub fn new(root: &'r Finalized<D>) -> Self {
+impl<D: BlockData> VolatileState<D> {
+  pub fn new(root: Finalized<D>, validators: &[Validator]) -> Self {
     Self {
       root,
+      stakes: validators
+        .iter()
+        .map(|v| (v.pubkey.clone(), v.stake))
+        .collect(),
       orphans: HashMap::new(),
+      events: VecDeque::new(),
       forrest: vec![],
     }
   }
@@ -293,15 +313,18 @@ impl<'r, D: BlockData> VolatileState<'r, D> {
   ///
   /// The block might end up as part of one of the block trees
   /// in the fork tree or as an orphan if its parent is not found.
-  pub fn include(&mut self, block: block::Produced<D>, stake: u64) {
-    let voter = block.signature.0.clone();
-    let block = VolatileBlock {
-      block,
-      votes: stake, // block proposition is counted as a vote on the block
-      voters: [voter].into_iter().collect(),
-    };
+  pub fn include(&mut self, block: block::Produced<D>) {
+    if block.height() < self.root.height() {
+      warn!(
+        "Rejecting block {block} because it is older than the latest finalized block {}",
+        self.root.height()
+      );
+      return;
+    }
 
-    let hash = block.block.hash().unwrap();
+    let bclone = block.clone();
+    let block = VolatileBlock::new(block);
+
     if let Some(block) = self.append_or_return(block) {
       // the block was not accepted because its parent
       // was not found. store as orphan.
@@ -310,7 +333,14 @@ impl<'r, D: BlockData> VolatileState<'r, D> {
       // network or other reasons.
       self.add_orphan(block);
     } else {
-      info!("Block {} included successfully.", hash.to_b58());
+      // apply all votes in this block to consensus forks
+      self.count_votes(&bclone.votes);
+
+      // inform any external observer about the fact that
+      // a block was included in the chain.
+      let hash = bclone.hash().unwrap();
+      self.events.push_back(ChainEvent::BlockIncluded(bclone));
+
       // check if the successfully included block has any
       // orphan blocks that are its descendants
       self.match_orphans(hash);
@@ -346,7 +376,6 @@ impl<'r, D: BlockData> VolatileState<'r, D> {
           return None;
         }
       }
-
       let node = Rc::new(RefCell::new(TreeNode::new(block)));
       self.forrest.push(node);
       return None;
@@ -366,28 +395,93 @@ impl<'r, D: BlockData> VolatileState<'r, D> {
     Some(block)
   }
 
+  fn _total_stake(&self) -> u64 {
+    self.stakes.iter().fold(0, |a, (_, s)| a + s)
+  }
+
+  /// The minimum voted stake that constitutes a 2/3 majority
+  fn _minimum_majority_stake(&self) -> u64 {
+    (self._total_stake() as f64 * 0.67f64).ceil() as u64
+  }
+
+  /// Count and apply all votes in a block
+  fn count_votes(&mut self, votes: &[Vote]) {
+    for vote in votes {
+      self.vote(vote);
+    }
+
+    //self.try_finalize_roots();
+  }
+
   /// Adds a vote for a given target block in the history.
   ///
   /// The justification must be the last finalized block,
   /// and the target block must be one of its descendants.
-  pub fn vote(&mut self, vote: &Vote, stake: u64) -> bool {
+  fn vote(&mut self, vote: &Vote) {
     if vote.justification != self.root.hash().unwrap() {
       warn!(
         "Not justified by the last finalized block {}: {vote:?}",
         self.root.hash().unwrap().to_b58()
       );
-      return false;
+      return;
     }
 
-    for root in self.forrest.iter_mut() {
-      if let Some(b) = unsafe { root.borrow_mut().get_mut(&vote.target) } {
-        let b = unsafe { &mut *b as &mut TreeNode<D> };
-        b.add_votes(stake, vote.validator.clone());
-        return true;
+    if let Some(stake) = self.stakes.get(&vote.validator) {
+      for root in self.forrest.iter_mut() {
+        if let Some(b) = unsafe { root.borrow_mut().get_mut(&vote.target) } {
+          let b = unsafe { &mut *b as &mut TreeNode<D> };
+          b.add_votes(*stake, vote.validator.clone());
+        }
       }
     }
+  }
 
-    false
+  /// a block is finalized if two consecutive blocks in a row
+  /// get 2/3 majority votes. The intuition behind it is:
+  /// The first 2/3 vote acknowledges that: "I know that everyone
+  /// thinks this is the correct fork", the second consecutive vote
+  /// acknoledges that: "I know that everyone knows that everyone thinks
+  /// this is the correct fork".
+  ///
+  /// We go over all the roots of the fork tree and if we find a
+  /// root that has 67% of stake with a direct descendant that
+  /// also has 67% of stake votes then the root is finalized,
+  /// and other children of the current root are discarded.
+  fn _try_finalize_roots(&mut self) {
+    let total = self._total_stake();
+    let majority = self._minimum_majority_stake();
+
+    let final_root = || {
+      for root in self.forrest.iter() {
+        if root.borrow().value.votes > majority {
+          for child in &root.borrow().children {
+            if child.borrow().value.votes > majority {
+              return Some(Rc::clone(root));
+            }
+          }
+        }
+      }
+      None
+    };
+
+    if let Some(root) = final_root() {
+      // discard all branches except the finalized
+      // and move the fork tree one level deeper towards
+      // the finalized block.
+      self.forrest = take(&mut root.borrow_mut().children);
+
+      // todo apply executed state
+      self.root = Finalized {
+        underlying: Rc::new(root.borrow().value.block.clone()),
+        state: FinalizedState,
+      };
+
+      info!(
+        "Block {} is finalized with {:.2}% stake",
+        root.borrow().value.block.hash().unwrap().to_b58(),
+        (root.borrow().value.votes as f64 / total as f64) * 100f64,
+      );
+    }
   }
 
   /// Orphan blocks are blocks that were received by the network
@@ -429,8 +523,23 @@ impl<'r, D: BlockData> VolatileState<'r, D> {
         parent_hash.to_b58()
       );
       for orphan in orphans {
-        self.include(orphan.block, orphan.votes);
+        self.include(orphan.block);
       }
     }
+  }
+}
+
+impl<D: BlockData> Unpin for VolatileState<D> {}
+impl<D: BlockData> Stream for VolatileState<D> {
+  type Item = ChainEvent<D>;
+
+  fn poll_next(
+    mut self: Pin<&mut Self>,
+    _: &mut Context<'_>,
+  ) -> Poll<Option<Self::Item>> {
+    if let Some(event) = self.events.pop_back() {
+      return Poll::Ready(Some(event));
+    }
+    Poll::Pending
   }
 }

@@ -2,14 +2,28 @@ use super::{
   block::{self, Block, BlockData},
   validator::Validator,
   volatile::VolatileState,
-  vote::Vote,
 };
 use crate::{primitives::Pubkey, vm::Finalized};
-use std::{collections::HashMap, ops::Deref};
+use futures::{Stream, StreamExt};
+use multihash::Multihash;
+use std::{
+  collections::{HashSet, VecDeque},
+  pin::Pin,
+  task::{Context, Poll},
+};
 use tracing::{info, warn};
 
+#[derive(Debug)]
+pub enum ChainEvent<D: BlockData> {
+  Vote {
+    target: Multihash,
+    justification: Multihash,
+  },
+  BlockIncluded(block::Produced<D>),
+}
+
 /// Represents the state of the consensus protocol
-pub struct Chain<'g, 'f, D: BlockData> {
+pub struct Chain<'g, D: BlockData> {
   /// The very first block in the chain.
   ///
   /// This comes from a configuration file, is always considered
@@ -19,7 +33,7 @@ pub struct Chain<'g, 'f, D: BlockData> {
 
   /// This is a dynamic collection of all known validators along
   /// with the amount of tokens they are staking (and their voting power).
-  stakes: HashMap<Pubkey, u64>,
+  validators: HashSet<Pubkey>,
 
   /// This is the last block that was finalized and we are
   /// guaranteed that it will never be reverted. The runtime
@@ -27,7 +41,7 @@ pub struct Chain<'g, 'f, D: BlockData> {
   /// at the last finalized block. Archiving historical blocks
   /// can be delegated to an external interface for explorers
   /// and other use cases if an archiver is specified.
-  finalized: &'f Finalized<'f, D>,
+  //finalized: &Finalized<'f, D>,
 
   /// This tree represents all chains (forks) that were created
   /// since the last finalized block. None of those blocks are
@@ -37,22 +51,22 @@ pub struct Chain<'g, 'f, D: BlockData> {
   ///
   /// Those blocks are voted on by validators, once the finalization
   /// requirements are met, they get finalized.
-  volatile: VolatileState<'f, D>,
+  volatile: VolatileState<D>,
+
+  /// Events emitted by this chain instance
+  events: VecDeque<ChainEvent<D>>,
 }
 
-impl<'g, 'f, D: BlockData> Chain<'g, 'f, D> {
-  pub fn new(
-    genesis: &'g block::Genesis<D>,
-    finalized: &'f Finalized<'f, D>,
-  ) -> Self {
+impl<'g, D: BlockData> Chain<'g, D> {
+  pub fn new(genesis: &'g block::Genesis<D>, finalized: Finalized<D>) -> Self {
     Self {
       genesis,
-      finalized,
-      volatile: VolatileState::new(finalized),
-      stakes: genesis
+      volatile: VolatileState::new(finalized, &genesis.validators),
+      events: VecDeque::new(),
+      validators: genesis
         .validators
         .iter()
-        .map(|v| (v.pubkey.clone(), v.stake))
+        .map(|v| v.pubkey.clone())
         .collect(),
     }
   }
@@ -75,8 +89,8 @@ impl<'g, 'f, D: BlockData> Chain<'g, 'f, D> {
   /// This value is used as the justification when voting for new
   /// blocks, also the last finalized block is the root of the
   /// current fork tree.
-  pub fn finalized(&self) -> &Finalized<'f, D> {
-    self.finalized
+  pub fn finalized(&self) -> &Finalized<D> {
+    &self.volatile.root
   }
 
   /// Returns the block that is currently considered the
@@ -99,7 +113,7 @@ impl<'g, 'f, D: BlockData> Chain<'g, 'f, D> {
     // or we are still at genesis block.
     match self.volatile.head() {
       Some(head) => head,
-      None => *self.finalized.deref() as _,
+      None => self.volatile.root.as_ref(),
     }
   }
 
@@ -120,17 +134,23 @@ impl<'g, 'f, D: BlockData> Chain<'g, 'f, D> {
   }
 }
 
-impl<'g, 'f, D: BlockData> Chain<'g, 'f, D> {
+impl<'g, 'f, D: BlockData> Chain<'g, D> {
   /// Called whenever a new block is received on the p2p layer.
   ///
   /// This method will validate signatures on the block and attempt
   /// to insert it into the volatile state of the chain.
   pub fn include(&mut self, block: block::Produced<D>) {
-    if let Some(stake) = self.stakes.get(&block.signature.0) {
+    if self.validators.contains(&block.signature.0) {
       if block.verify_signature() {
         if block.hash().is_ok() && block.parent().is_ok() {
+          let bhash = block.hash().unwrap();
           info!("ingesting block {block}",);
-          self.volatile.include(block, *stake);
+          self.volatile.include(block);
+          // if the newly inserted block have successfully
+          // replaced our head of the chain, then vote for it.
+          if self.head().hash().unwrap() == bhash {
+            self.commit_and_vote(bhash, self.finalized().hash().unwrap());
+          }
         } else {
           warn!("rejecting block {block}. Unreadable hashes");
         }
@@ -145,30 +165,41 @@ impl<'g, 'f, D: BlockData> Chain<'g, 'f, D> {
     }
   }
 
-  /// Called whenever a new vote is received on the p2p layer.
-  ///
-  /// This method will validate signatures on the vote and attempt
-  /// to insert it into the volatile state of the chain.
-  ///
   /// This is also called when the current validator is voting,
   /// it includes its own vote. Returns true if the vote was
   /// accepted and it should be propagated to the rest of the
   /// network, otherwise false.
-  pub fn vote(&mut self, vote: &Vote) -> bool {
-    let stake = match self.stakes.get(&vote.validator) {
-      Some(stake) => *stake,
-      None => {
-        warn!("rejecting vote from unknown validator: {}", vote.validator);
-        return false;
-      }
-    };
+  ///
+  /// Two different methods are used for own votes vs foreign
+  /// votes, so that validators won't violate the rules of consensus
+  /// and commit to the fork branches they have voted on and avoid
+  /// voting on conflicting branches.
+  fn commit_and_vote(&mut self, target: Multihash, justification: Multihash) {
+    // todo: commit to this branch and never vote
+    // on a conflicting branch. That's a hard slashing condition.
+    self.events.push_back(ChainEvent::Vote {
+      target,
+      justification,
+    });
+  }
+}
 
-    if !vote.verify_signature() {
-      warn!("Rejecting vote {vote:?}. Signature verification failed");
-      return false;
+impl<D: BlockData> Unpin for Chain<'_, D> {}
+impl<D: BlockData> Stream for Chain<'_, D> {
+  type Item = ChainEvent<D>;
+
+  fn poll_next(
+    mut self: Pin<&mut Self>,
+    cx: &mut Context<'_>,
+  ) -> Poll<Option<Self::Item>> {
+    if let Some(event) = self.events.pop_back() {
+      return Poll::Ready(Some(event));
+    }
+    if let Poll::Ready(Some(event)) = self.volatile.poll_next_unpin(cx) {
+      return Poll::Ready(Some(event));
     }
 
-    self.volatile.vote(vote, stake)
+    Poll::Pending
   }
 }
 
@@ -185,7 +216,9 @@ mod test {
   };
   use chrono::Utc;
   use ed25519_dalek::{PublicKey, SecretKey};
-  use std::{collections::BTreeMap, marker::PhantomData, time::Duration};
+  use std::{
+    collections::BTreeMap, marker::PhantomData, rc::Rc, time::Duration,
+  };
 
   #[test]
   fn append_block_smoke() {
@@ -214,11 +247,11 @@ mod test {
     };
 
     let finalized = Finalized {
-      underlying: &genesis,
+      underlying: Rc::new(genesis.clone()),
       state: FinalizedState,
     };
 
-    let mut chain = Chain::new(&genesis, &finalized);
+    let mut chain = Chain::new(&genesis, finalized);
     let block = block::Produced::new(
       &keypair,
       1,
@@ -276,11 +309,11 @@ mod test {
     };
 
     let finalized = Finalized {
-      underlying: &genesis,
+      underlying: Rc::new(genesis.clone()),
       state: FinalizedState,
     };
 
-    let mut chain = Chain::new(&genesis, &finalized);
+    let mut chain = Chain::new(&genesis, finalized);
 
     let block = block::Produced::new(
       &keypair,

@@ -1,17 +1,10 @@
-use super::{block::BlockData, chain::Chain};
 use crate::primitives::{Keypair, Pubkey, ToBase58String};
 use ed25519_dalek::{PublicKey, Signature, Signer, Verifier};
-use futures::Stream;
 use multihash::{
   Code as MultihashCode, Multihash, MultihashDigest, Sha3_256, StatefulHasher,
 };
 use serde::{Deserialize, Serialize};
-use std::{
-  io::ErrorKind,
-  marker::PhantomData,
-  pin::Pin,
-  task::{Context, Poll},
-};
+use std::io::ErrorKind;
 use tracing::warn;
 
 // vote = (
@@ -132,24 +125,5 @@ impl Vote {
     sha3.update(&self.justification.to_bytes());
     sha3.update(&self.signature.to_bytes());
     MultihashCode::multihash_from_digest(&sha3.finalize())
-  }
-}
-
-pub struct VoteProducer<D: BlockData>(PhantomData<D>);
-
-impl<D: BlockData> VoteProducer<D> {
-  pub fn new(_chain: &Chain<D>) -> Self {
-    VoteProducer(PhantomData)
-  }
-}
-
-impl<D: BlockData> Stream for VoteProducer<D> {
-  type Item = Vote;
-
-  fn poll_next(
-    self: Pin<&mut Self>,
-    _: &mut Context<'_>,
-  ) -> Poll<Option<Self::Item>> {
-    Poll::Pending
   }
 }

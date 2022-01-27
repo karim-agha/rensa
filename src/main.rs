@@ -7,15 +7,19 @@ pub mod rpc;
 pub mod storage;
 pub mod vm;
 
+use std::rc::Rc;
+
 use crate::{
-  consensus::block::Block, network::NetworkEvent, primitives::ToBase58String,
+  consensus::{block::Block, chain::ChainEvent},
+  network::NetworkEvent,
+  primitives::ToBase58String,
 };
 use clap::StructOpt;
 use cli::CliOpts;
 use consensus::{
   chain::Chain,
   schedule::{ValidatorSchedule, ValidatorScheduleStream},
-  vote::{Vote, VoteProducer},
+  vote::Vote,
 };
 use futures::StreamExt;
 use network::Network;
@@ -83,14 +87,13 @@ async fn main() -> anyhow::Result<()> {
   // Persistance is not implemented yet, so using
   // the gensis block as the last finalized block
   let finalized = Finalized {
-    underlying: &genesis,
+    underlying: Rc::new(genesis.clone()),
     state: FinalizedState,
   };
-  let mut chain = Chain::new(&genesis, &finalized);
 
   // componsents of the consensus
-  let mut voter = VoteProducer::new(&chain);
-  let mut producer = BlockProducer::new(opts.keypair.clone());
+  let mut chain = Chain::new(&genesis, finalized);
+  let mut producer = BlockProducer::new(&genesis, opts.keypair.clone());
   let mut schedule = ValidatorScheduleStream::new(
     ValidatorSchedule::new(seed, &genesis.validators)?,
     genesis.genesis_time,
@@ -102,8 +105,8 @@ async fn main() -> anyhow::Result<()> {
     tokio::select! {
       Some((slot, validator)) = schedule.next() => {
         let head = chain.head();
-        info!("[slot {}]: {} considers {} as head of chain @ {}",
-          slot, me, head.hash()?.to_b58(), head.height());
+        info!("[slot {}]: {} is considered head of chain @ height {}",
+          slot, head.hash()?.to_b58(), head.height());
         if validator.pubkey == me {
           producer.produce(slot, head);
         }
@@ -111,25 +114,10 @@ async fn main() -> anyhow::Result<()> {
       Some(event) = network.poll() => {
         match event {
           NetworkEvent::BlockReceived(block) => {
-            let bhash = block.hash()?;
             chain.include(block);
-
-            // if the newly inserted block have
-            // replaced our head of the chain,
-            // then vote for it.
-            if bhash == chain.head().hash()? {
-              let vote = Vote::new(
-                &opts.keypair,
-                bhash,
-                chain.finalized().hash()?);
-
-              if chain.vote(&vote) {
-                network.gossip_vote(vote)?;
-              }
-            }
           },
           NetworkEvent::VoteReceived(vote) => {
-            chain.vote(&vote);
+            producer.record_vote(vote);
           },
         }
       },
@@ -137,9 +125,21 @@ async fn main() -> anyhow::Result<()> {
         chain.include(block.clone());
         network.gossip_block(block)?;
       }
-      Some(vote) = voter.next() => {
-        if chain.vote(&vote) {
-          network.gossip_vote(vote)?;
+      Some(event) = chain.next() => {
+        match event {
+          ChainEvent::Vote { target, justification } => {
+            network.gossip_vote(Vote::new(
+              &opts.keypair,
+              target,
+              justification))?;
+          },
+          ChainEvent::BlockIncluded(block) => {
+            info!("Block {block} included successfully.");
+
+            // don't duplicate votes if they were
+            // already included be an accepted block.
+            producer.exclude_votes(&block);
+          }
         }
       }
     }
