@@ -132,6 +132,12 @@ impl<'g, D: BlockData> Chain<'g, D> {
     let total_stake = self.validators().iter().fold(0, |a, v| a + v.stake);
     (total_stake as f64 * 0.67f64).ceil() as u64
   }
+
+  /// Given a block/slot height it returns
+  /// the epoch number it belongs to
+  fn epoch(&self, height: u64) -> u64 {
+    height / self.genesis.epoch_slots
+  }
 }
 
 impl<'g, 'f, D: BlockData> Chain<'g, D> {
@@ -144,7 +150,10 @@ impl<'g, 'f, D: BlockData> Chain<'g, D> {
       if block.verify_signature() {
         if block.hash().is_ok() && block.parent().is_ok() {
           let bhash = block.hash().unwrap();
-          info!("ingesting block {block}",);
+          info!(
+            "ingesting block {block} in epoch {}",
+            self.epoch(block.height())
+          );
           self.volatile.include(block);
           // if the newly inserted block have successfully
           // replaced our head of the chain, then vote for it.
@@ -236,6 +245,7 @@ mod test {
       chain_id: "1".to_owned(),
       epoch_slots: 32,
       genesis_time: Utc::now(),
+      max_block_size: 100_000,
       slot_interval: Duration::from_secs(2),
       state: BTreeMap::new(),
       builtins: vec![],
@@ -297,6 +307,7 @@ mod test {
     let genesis = Genesis {
       chain_id: "1".to_owned(),
       epoch_slots: 32,
+      max_block_size: 100_000,
       genesis_time: Utc::now(),
       slot_interval: Duration::from_secs(2),
       state: BTreeMap::new(),

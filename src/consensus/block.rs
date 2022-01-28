@@ -114,6 +114,10 @@ pub struct Genesis<D: BlockData> {
   #[serde(with = "humantime_serde")]
   pub slot_interval: Duration,
 
+  /// Maximum size of a block or any other single transmission 
+  /// over p2p gossip network in bytes.
+  pub max_block_size: u64,
+
   /// How many slots make up one epoch. Epochs are groups of
   /// consecutive slots. Two epochs in a row that receive 2/3
   /// of validator votes constitute a finalized chechpoint that
