@@ -7,8 +7,6 @@ pub mod rpc;
 pub mod storage;
 pub mod vm;
 
-use std::rc::Rc;
-
 use crate::{
   consensus::{block::Block, chain::ChainEvent},
   network::NetworkEvent,
@@ -24,6 +22,7 @@ use consensus::{
 use futures::StreamExt;
 use network::Network;
 use producer::BlockProducer;
+use std::rc::Rc;
 use tracing::{info, Level};
 use vm::{Finalized, FinalizedState};
 
