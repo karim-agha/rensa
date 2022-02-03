@@ -1,6 +1,7 @@
-use super::{State, StateDiff, Transaction};
-use crate::consensus::block;
 use thiserror::Error;
+
+use super::{State, StateDiff, Transaction};
+use crate::consensus::Produced;
 
 #[derive(Debug, Error)]
 pub enum MachineError {
@@ -17,7 +18,7 @@ impl Machine {
   pub fn execute(
     &self,
     _state: &impl State,
-    _block: block::Produced<Vec<Transaction>>,
+    _block: Produced<Vec<Transaction>>,
   ) -> Result<StateDiff, MachineError> {
     todo!()
   }

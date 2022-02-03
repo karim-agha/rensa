@@ -1,5 +1,6 @@
-use super::Pubkey;
 use serde::{Deserialize, Serialize};
+
+use super::Pubkey;
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Account {

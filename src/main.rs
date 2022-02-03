@@ -7,24 +7,23 @@ pub mod rpc;
 pub mod storage;
 pub mod vm;
 
-use crate::{
-  consensus::{block::Block, chain::ChainEvent},
-  network::NetworkEvent,
-  primitives::ToBase58String,
-};
 use clap::StructOpt;
 use cli::CliOpts;
 use consensus::{
-  chain::Chain,
-  schedule::{ValidatorSchedule, ValidatorScheduleStream},
-  vote::Vote,
+  Block,
+  Chain,
+  ChainEvent,
+  ValidatorSchedule,
+  ValidatorScheduleStream,
+  Vote,
 };
 use futures::StreamExt;
 use network::Network;
 use producer::BlockProducer;
-use std::rc::Rc;
-use tracing::{info, Level};
+use tracing::{debug, info, Level};
 use vm::{Finalized, FinalizedState};
+
+use crate::{network::NetworkEvent, primitives::ToBase58String};
 
 fn print_essentials(opts: &CliOpts) -> anyhow::Result<()> {
   info!("Starting Rensa validator node");
@@ -86,7 +85,7 @@ async fn main() -> anyhow::Result<()> {
   // Persistance is not implemented yet, so using
   // the gensis block as the last finalized block
   let finalized = Finalized {
-    underlying: Rc::new(genesis.clone()),
+    underlying: Box::new(genesis.clone()),
     state: FinalizedState,
   };
 
@@ -104,7 +103,7 @@ async fn main() -> anyhow::Result<()> {
     tokio::select! {
       Some((slot, validator)) = schedule.next() => {
         let head = chain.head();
-        info!("[slot {}]: {} is considered head of chain @ height {}",
+        debug!("[slot {}]: {} is considered head of chain @ height {}",
           slot, head.hash()?.to_b58(), head.height());
         if validator.pubkey == me {
           producer.produce(slot, head);
@@ -133,11 +132,29 @@ async fn main() -> anyhow::Result<()> {
               justification))?;
           },
           ChainEvent::BlockIncluded(block) => {
-            info!("Block {block} included successfully.");
-
+            info!(
+              "included block {block} [epoch {}]",
+              block.height() / genesis.epoch_slots
+            );
             // don't duplicate votes if they were
             // already included be an accepted block.
             producer.exclude_votes(&block);
+          }
+          ChainEvent::BlockConfirmed { block, votes } => {
+            info!(
+              "confirmed block {} with {:.02}% votes [epoch {}]",
+              block,
+              ((votes as f64 / chain.total_stake() as f64) * 100f64),
+              block.height() / genesis.epoch_slots
+            );
+          }
+          ChainEvent::BlockFinalized { block, votes } => {
+            info!(
+              "finalized block {} with {:.02}% votes [epoch {}]",
+              block,
+              ((votes as f64 / chain.total_stake() as f64) * 100f64),
+              block.height() / genesis.epoch_slots
+            );
           }
         }
       }

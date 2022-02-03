@@ -1,4 +1,10 @@
-use super::validator::Validator;
+use std::{
+  iter::Enumerate,
+  pin::Pin,
+  task::{Context, Poll, Waker},
+  time::Duration,
+};
+
 use chrono::{DateTime, Utc};
 use futures::Stream;
 use rand::{
@@ -7,13 +13,9 @@ use rand::{
   SeedableRng,
 };
 use rand_chacha::ChaCha20Rng;
-use std::{
-  iter::Enumerate,
-  pin::Pin,
-  task::{Context, Poll, Waker},
-  time::Duration,
-};
 use tokio::{sync::watch, time::Instant};
+
+use super::validator::Validator;
 
 /// Creates a stake-weighted validator schedule iterator based on
 /// a predefined seed value. This iterator will iterate forever
@@ -55,6 +57,7 @@ impl<'a> ValidatorSchedule<'a> {
 
 impl<'a> Iterator for ValidatorSchedule<'a> {
   type Item = &'a Validator;
+
   fn next(&mut self) -> Option<Self::Item> {
     Some(&self.validators[self.dist.sample(&mut self.rng)])
   }
@@ -85,7 +88,6 @@ impl<'a> Iterator for ValidatorSchedule<'a> {
 ///   info!("I think that slot {slot} is for: {validator:?}");
 /// }
 /// ```
-///
 pub struct ValidatorScheduleStream<'a> {
   pos: u64,
   waker: watch::Sender<Option<Waker>>,
@@ -160,7 +162,9 @@ impl<'a> ValidatorScheduleStream<'a> {
 }
 
 impl<'a> Stream for ValidatorScheduleStream<'a> {
-  type Item = (u64, &'a Validator); // (slot#, validator)
+  type Item = (u64, &'a Validator);
+
+  // (slot#, validator)
 
   fn poll_next(
     mut self: Pin<&mut Self>,

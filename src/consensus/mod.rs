@@ -1,12 +1,15 @@
-//! Zamfir, V., et al. "Introducing the minimal CBC Casper family of consensus protocols."
-//! Implementation of the Latest Message Driven CBC Casper GHOST consensus
+//! Zamfir, V., et al. "Introducing the minimal CBC Casper family of consensus
+//! protocols." Implementation of the Latest Message Driven CBC Casper GHOST
+//! consensus
 
-pub mod block;
-pub mod chain;
-pub mod epoch;
-pub mod fault;
+mod block;
+mod chain;
 mod forktree;
-pub mod schedule;
-pub mod validator;
-//mod volatile;
-pub mod vote;
+mod schedule;
+mod validator;
+mod vote;
+
+pub use block::{Block, BlockData, Genesis, Produced};
+pub use chain::{Chain, ChainEvent};
+pub use schedule::{ValidatorSchedule, ValidatorScheduleStream};
+pub use vote::Vote;

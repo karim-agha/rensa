@@ -1,11 +1,17 @@
-use crate::primitives::{Keypair, Pubkey, ToBase58String};
+use std::io::ErrorKind;
+
 use ed25519_dalek::{PublicKey, Signature, Signer, Verifier};
 use multihash::{
-  Code as MultihashCode, Multihash, MultihashDigest, Sha3_256, StatefulHasher,
+  Code as MultihashCode,
+  Hasher,
+  Multihash,
+  MultihashDigest,
+  Sha3_256,
 };
 use serde::{Deserialize, Serialize};
-use std::io::ErrorKind;
 use tracing::warn;
+
+use crate::primitives::{Keypair, Pubkey, ToBase58String};
 
 // vote = (
 //  validator,
@@ -124,6 +130,6 @@ impl Vote {
     sha3.update(&self.target.to_bytes());
     sha3.update(&self.justification.to_bytes());
     sha3.update(&self.signature.to_bytes());
-    MultihashCode::multihash_from_digest(&sha3.finalize())
+    MultihashCode::Sha3_256.wrap(sha3.finalize()).unwrap()
   }
 }

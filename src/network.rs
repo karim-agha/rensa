@@ -1,10 +1,5 @@
-use crate::{
-  consensus::{
-    block::{self, Block, BlockData},
-    vote::Vote,
-  },
-  primitives::{Keypair, Pubkey},
-};
+use std::collections::HashSet;
+
 use futures::StreamExt;
 use libp2p::{
   core::{muxing::StreamMuxerBox, transport::Boxed, upgrade::Version},
@@ -14,14 +9,24 @@ use libp2p::{
   swarm::SwarmEvent,
   tcp::TcpConfig,
   yamux::YamuxConfig,
-  Multiaddr, PeerId, Swarm, Transport,
+  Multiaddr,
+  PeerId,
+  Swarm,
+  Transport,
 };
 use libp2p_episub::{Config, Episub, EpisubEvent, PeerAuthorizer};
-use std::collections::HashSet;
 use tokio::sync::mpsc::{
-  error::SendError, unbounded_channel, UnboundedReceiver, UnboundedSender,
+  error::SendError,
+  unbounded_channel,
+  UnboundedReceiver,
+  UnboundedSender,
 };
 use tracing::{debug, error, warn};
+
+use crate::{
+  consensus::{Block, BlockData, Genesis, Produced, Vote},
+  primitives::{Keypair, Pubkey},
+};
 
 type BoxedTransport = Boxed<(PeerId, StreamMuxerBox)>;
 
@@ -62,7 +67,7 @@ async fn create_transport(
 #[allow(clippy::large_enum_variant)]
 #[derive(Debug, Clone)]
 pub enum NetworkEvent<D: BlockData> {
-  BlockReceived(block::Produced<D>),
+  BlockReceived(Produced<D>),
   VoteReceived(Vote),
 }
 // this is a bug in clippy, I filed an issue on GH:
@@ -72,7 +77,7 @@ pub enum NetworkEvent<D: BlockData> {
 #[derive(Debug, Clone)]
 pub enum NetworkCommand<D: BlockData> {
   Connect(Multiaddr),
-  GossipBlock(block::Produced<D>),
+  GossipBlock(Produced<D>),
   GossipVote(Vote),
 }
 
@@ -83,7 +88,7 @@ pub struct Network<D: BlockData> {
 
 impl<D: BlockData> Network<D> {
   pub async fn new(
-    genesis: &block::Genesis<D>,
+    genesis: &Genesis<D>,
     keypair: Keypair,
     listenaddrs: impl Iterator<Item = Multiaddr>,
   ) -> std::io::Result<Self> {
@@ -121,7 +126,8 @@ impl<D: BlockData> Network<D> {
         // 2 epochs are needed until block finalization
         history_window: genesis.slot_interval
           * (genesis.epoch_slots as u32 * 2),
-        // keep informing all peers about all messages received for the last epoch
+        // keep informing all peers about all messages received for the last
+        // epoch
         lazy_push_interval: genesis.slot_interval * genesis.epoch_slots as u32,
         network_size: genesis.validators.len(),
         ..Config::default()
@@ -227,7 +233,7 @@ impl<D: BlockData> Network<D> {
 
   pub fn gossip_block(
     &mut self,
-    block: block::Produced<D>,
+    block: Produced<D>,
   ) -> Result<(), SendError<NetworkCommand<D>>> {
     self.netout.send(NetworkCommand::GossipBlock(block))
   }

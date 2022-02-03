@@ -1,9 +1,9 @@
+use std::{cmp::Ordering, collections::HashSet, ops::Deref};
+
+use multihash::Multihash;
+
 use super::block::{self, Block, BlockData};
 use crate::primitives::Pubkey;
-use multihash::Multihash;
-use std::{
-  cell::RefCell, cmp::Ordering, collections::HashSet, ops::Deref, rc::Rc,
-};
 
 /// A block that is still not finalized and its votes
 /// are still being counted.
@@ -20,6 +20,7 @@ pub struct VolatileBlock<D: BlockData> {
 
 impl<D: BlockData> Deref for VolatileBlock<D> {
   type Target = block::Produced<D>;
+
   fn deref(&self) -> &Self::Target {
     &self.block
   }
@@ -50,8 +51,8 @@ impl<D: BlockData> VolatileBlock<D> {
 #[derive(Debug, Clone)]
 pub struct TreeNode<D: BlockData> {
   pub value: VolatileBlock<D>,
-  pub parent: Option<*mut TreeNode<D>>,
-  pub children: Vec<Rc<RefCell<TreeNode<D>>>>,
+  pub parent: Option<*const TreeNode<D>>,
+  pub children: Vec<Box<TreeNode<D>>>,
 }
 
 impl<D: BlockData> TreeNode<D> {
@@ -69,13 +70,11 @@ impl<D: BlockData> TreeNode<D> {
   /// SAFETY: This struct and its methods are internal to this module
   /// and the node pointed to by the returned poineter is never reclaimed
   /// while reading the value retuned.
-  #[cfg(test)]
-  fn get(&self, hash: &Multihash) -> Option<*const Self> {
+  pub fn get(&self, hash: &Multihash) -> Option<&Self> {
     if self.value.block.hash().expect("previously verified") == *hash {
       Some(self)
     } else {
       for child in self.children.iter() {
-        let child = child.borrow();
         if let Some(b) = child.get(hash) {
           return Some(b);
         }
@@ -94,13 +93,14 @@ impl<D: BlockData> TreeNode<D> {
     if self.value.block.hash().expect("previously veriefied") == *hash {
       Some(self)
     } else {
+      let mut output = None;
       for child in self.children.iter_mut() {
-        let mut child = child.borrow_mut();
         if let Some(b) = child.get_mut(hash) {
-          return Some(b);
+          output = Some(b);
+          break;
         }
       }
-      None
+      output
     }
   }
 
@@ -112,7 +112,7 @@ impl<D: BlockData> TreeNode<D> {
   /// means that returns the last block from the subtree
   /// that has accumulated the largest amount of votes
   /// so far or highest slot number if there is a draw.
-  pub fn head(&self) -> *const Self {
+  pub fn head(&self) -> &Self {
     if self.children.is_empty() {
       return self; // leaf block
     }
@@ -123,17 +123,17 @@ impl<D: BlockData> TreeNode<D> {
       .first()
       .expect("is_empty would have returned earlier");
     for subtree in &self.children {
-      match subtree.borrow().value.votes.cmp(&max_votes) {
+      match subtree.value.votes.cmp(&max_votes) {
         Ordering::Less => { /* nothing, we have a better tree */ }
         Ordering::Equal => {
           // if two blocks have the same number of votes,
           // select the one with the longest chain.
-          if subtree.borrow().depth() > top_subtree.borrow().depth() {
+          if subtree.depth() > top_subtree.depth() {
             top_subtree = subtree;
           }
         }
         Ordering::Greater => {
-          max_votes = subtree.borrow().value.votes;
+          max_votes = subtree.value.votes;
           top_subtree = subtree;
         }
       }
@@ -141,60 +141,29 @@ impl<D: BlockData> TreeNode<D> {
 
     // recursively keep finding the top subtree
     // until we get to a leaf block, then return it
-    top_subtree.borrow().head() as *const Self
-  }
-
-  /// Given a hash of a block in this subtree this method
-  /// will locate and move out that block and all its children
-  /// from the tree as a separate tree.
-  ///
-  /// This is used when finalizing a block in the volatile state.
-  pub fn _take(&mut self, hash: &Multihash) -> Option<Self> {
-    if let Some(node) = self.get_mut(hash) {
-      let node = unsafe { &mut *node as &mut Self };
-      if let Some(parent) = node.parent {
-        let parent = unsafe { &mut *parent as &mut Self };
-        for (index, child) in parent.children.iter().enumerate() {
-          if child.borrow().value.hash().unwrap() != node.value.hash().unwrap()
-          {
-            continue; // keep looking
-          }
-
-          // found it
-          child.borrow_mut().parent = None;
-          return Some(parent.children.remove(index).borrow().clone());
-        }
-      }
-    }
-
-    None
+    top_subtree.head()
   }
 
   /// Adds an immediate child to this forktree node.
-  pub fn add_child(
-    &mut self,
-    block: VolatileBlock<D>,
-  ) -> Rc<RefCell<TreeNode<D>>> {
+  pub fn add_child(&mut self, block: VolatileBlock<D>) {
     assert!(block.block.parent().unwrap() == self.value.block.hash().unwrap());
 
     let blockhash = block.block.hash().unwrap();
-    for child in self.children.iter() {
-      if child.borrow().value.block.hash().unwrap() == blockhash {
-        return Rc::clone(child);
+    for child in &self.children {
+      if child.value.block.hash().unwrap() == blockhash {
+        return;
       }
     }
 
     // set parent link to ourself
-    let block = Rc::new(RefCell::new(TreeNode {
+    let block = Box::new(TreeNode {
       value: block,
-      parent: Some(self as *mut Self),
+      parent: Some(self as *const Self),
       children: vec![],
-    }));
+    });
 
     // insert the block into this fork subtree as a leaf
-    let ret = Rc::clone(&block);
     self.children.push(block);
-    ret
   }
 
   /// Applies votes to a block, and all its ancestors until the
@@ -211,7 +180,7 @@ impl<D: BlockData> TreeNode<D> {
     // until the justification point.
     let mut current = self;
     while let Some(ancestor) = current.parent {
-      let ancestor = unsafe { &mut *ancestor as &mut Self };
+      let ancestor = unsafe { &mut *(ancestor as *mut Self) as &mut Self };
       if ancestor.value.voters.insert(voter.clone()) {
         ancestor.value.votes += votes;
       }
@@ -222,13 +191,73 @@ impl<D: BlockData> TreeNode<D> {
   /// The distance of this node from the root of the tree.
   /// This is used in determining the longest current chain.
   pub fn depth(&self) -> usize {
-    let mut depth = 0;
-    let mut current = self;
-    while let Some(ancestor) = current.parent {
-      current = unsafe { &mut *ancestor as &mut Self };
-      depth += 1;
+    self.path().count() - 1
+  }
+
+  /// Creates an iterator that walks the path from the current
+  /// node until the last finalized block.
+  pub fn path(&self) -> impl Iterator<Item = &TreeNode<D>> {
+    PathIter::new(self)
+  }
+
+  pub fn is_descendant_of(&self, hash: &Multihash) -> bool {
+    for step in self.path().skip(1) {
+      if step.value.hash().unwrap() == *hash {
+        return true;
+      }
     }
-    depth
+    false
+  }
+
+  /// Returns the oldest ancestor of the current block
+  /// that is still in the same epoch as this block.
+  ///
+  /// In other words: returns the first block in the epoch
+  /// that contains the current block.
+  ///
+  /// This is used to check for finality of a block, and
+  /// checking if the two consecutive epoch checkpoints
+  /// are finalized.
+  pub fn epoch_start(&self, epoch_slots: u64) -> &TreeNode<D> {
+    let epoch = |n: &TreeNode<D>| n.value.height() / epoch_slots;
+    let mut needle = self;
+    for step in self.path().skip(1) {
+      if epoch(step) == epoch(self) {
+        needle = step;
+      } else {
+        break;
+      }
+    }
+    if needle.value.hash().unwrap() != self.value.hash().unwrap() {
+      needle
+    } else {
+      self
+    }
+  }
+}
+
+struct PathIter<'c, D: BlockData> {
+  current: Option<&'c TreeNode<D>>,
+}
+
+impl<'c, D: BlockData> PathIter<'c, D> {
+  pub fn new(current: &'c TreeNode<D>) -> Self {
+    Self {
+      current: Some(current),
+    }
+  }
+}
+
+impl<'c, D: BlockData> Iterator for PathIter<'c, D> {
+  type Item = &'c TreeNode<D>;
+
+  fn next(&mut self) -> Option<Self::Item> {
+    if let Some(node) = self.current {
+      self.current = node.parent.map(|p| unsafe { &*p as &_ });
+      Some(node)
+    } else {
+      None
+    }
   }
 }
 
@@ -278,10 +307,7 @@ mod tests {
 
     let h1 = root.head();
 
-    assert_eq!(
-      unsafe { &*h1 as &TreeNode<u8> }.value.hash().unwrap(),
-      root_hash
-    );
+    assert_eq!(h1.value.hash().unwrap(), root_hash);
 
     let child1 = generate_child(&keypair, &root.value, 2u8);
     let child1_1 = generate_child(&keypair, &child1, 11u8);
@@ -299,50 +325,42 @@ mod tests {
     let child2_1_hash = child2_1.hash().unwrap();
     let child2_2_hash = child2_2.hash().unwrap();
 
-    let c1 = root.add_child(VolatileBlock::new(child1));
-    let c11 = c1.borrow_mut().add_child(VolatileBlock::new(child1_1));
-    let c12 = c1.borrow_mut().add_child(VolatileBlock::new(child1_2));
+    root.add_child(VolatileBlock::new(child1));
+    let c1 = root.children.last_mut().unwrap();
+    c1.add_child(VolatileBlock::new(child1_1));
+    c1.add_child(VolatileBlock::new(child1_2));
 
-    let c2 = root.add_child(VolatileBlock::new(child2));
-    let c21 = c2.borrow_mut().add_child(VolatileBlock::new(child2_1));
-    let c22 = c2.borrow_mut().add_child(VolatileBlock::new(child2_2));
+    root.add_child(VolatileBlock::new(child2));
+    let c2 = root.children.last_mut().unwrap();
+    c2.add_child(VolatileBlock::new(child2_1));
+    c2.add_child(VolatileBlock::new(child2_2));
 
-    let get1 = unsafe { &*root.get(&child1_hash).unwrap() as &TreeNode<u8> };
-    let get11 = unsafe { &*root.get(&child1_1_hash).unwrap() as &TreeNode<u8> };
-    let get12 = unsafe { &*root.get(&child1_2_hash).unwrap() as &TreeNode<u8> };
+    let get1 = root.get(&child1_hash).unwrap();
+    let get11 = root.get(&child1_1_hash).unwrap();
+    let get12 = root.get(&child1_2_hash).unwrap();
 
-    let get2 = unsafe { &*root.get(&child2_hash).unwrap() as &TreeNode<u8> };
-    let get21 = unsafe { &*root.get(&child2_1_hash).unwrap() as &TreeNode<u8> };
-    let get22 = unsafe { &*root.get(&child2_2_hash).unwrap() as &TreeNode<u8> };
+    let get2 = root.get(&child2_hash).unwrap();
+    let get21 = root.get(&child2_1_hash).unwrap();
+    let get22 = root.get(&child2_2_hash).unwrap();
 
     let get3 = root.get(&Multihash::default());
 
-    assert_eq!(root.value.hash().unwrap(), root_hash);
-    assert_eq!(
-      get1.value.hash().unwrap(),
-      c1.borrow().value.hash().unwrap()
-    );
-    assert_eq!(
-      get11.value.hash().unwrap(),
-      c11.borrow().value.hash().unwrap()
-    );
-    assert_eq!(
-      get12.value.hash().unwrap(),
-      c12.borrow().value.hash().unwrap()
-    );
+    let c1 = root.children.first().unwrap();
+    let c11 = c1.children.first().unwrap();
+    let c12 = c1.children.last().unwrap();
 
-    assert_eq!(
-      get2.value.hash().unwrap(),
-      c2.borrow().value.hash().unwrap()
-    );
-    assert_eq!(
-      get21.value.hash().unwrap(),
-      c21.borrow().value.hash().unwrap()
-    );
-    assert_eq!(
-      get22.value.hash().unwrap(),
-      c22.borrow().value.hash().unwrap()
-    );
+    let c2 = root.children.last().unwrap();
+    let c21 = c2.children.first().unwrap();
+    let c22 = c2.children.last().unwrap();
+
+    assert_eq!(root.value.hash().unwrap(), root_hash);
+    assert_eq!(get1.value.hash().unwrap(), c1.value.hash().unwrap());
+    assert_eq!(get11.value.hash().unwrap(), c11.value.hash().unwrap());
+    assert_eq!(get12.value.hash().unwrap(), c12.value.hash().unwrap());
+
+    assert_eq!(get2.value.hash().unwrap(), c2.value.hash().unwrap());
+    assert_eq!(get21.value.hash().unwrap(), c21.value.hash().unwrap());
+    assert_eq!(get22.value.hash().unwrap(), c22.value.hash().unwrap());
 
     assert!(get3.is_none());
 
@@ -355,16 +373,5 @@ mod tests {
     assert_eq!(get2.depth(), 1);
 
     assert_eq!(root.depth(), 0);
-
-    let o2 = root._take(&child2_hash);
-
-    assert!(o2.is_some());
-
-    let o2u = o2.unwrap();
-    assert_eq!(o2u.parent, None);
-    assert_eq!(o2u.value.hash().unwrap(), child2_hash);
-
-    // make sure its moved out and not in the original tree anymore
-    assert!(root.get(&child2_hash).is_none());
   }
 }

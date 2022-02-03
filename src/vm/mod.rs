@@ -11,11 +11,11 @@ pub use diff::StateDiff;
 pub use finalized::{Finalized, FinalizedState};
 pub use isolated::IsolatedState;
 pub use machine::Machine;
+use multihash::Multihash;
+use thiserror::Error;
 pub use transaction::{AccountRef, Transaction};
 
 use crate::primitives::{Account, Pubkey};
-use multihash::Multihash;
-use thiserror::Error;
 
 #[derive(Debug, Error)]
 pub enum StateError {

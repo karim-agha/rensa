@@ -2,7 +2,7 @@ pub trait ToBase58String {
   fn to_b58(&self) -> String;
 }
 
-impl<S: multihash::Size> ToBase58String for multihash::MultihashGeneric<S> {
+impl<const S: usize> ToBase58String for multihash::MultihashGeneric<S> {
   fn to_b58(&self) -> String {
     bs58::encode(self.to_bytes()).into_string()
   }

@@ -4,15 +4,20 @@
 //! and are exposed to the users of the chain. The invocation semantics are
 //! identical to invoking a regular user-uploaded contract.
 
-use super::contract::{
-  self, ContractError, Environment, LogEntry, Output, StateChange,
-};
-use crate::{
-  primitives::{Account, Pubkey},
-  vm::contract::ContractEntrypoint,
-};
-use multihash::{Sha3_256, StatefulHasher};
 use std::collections::HashMap;
+
+use multihash::{Hasher, Sha3_256};
+
+use super::contract::{
+  self,
+  ContractEntrypoint,
+  ContractError,
+  Environment,
+  LogEntry,
+  Output,
+  StateChange,
+};
+use crate::primitives::{Account, Pubkey};
 
 lazy_static::lazy_static! {
   pub static ref BUILTIN_CONTRACTS: HashMap<Pubkey, ContractEntrypoint> = {

@@ -1,13 +1,14 @@
+use std::collections::HashMap;
+
+use multihash::Multihash;
+
 use super::{Result, State};
 use crate::primitives::{Account, Pubkey};
-use multihash::Multihash;
-use std::collections::HashMap;
 
 #[derive(Debug, Default)]
 pub struct StateDiff {
   pub(super) data: HashMap<Pubkey, Account>,
 }
-
 
 impl StateDiff {
   pub fn merge(self, newer: StateDiff) -> StateDiff {

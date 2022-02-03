@@ -1,11 +1,3 @@
-use super::{validator::Validator, vote::Vote};
-use crate::primitives::{Account, Keypair, Pubkey, ToBase58String};
-use chrono::{DateTime, Utc};
-use ed25519_dalek::{PublicKey, Signature, Signer, Verifier};
-use multihash::{
-  Code as MultihashCode, Multihash, MultihashDigest, Sha3_256, StatefulHasher,
-};
-use serde::{Deserialize, Serialize};
 use std::{
   collections::BTreeMap,
   fmt::Debug,
@@ -13,6 +5,20 @@ use std::{
   marker::PhantomData,
   time::Duration,
 };
+
+use chrono::{DateTime, Utc};
+use ed25519_dalek::{PublicKey, Signature, Signer, Verifier};
+use multihash::{
+  Code as MultihashCode,
+  Hasher,
+  Multihash,
+  MultihashDigest,
+  Sha3_256,
+};
+use serde::{Deserialize, Serialize};
+
+use super::{validator::Validator, vote::Vote};
+use crate::primitives::{Account, Keypair, Pubkey, ToBase58String};
 
 /// The type requirements for anything that could be carried by a block
 /// in the consensus layer. This is usually a list of transactions in
@@ -39,7 +45,9 @@ where
       &bincode::serialize(self)
         .map_err(|e| std::io::Error::new(ErrorKind::InvalidData, e))?,
     );
-    Ok(MultihashCode::multihash_from_digest(&sha3.finalize()))
+    MultihashCode::Sha3_256
+      .wrap(sha3.finalize())
+      .map_err(|e| std::io::Error::new(ErrorKind::Other, e))
   }
 }
 
@@ -48,7 +56,6 @@ where
 ///
 /// D is type of the underlying data that consensus is trying to
 ///   decide on, in case of a blockchain it is going to be Blocks
-///
 pub trait Block<D: BlockData>: Debug {
   /// Hash of this block with its payload.
   fn hash(&self) -> Result<Multihash, StdIoError>;
@@ -114,7 +121,7 @@ pub struct Genesis<D: BlockData> {
   #[serde(with = "humantime_serde")]
   pub slot_interval: Duration,
 
-  /// Maximum size of a block or any other single transmission 
+  /// Maximum size of a block or any other single transmission
   /// over p2p gossip network in bytes.
   pub max_block_size: u64,
 
@@ -247,7 +254,9 @@ impl<D: BlockData> Block<D> for Genesis<D> {
       }
     }
 
-    Ok(MultihashCode::multihash_from_digest(&sha3.finalize()))
+    MultihashCode::Sha3_256
+      .wrap(sha3.finalize())
+      .map_err(|e| std::io::Error::new(ErrorKind::Other, e))
   }
 
   /// Always errors because this is the very first
@@ -424,7 +433,9 @@ impl<D: BlockData> Produced<D> {
     for vote in votes {
       sha3.update(&vote.hash().to_bytes());
     }
-    Ok(MultihashCode::multihash_from_digest(&sha3.finalize()))
+    MultihashCode::Sha3_256
+      .wrap(sha3.finalize())
+      .map_err(|e| std::io::Error::new(ErrorKind::Other, e))
   }
 }
 

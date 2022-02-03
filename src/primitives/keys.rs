@@ -1,13 +1,16 @@
-use ed25519_dalek::{PublicKey, SecretKey};
-use serde::{
-  de::{self, Visitor},
-  Deserialize, Deserializer, Serialize,
-};
 use std::{
   fmt::{Debug, Display, Formatter},
   marker::PhantomData,
   ops::Deref,
   str::FromStr,
+};
+
+use ed25519_dalek::{PublicKey, SecretKey};
+use serde::{
+  de::{self, Visitor},
+  Deserialize,
+  Deserializer,
+  Serialize,
 };
 use thiserror::Error;
 
@@ -22,6 +25,7 @@ pub struct Pubkey([u8; 32]);
 
 impl Deref for Pubkey {
   type Target = [u8];
+
   fn deref(&self) -> &Self::Target {
     &self.0
   }
@@ -47,6 +51,7 @@ impl From<Pubkey> for String {
 
 impl FromStr for Pubkey {
   type Err = bs58::decode::Error;
+
   fn from_str(s: &str) -> Result<Self, Self::Err> {
     let mut bytes = [0u8; 32];
     bs58::decode(s).into(&mut bytes)?;
@@ -101,6 +106,7 @@ impl Clone for Keypair {
 
 impl Deref for Keypair {
   type Target = ed25519_dalek::Keypair;
+
   fn deref(&self) -> &Self::Target {
     &self.0
   }
@@ -145,6 +151,7 @@ pub enum KeypairError {
 
 impl TryFrom<&[u8]> for Keypair {
   type Error = KeypairError;
+
   fn try_from(value: &[u8]) -> Result<Self, Self::Error> {
     let secret = SecretKey::from_bytes(value)?;
     let public: PublicKey = (&secret).into();
@@ -154,6 +161,7 @@ impl TryFrom<&[u8]> for Keypair {
 
 impl FromStr for Keypair {
   type Err = KeypairError;
+
   fn from_str(value: &str) -> Result<Self, Self::Err> {
     let mut secret = [0u8; 32];
     bs58::decode(value)

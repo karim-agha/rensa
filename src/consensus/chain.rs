@@ -1,31 +1,44 @@
 //! Blockchain State
 //!
-//! In general when blocks are produced by validators they go through three phases:
+//! In general when blocks are produced by validators they go through three
+//! phases:
 //!
-//! 1. Processed: When a block is first produced and included in the forktree it is in
-//!    this phase until it gets at least 2/3 of all stake of votes. Those blocks are fairly
-//!    volatile and should not be relied on for anything serious, except maybe arbitrage bots
-//!    and MEV.
+//! 1. Processed: When a block is first produced and included in the forktree it
+//! is in    this phase until it gets at least 2/3 of all stake of votes. Those
+//! blocks are fairly    volatile and should not be relied on for anything
+//! serious, except maybe arbitrage bots    and MEV.
 //!
-//! 2. Confirmed: Once 2/3 of the stake votes on a block or any of its descendants, it will
-//!    be in the confirmed state and that means that it is very likely that this block will
-//!    soon be finalized.
+//! 2. Confirmed: Once 2/3 of the stake votes on a block or any of its
+//! descendants, it will    be in the confirmed state and that means that it is
+//! very likely that this block will    soon be finalized.
 //!
-//! 3. Finalized: A block gets finalized when it is confirmed and in the canonical chain for
-//!    two consecutive epochs. Finalized blocks are never reverted and they can be used as
-//!    a confirmation for high-stakes operations, such as withdrawals from exchanges, or payment
-//!    confirmations.
+//! 3. Finalized: A block gets finalized when it is confirmed and in the
+//! canonical chain for    two consecutive epochs. Finalized blocks are never
+//! reverted and they can be used as    a confirmation for high-stakes
+//! operations, such as withdrawals from exchanges, or payment    confirmations.
 //!
-//! The volatile state is a tree of chains that gets formed as validators rotate and produce
-//! new blocks. In an ideal world with perfect network conditions and no delays, this should
-//! be a linked list. However when a validator build a block before receiving the latest block
-//! from the last producer, it sets the parent block to the last received block and that's how
-//! forks are formed. Forks may be also a result of a validator attempting to censor another
+//! The volatile state is a tree of chains that gets formed as validators rotate
+//! and produce new blocks. In an ideal world with perfect network conditions
+//! and no delays, this should be a linked list. However when a validator build
+//! a block before receiving the latest block from the last producer, it sets
+//! the parent block to the last received block and that's how forks are formed.
+//! Forks may be also a result of a validator attempting to censor another
 //! validator's blocks.
 //!
-//! Voting is the process of commiting to a branch of the forktree as the canonical branch by
-//! other validators in the system. The forkchoice rules are based on the Greedy Heaviest
-//! Obvserved SubTree (GHOST) algorithm in Casper.
+//! Voting is the process of commiting to a branch of the forktree as the
+//! canonical branch by other validators in the system. The forkchoice rules are
+//! based on the Greedy Heaviest Obvserved SubTree (GHOST) algorithm in Casper.
+
+use std::{
+  cmp::Ordering,
+  collections::{hash_map::Entry, HashMap, VecDeque},
+  pin::Pin,
+  task::{Context, Poll},
+};
+
+use futures::Stream;
+use multihash::Multihash;
+use tracing::{debug, warn};
 
 use super::{
   block::{self, Block, BlockData},
@@ -35,17 +48,8 @@ use super::{
 };
 use crate::{
   primitives::{Pubkey, ToBase58String},
-  vm::Finalized,
+  vm::{Finalized, FinalizedState},
 };
-use futures::Stream;
-use multihash::Multihash;
-use std::{
-  cmp::Ordering,
-  collections::{hash_map::Entry, HashMap, VecDeque},
-  pin::Pin,
-  task::{Context, Poll},
-};
-use tracing::{debug, info, warn};
 
 #[derive(Debug)]
 pub enum ChainEvent<D: BlockData> {
@@ -54,6 +58,14 @@ pub enum ChainEvent<D: BlockData> {
     justification: Multihash,
   },
   BlockIncluded(block::Produced<D>),
+  BlockConfirmed {
+    block: block::Produced<D>,
+    votes: u64,
+  },
+  BlockFinalized {
+    block: block::Produced<D>,
+    votes: u64,
+  },
 }
 
 /// Represents the state of the consensus protocol
@@ -85,7 +97,7 @@ pub struct Chain<'g, D: BlockData> {
   ///
   /// Those blocks are voted on by validators, once the finalization
   /// requirements are met, they get finalized.
-  forktrees: Vec<TreeNode<D>>,
+  forktrees: Vec<Box<TreeNode<D>>>,
 
   /// Blocks that were received but their parent
   /// block was not included in the forrest (yet).
@@ -101,6 +113,14 @@ pub struct Chain<'g, D: BlockData> {
   /// the orphans collection are attached to the orphan tree.
   orphans: HashMap<Multihash, Vec<VolatileBlock<D>>>,
 
+  /// Votes casted by this node.
+  /// This collection is used to track the voting history
+  /// of the current node and to ensure that it never votes
+  /// for two conflicting branches of the history.
+  ///
+  /// The is a key-value mapping of epoch# -> (justification, target)
+  ownvotes: HashMap<u64, (Multihash, Multihash)>,
+
   /// Events emitted by this chain instance
   events: VecDeque<ChainEvent<D>>,
 }
@@ -112,6 +132,7 @@ impl<'g, D: BlockData> Chain<'g, D> {
       finalized,
       forktrees: vec![],
       orphans: HashMap::new(),
+      ownvotes: HashMap::new(),
       events: VecDeque::new(),
       stakes: genesis
         .validators
@@ -159,11 +180,7 @@ impl<'g, D: BlockData> Chain<'g, D> {
   /// This method returns the last finalized block if the
   /// volatile history is empty ingested or produced so far.
   pub fn head(&self) -> &dyn Block<D> {
-    let mut heads: Vec<_> = self
-      .forktrees
-      .iter()
-      .map(|f| unsafe { &*f.head() as &TreeNode<D> })
-      .collect();
+    let mut heads: Vec<_> = self.forktrees.iter().map(|f| f.head()).collect();
 
     // get the most voted on subtree and if there is a draw, get
     // the longest chain
@@ -172,7 +189,7 @@ impl<'g, D: BlockData> Chain<'g, D> {
       o => o,
     });
 
-    // if no volatile state, either all blocks 
+    // if no volatile state, either all blocks
     // are finalized or we are still at genesis block.
     match heads.last() {
       Some(head) => &head.value.block,
@@ -209,26 +226,82 @@ impl<'g, D: BlockData> Chain<'g, D> {
 }
 
 impl<'g, 'f, D: BlockData> Chain<'g, D> {
+  /// checks if a block has received at least 2/3 of stake votes
+  fn confirmed(&self, block: &VolatileBlock<D>) -> bool {
+    block.votes >= self.minimum_majority_stake()
+  }
+
   /// Adds a vote for a given target block in the history.
   ///
   /// The justification must be the last finalized block,
   /// and the target block must be one of its descendants.
   fn vote(&mut self, vote: &Vote) {
-    if vote.justification != self.finalized.hash().unwrap() {
-      warn!(
-        "Not justified by the last finalized block {}: {vote:?}",
-        self.finalized.hash().unwrap().to_b58()
-      );
-      return;
-    }
-
+    let majority = self.minimum_majority_stake();
+    let confirmed = |block: &VolatileBlock<D>| block.votes >= majority;
     if let Some(stake) = self.stakes.get(&vote.validator) {
       for root in self.forktrees.iter_mut() {
-        if let Some(b) = root.get_mut(&vote.target) {
-          let b = unsafe { &mut *b as &mut TreeNode<D> };
-          b.add_votes(*stake, vote.validator.clone());
+        if let Some(target) = root.get_mut(&vote.target) {
+          let target = unsafe { &mut *target as &mut TreeNode<D> };
+
+          // verify that the justification is a confirmed block
+          match root.get(&vote.justification) {
+            Some(j) => {
+              if !confirmed(&j.value) {
+                warn!(
+                  "Vote justification {} is not a confirmed block",
+                  vote.justification.to_b58()
+                );
+              }
+            }
+            None => {
+              if vote.justification != self.finalized.hash().unwrap() {
+                warn!(
+                  "Vote justification not found: {}",
+                  vote.justification.to_b58()
+                );
+                return;
+              }
+            }
+          };
+
+          if !target.is_descendant_of(&vote.justification)
+            && self.finalized.hash().unwrap() != vote.justification
+          {
+            warn!(
+              "Vote justification {} is not a parent of target {}.",
+              vote.justification.to_b58(),
+              vote.target.to_b58()
+            );
+          } else {
+            let mut unconfirmed = vec![];
+            if !self.confirmed(&target.value) {
+              'confirmations: for ancestor in target.path() {
+                if !self.confirmed(&ancestor.value) {
+                  unconfirmed.push(&ancestor.value as *const _);
+                } else {
+                  break 'confirmations;
+                }
+              }
+            }
+
+            target.add_votes(*stake, vote.validator.clone());
+
+            for ancestor in unconfirmed {
+              let ancestor = unsafe { &*ancestor as &_ };
+              if self.confirmed(ancestor) {
+                self.events.push_back(ChainEvent::BlockConfirmed {
+                  block: ancestor.block.clone(),
+                  votes: ancestor.votes,
+                })
+              }
+            }
+          }
+          return;
         }
       }
+      warn!("Vote target {} not found ", vote.target.to_b58());
+    } else {
+      warn!("Ignoring vote from unknown validator {}", vote.validator);
     }
   }
 
@@ -259,14 +332,15 @@ impl<'g, 'f, D: BlockData> Chain<'g, D> {
     };
 
     if block.parent == self.finalized.hash().unwrap() {
-      self.forktrees.push(TreeNode::new(block));
+      self.forktrees.push(Box::new(TreeNode::new(block)));
       emit_event(&self.forktrees.last().unwrap().value.block);
       return None;
     } else {
       for tree in self.forktrees.iter_mut() {
         if let Some(parent) = tree.get_mut(&block.parent) {
           let parent = unsafe { &mut *parent as &mut TreeNode<D> };
-          emit_event(&parent.add_child(block).borrow().value.block);
+          parent.add_child(block);
+          emit_event(&parent.children.last().unwrap().value);
           return None;
         }
       }
@@ -354,7 +428,7 @@ impl<'g, 'f, D: BlockData> Chain<'g, D> {
     }
 
     let bhash = block.hash().unwrap();
-    info!(
+    debug!(
       "ingesting block {block} in epoch {}",
       self.epoch(block.height())
     );
@@ -374,7 +448,7 @@ impl<'g, 'f, D: BlockData> Chain<'g, D> {
         // if the newly inserted block have successfully
         // replaced our head of the chain, then vote for it.
         if self.head().hash().unwrap() == bhash {
-          self.commit_and_vote(bhash, self.finalized().hash().unwrap());
+          self.commit_and_vote(bhash);
         }
       }
       // the block was not matched with a parent and returned
@@ -388,26 +462,134 @@ impl<'g, 'f, D: BlockData> Chain<'g, D> {
     }
   }
 
-  /// This is also called when the current validator is voting,
-  /// it includes its own vote. Returns true if the vote was
-  /// accepted and it should be propagated to the rest of the
-  /// network, otherwise false.
-  ///
-  /// Two different methods are used for own votes vs foreign
-  /// votes, so that validators won't violate the rules of consensus
-  /// and commit to the fork branches they have voted on and avoid
-  /// voting on conflicting branches.
-  fn commit_and_vote(&mut self, target: Multihash, justification: Multihash) {
-    // todo: commit to this branch and never vote
-    // on a conflicting branch. That's a hard slashing condition.
-    self.events.push_back(ChainEvent::Vote {
-      target,
-      justification,
-    });
+  /// Given a block hash this will try to generate a vote for it
+  /// using CBC Casper voting rules. Each vote has a justification
+  /// that is a parent of the target block that has already received
+  /// 2/3 votes.
+  /// While trying to generate a vote it makes sure that it does
+  /// not violate the two voting faults of CBC Casper:
+  ///   1. No conflicting votes;
+  ///   2. No surround vote;
+  fn commit_and_vote(&mut self, target: Multihash) {
+    for root in &self.forktrees {
+      if let Some(target) = root.get(&target) {
+        let epoch = self.epoch(target.value.height());
+
+        // find the most recent confirmed block with 2/3 votes
+        let justification = target
+          .path()
+          .skip(1)
+          .find(|ancestor| self.confirmed(&ancestor.value));
+
+        // if no confirmed parent is found pick the last finalized
+        // block, this could be also the genesis block in case not
+        // enough votes arrived yet for any blocks.
+        let justification_hash = justification
+          .map(|j| j.value.hash().unwrap())
+          .unwrap_or_else(|| self.finalized.underlying.hash().unwrap());
+
+        let target_hash = target.value.hash().unwrap();
+
+        // if we have already voted in this epoch, make sure that
+        // we are not braking any voting rules.
+        if let Some((j, t)) = self.ownvotes.get(&epoch) {
+          // 1. no surround vote, never use a justification
+          // that is an ancestor of a previous justification.
+          if let Some(prev_just) = root.get(j) {
+            if prev_just.is_descendant_of(&justification_hash) {
+              return; // this will create a slashable surround vote.
+            }
+          }
+
+          if !target.is_descendant_of(t) {
+            return; // this will create a slashable conflicting vote.
+          }
+        }
+
+        // save our vote
+        self
+          .ownvotes
+          .insert(epoch, (justification_hash, target_hash));
+
+        self.events.push_back(ChainEvent::Vote {
+          target: target_hash,
+          justification: justification_hash,
+        });
+        return;
+      }
+    }
   }
 
-  /// a block is finalized if two consecutive epochs in a row
-  /// get 2/3 majority votes. The intuition behind it is:
+  /// looks a root in the fork trees that is eligible
+  /// for finalization and returns its index.
+  fn find_finalizable_root(&self) -> Option<usize> {
+    for (i, root) in self.forktrees.iter().enumerate() {
+      if root.value.votes >= self.minimum_majority_stake() {
+        let head = root.head();
+
+        // we need to find two consecutive epochs that have
+        // 2/3 of the votig stake, then we can finalize the
+        // second ancestor and all its parents.
+
+        // first rewind to the beginning of the epoch of the current head
+        let head_epoch_start = head.epoch_start(self.genesis.epoch_slots);
+
+        if let Some(first_checkpoint) = head_epoch_start
+          .path()
+          .nth(1) // last block in previous epoch
+          .map(|c| c.epoch_start(self.genesis.epoch_slots))
+        {
+          // check if the preceeding epoch is confirmed.
+          if first_checkpoint.value.votes >= self.minimum_majority_stake() {
+            // now check the second consecutive epoch checkpoint
+            if let Some(second_checkpoint) = first_checkpoint
+              .path()
+              .nth(1) // last block in epoch N - 2
+              .map(|c| c.epoch_start(self.genesis.epoch_slots))
+            {
+              // the second consecutive checkpoint is confirmed
+              // all ancestors of this block are considered final
+              if second_checkpoint.value.votes >= self.minimum_majority_stake()
+              {
+                // move out the entire fork subtree,
+                // it'll become the new finalized block,
+                // and its children the forktree roots
+                return Some(i);
+              }
+            }
+          }
+        }
+      }
+    }
+
+    None
+  }
+
+  /// Given a root that was in the forktrees collection,
+  /// this method will make the root the newest finalized
+  /// state and its children the new top-level roots.
+  ///
+  /// Applies state accumulate by the root to the current
+  /// finalized state.
+  fn finalize_root(&mut self, subtree: TreeNode<D>) {
+    self.finalized = Finalized {
+      underlying: Box::new(subtree.value.block),
+      state: FinalizedState,
+    };
+
+    self.forktrees = subtree
+      .children
+      .into_iter()
+      .map(|mut c| {
+        c.parent = None; // becomes new root in forktree
+        c
+      })
+      .collect();
+  }
+
+  /// A block is finalized if two consecutive epochs get 2/3 majority votes.
+  ///
+  /// The intuition behind it is:
   /// The first 2/3 vote acknowledges that: "I know that everyone
   /// thinks this is the correct fork", the second consecutive vote
   /// acknoledges that: "I know that everyone knows that everyone thinks
@@ -415,11 +597,37 @@ impl<'g, 'f, D: BlockData> Chain<'g, D> {
   ///
   /// We go over all the roots of the fork tree and if we find a
   /// root that has 67% of stake and its descendant one epoch later
-  /// also has 67% of the votes, then we discard all other roots, 
-  /// move the root to a finalized state, and its children become 
+  /// also has 67% of the votes, then we discard all other roots,
+  /// move the root to a finalized state, and its children become
   /// the new roots.
-  fn try_finalize_roots(&mut self) {
-    // todo
+  ///
+  /// Returns true if a root was finalized, otherwise false.
+  fn try_finalize_roots(&mut self) -> bool {
+    // check if any of the forktree roots is eligible for
+    // being finalized.
+    if let Some(index) = self.find_finalizable_root() {
+      // found one, remove it from the tree and
+      // finalize it, then make its children the
+      // new forktrees roots.
+      let subtree = self.forktrees.remove(index);
+
+      // clones is for the output event
+      let votes = subtree.value.votes;
+      let block = subtree.value.block.clone();
+
+      self.finalize_root(*subtree);
+
+      // keep this collection size bounded,
+      // finalized votes are irrelevant for new votes.
+      self.ownvotes.remove(&self.epoch(block.height()));
+
+      // signal to external listeners that a block was finalized
+      self
+        .events
+        .push_back(ChainEvent::BlockFinalized { block, votes });
+      return true;
+    }
+    false
   }
 }
 
@@ -434,7 +642,7 @@ impl<D: BlockData> Stream for Chain<'_, D> {
     if let Some(event) = self.events.pop_back() {
       if let ChainEvent::BlockIncluded(ref block) = event {
         self.count_votes(block.votes());
-        self.try_finalize_roots();
+        while self.try_finalize_roots() {}
       }
       return Poll::Ready(Some(event));
     }
@@ -445,6 +653,11 @@ impl<D: BlockData> Stream for Chain<'_, D> {
 
 #[cfg(test)]
 mod test {
+  use std::{collections::BTreeMap, marker::PhantomData, time::Duration};
+
+  use chrono::Utc;
+  use ed25519_dalek::{PublicKey, SecretKey};
+
   use super::Chain;
   use crate::{
     consensus::{
@@ -453,11 +666,6 @@ mod test {
     },
     primitives::Keypair,
     vm::{Finalized, FinalizedState, Transaction},
-  };
-  use chrono::Utc;
-  use ed25519_dalek::{PublicKey, SecretKey};
-  use std::{
-    collections::BTreeMap, marker::PhantomData, rc::Rc, time::Duration,
   };
 
   #[test]
@@ -488,7 +696,7 @@ mod test {
     };
 
     let finalized = Finalized {
-      underlying: Rc::new(genesis.clone()),
+      underlying: Box::new(genesis.clone()),
       state: FinalizedState,
     };
 
@@ -551,7 +759,7 @@ mod test {
     };
 
     let finalized = Finalized {
-      underlying: Rc::new(genesis.clone()),
+      underlying: Box::new(genesis.clone()),
       state: FinalizedState,
     };
 

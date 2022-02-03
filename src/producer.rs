@@ -1,29 +1,28 @@
-use crate::{
-  consensus::{block, vote::Vote},
-  primitives::{Keypair, Pubkey, ToBase58String},
-  vm::{AccountRef, Transaction},
-};
-use futures::Stream;
 use std::{
   collections::{HashMap, HashSet, VecDeque},
   mem::take,
   pin::Pin,
   task::{Context, Poll},
 };
+
+use futures::Stream;
 use tracing::info;
+
+use crate::{
+  consensus::{Block, Genesis, Produced, Vote},
+  primitives::{Keypair, Pubkey, ToBase58String},
+  vm::{AccountRef, Transaction},
+};
 
 pub struct BlockProducer {
   keypair: Keypair,
   votes: HashMap<[u8; 64], Vote>,
   validators: HashSet<Pubkey>,
-  pending: VecDeque<block::Produced<Vec<Transaction>>>,
+  pending: VecDeque<Produced<Vec<Transaction>>>,
 }
 
 impl BlockProducer {
-  pub fn new(
-    genesis: &block::Genesis<Vec<Transaction>>,
-    keypair: Keypair,
-  ) -> Self {
+  pub fn new(genesis: &Genesis<Vec<Transaction>>, keypair: Keypair) -> Self {
     BlockProducer {
       keypair,
       votes: HashMap::new(),
@@ -44,17 +43,13 @@ impl BlockProducer {
   }
 
   // remove votes that were already observed in received blocks.
-  pub fn exclude_votes(&mut self, block: &block::Produced<Vec<Transaction>>) {
+  pub fn exclude_votes(&mut self, block: &Produced<Vec<Transaction>>) {
     for vote in &block.votes {
       self.votes.remove(&vote.signature.to_bytes());
     }
   }
 
-  pub fn produce(
-    &mut self,
-    slot: u64,
-    prev: &dyn block::Block<Vec<Transaction>>,
-  ) {
+  pub fn produce(&mut self, slot: u64, prev: &dyn Block<Vec<Transaction>>) {
     let prevhash = prev.hash().unwrap();
 
     let payer = "6MiU5w4RZVvCDqvmitDqFdU5QMoeS7ywA6cAnSeEFdW"
@@ -83,7 +78,7 @@ impl BlockProducer {
 
     // let votes = take(&mut self.votes);
 
-    let block = block::Produced::new(
+    let block = Produced::new(
       &self.keypair,
       slot,
       prevhash,
@@ -97,7 +92,7 @@ impl BlockProducer {
 }
 
 impl Stream for BlockProducer {
-  type Item = block::Produced<Vec<Transaction>>;
+  type Item = Produced<Vec<Transaction>>;
 
   fn poll_next(
     mut self: Pin<&mut Self>,
