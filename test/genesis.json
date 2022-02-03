@@ -4,7 +4,7 @@
   "slotInterval": "1s",
   "epochSlots": 16,
   "maxJustificationAge": 3,
-  "maxBlockSize": 100000,
+  "maxBlockSize": 5000000,
   "state": {
     "CKDN1WjimfErkbgecnEfoPfs7CU1TknwMhpgbiXNknGC": {
       "owner": null,

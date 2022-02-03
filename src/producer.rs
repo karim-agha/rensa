@@ -82,11 +82,15 @@ impl BlockProducer {
       &self.keypair,
       slot,
       prevhash,
-      vec![tx],
+      vec![tx; 5000],
       take(&mut self.votes).into_iter().map(|(_, v)| v).collect(),
     )
     .unwrap();
-    info!("{block:#?} on top of {}", prevhash.to_b58());
+    info!(
+      "Produced {block} on top of {} with {} transactions",
+      prevhash.to_b58(),
+      block.data.len()
+    );
     self.pending.push_back(block);
   }
 }

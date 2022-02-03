@@ -15,6 +15,7 @@ use multihash::{
   MultihashDigest,
   Sha3_256,
 };
+use once_cell::sync::OnceCell;
 use serde::{Deserialize, Serialize};
 
 use super::{validator::Validator, vote::Vote};
@@ -203,6 +204,11 @@ pub struct Produced<D: BlockData> {
   /// might arrive even few blocks late due to network latency or other
   /// factors.
   pub votes: Vec<Vote>,
+
+  /// A cached version of the hash, once the hash is computed for the
+  /// first time, its value is stored here, then retreived.
+  #[serde(skip)]
+  hashcahe: OnceCell<Multihash>,
 }
 
 impl<D: BlockData> Debug for Produced<D> {
@@ -320,13 +326,19 @@ impl<D: BlockData> Block<D> for Produced<D> {
   /// to detect discrepancies between blocks and to avoid having
   /// to verify the correctness of the block hash.
   fn hash(&self) -> Result<Multihash, StdIoError> {
-    Self::hash_parts(
-      &self.signature.0,
-      &self.height,
-      &self.parent,
-      &self.data,
-      &self.votes,
-    )
+    self
+      .hashcahe
+      .get_or_try_init(|| {
+        Self::hash_parts(
+          &self.signature.0,
+          &self.height,
+          &self.parent,
+          &self.data,
+          &self.votes,
+        )
+      })
+      .map(|hash| *hash)
+      .map_err(|e| std::io::Error::new(ErrorKind::InvalidData, e))
   }
 
   /// Hash of the first ancestor of this block.
@@ -409,6 +421,7 @@ impl<D: BlockData> Produced<D> {
       signature,
       data,
       votes,
+      hashcahe: OnceCell::new(),
     })
   }
 
