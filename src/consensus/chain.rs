@@ -31,7 +31,7 @@
 
 use std::{
   cmp::Ordering,
-  collections::{hash_map::Entry, HashMap, VecDeque},
+  collections::{hash_map::Entry, HashMap, HashSet, VecDeque},
   pin::Pin,
   task::{Context, Poll},
 };
@@ -48,7 +48,7 @@ use super::{
 };
 use crate::{
   primitives::{Pubkey, ToBase58String},
-  vm::{Finalized, FinalizedState},
+  vm::{Finalized, FinalizedState, State},
 };
 
 #[derive(Debug)]
@@ -123,6 +123,9 @@ pub struct Chain<'g, D: BlockData> {
 
   /// Events emitted by this chain instance
   events: VecDeque<ChainEvent<D>>,
+
+  /// a list of all recently finalized blocks
+  finalized_history: VecDeque<Multihash>,
 }
 
 impl<'g, D: BlockData> Chain<'g, D> {
@@ -134,6 +137,7 @@ impl<'g, D: BlockData> Chain<'g, D> {
       orphans: HashMap::new(),
       ownvotes: HashMap::new(),
       events: VecDeque::new(),
+      finalized_history: VecDeque::new(),
       stakes: genesis
         .validators
         .iter()
@@ -236,64 +240,42 @@ impl<'g, 'f, D: BlockData> Chain<'g, D> {
   /// The justification must be the last finalized block,
   /// and the target block must be one of its descendants.
   fn vote(&mut self, vote: &Vote) {
-    let majority = self.minimum_majority_stake();
-    let confirmed = |block: &VolatileBlock<D>| block.votes >= majority;
     if let Some(stake) = self.stakes.get(&vote.validator) {
       for root in self.forktrees.iter_mut() {
         if let Some(target) = root.get_mut(&vote.target) {
           let target = unsafe { &mut *target as &mut TreeNode<D> };
 
-          // verify that the justification is a confirmed block
-          match root.get(&vote.justification) {
-            Some(j) => {
-              if !confirmed(&j.value) {
-                warn!(
-                  "Vote justification {} is not a confirmed block",
-                  vote.justification.to_b58()
-                );
+          // verify that the justification is a finalized block
+          if vote.justification != self.finalized.hash().unwrap() {
+            if !self.finalized_history.contains(&vote.justification) {
+              warn!(
+                "Vote justification not found: {}",
+                vote.justification.to_b58()
+              );
+              return;
+            }
+          }
+
+          let mut unconfirmed = vec![];
+          if !self.confirmed(&target.value) {
+            'confirmations: for ancestor in target.path() {
+              if !self.confirmed(&ancestor.value) {
+                unconfirmed.push(&ancestor.value as *const _);
+              } else {
+                break 'confirmations;
               }
             }
-            None => {
-              if vote.justification != self.finalized.hash().unwrap() {
-                warn!(
-                  "Vote justification not found: {}",
-                  vote.justification.to_b58()
-                );
-                return;
-              }
-            }
-          };
+          }
 
-          if !target.is_descendant_of(&vote.justification)
-            && self.finalized.hash().unwrap() != vote.justification
-          {
-            warn!(
-              "Vote justification {} is not a parent of target {}.",
-              vote.justification.to_b58(),
-              vote.target.to_b58()
-            );
-          } else {
-            let mut unconfirmed = vec![];
-            if !self.confirmed(&target.value) {
-              'confirmations: for ancestor in target.path() {
-                if !self.confirmed(&ancestor.value) {
-                  unconfirmed.push(&ancestor.value as *const _);
-                } else {
-                  break 'confirmations;
-                }
-              }
-            }
+          target.add_votes(*stake, vote.validator.clone());
 
-            target.add_votes(*stake, vote.validator.clone());
-
-            for ancestor in unconfirmed {
-              let ancestor = unsafe { &*ancestor as &_ };
-              if self.confirmed(ancestor) {
-                self.events.push_back(ChainEvent::BlockConfirmed {
-                  block: ancestor.block.clone(),
-                  votes: ancestor.votes,
-                })
-              }
+          for ancestor in unconfirmed {
+            let ancestor = unsafe { &*ancestor as &_ };
+            if self.confirmed(ancestor) {
+              self.events.push_back(ChainEvent::BlockConfirmed {
+                block: ancestor.block.clone(),
+                votes: ancestor.votes,
+              })
             }
           }
           return;
@@ -475,19 +457,8 @@ impl<'g, 'f, D: BlockData> Chain<'g, D> {
       if let Some(target) = root.get(&target) {
         let epoch = self.epoch(target.value.height());
 
-        // find the most recent confirmed block with 2/3 votes
-        let justification = target
-          .path()
-          .skip(1)
-          .find(|ancestor| self.confirmed(&ancestor.value));
-
-        // if no confirmed parent is found pick the last finalized
-        // block, this could be also the genesis block in case not
-        // enough votes arrived yet for any blocks.
-        let justification_hash = justification
-          .map(|j| j.value.hash().unwrap())
-          .unwrap_or_else(|| self.finalized.underlying.hash().unwrap());
-
+        // The justification is the last finalized block.
+        let justification_hash = self.finalized.hash().unwrap();
         let target_hash = target.value.hash().unwrap();
 
         // if we have already voted in this epoch, make sure that
@@ -644,6 +615,16 @@ impl<D: BlockData> Stream for Chain<'_, D> {
         self.count_votes(block.votes());
         while self.try_finalize_roots() {}
       }
+
+      if let ChainEvent::BlockFinalized { ref block, .. } = event {
+        self.finalized_history.push_front(block.hash().unwrap());
+        while self.finalized_history.len()
+          > self.genesis.epoch_slots as usize * 4
+        {
+          self.finalized_history.pop_back();
+        }
+      }
+
       return Poll::Ready(Some(event));
     }
 
