@@ -3,6 +3,7 @@
   "genesisTime": "2022-01-18T13:40:00Z",
   "slotInterval": "1s",
   "epochSlots": 16,
+  "maxJustificationAge": 3,
   "maxBlockSize": 100000,
   "state": {
     "CKDN1WjimfErkbgecnEfoPfs7CU1TknwMhpgbiXNknGC": {

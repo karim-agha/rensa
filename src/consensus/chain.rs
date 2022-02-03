@@ -45,10 +45,11 @@ use super::{
   forktree::{TreeNode, VolatileBlock},
   validator::Validator,
   vote::Vote,
+  Produced,
 };
 use crate::{
   primitives::{Pubkey, ToBase58String},
-  vm::{Finalized, FinalizedState, State},
+  vm::{Finalized, FinalizedState},
 };
 
 #[derive(Debug)]
@@ -113,6 +114,10 @@ pub struct Chain<'g, D: BlockData> {
   /// the orphans collection are attached to the orphan tree.
   orphans: HashMap<Multihash, Vec<VolatileBlock<D>>>,
 
+  /// Votes that have not matched any target land in here.
+  /// Once the target arrives, then those votes are counted.
+  orphan_votes: HashMap<Multihash, Vec<Vote>>,
+
   /// Votes casted by this node.
   /// This collection is used to track the voting history
   /// of the current node and to ensure that it never votes
@@ -124,8 +129,11 @@ pub struct Chain<'g, D: BlockData> {
   /// Events emitted by this chain instance
   events: VecDeque<ChainEvent<D>>,
 
-  /// a list of all recently finalized blocks
-  finalized_history: VecDeque<Multihash>,
+  /// a list of all recently finalized blocks groupped
+  /// by their epoch. The system stores N epochs that
+  /// are valid justifications of epoch as defined in the
+  /// genesis maxJustificationAge.
+  finalized_history: HashMap<u64, HashSet<Multihash>>,
 }
 
 impl<'g, D: BlockData> Chain<'g, D> {
@@ -135,9 +143,10 @@ impl<'g, D: BlockData> Chain<'g, D> {
       finalized,
       forktrees: vec![],
       orphans: HashMap::new(),
+      orphan_votes: HashMap::new(),
       ownvotes: HashMap::new(),
       events: VecDeque::new(),
-      finalized_history: VecDeque::new(),
+      finalized_history: HashMap::new(),
       stakes: genesis
         .validators
         .iter()
@@ -235,6 +244,17 @@ impl<'g, 'f, D: BlockData> Chain<'g, D> {
     block.votes >= self.minimum_majority_stake()
   }
 
+  /// Checks if a given hash is a hash of a finalized block within
+  /// N (specified in genesis) blocks, or if it is hash of genesis
+  /// itself if not enough epochs have been finalized.
+  fn in_finalized_history(&self, hash: &Multihash) -> bool {
+    &self.finalized.hash().unwrap() == hash
+      || self.finalized_history.iter().any(|(_, e)| e.contains(hash))
+      || (self.finalized_history.len()
+        < self.genesis.max_justification_age as usize
+        && hash == &self.genesis.hash().unwrap())
+  }
+
   /// Adds a vote for a given target block in the history.
   ///
   /// The justification must be the last finalized block,
@@ -245,43 +265,58 @@ impl<'g, 'f, D: BlockData> Chain<'g, D> {
         if let Some(target) = root.get_mut(&vote.target) {
           let target = unsafe { &mut *target as &mut TreeNode<D> };
 
-          // verify that the justification is a finalized block
-          if vote.justification != self.finalized.hash().unwrap() {
-            if !self.finalized_history.contains(&vote.justification) {
-              warn!(
-                "Vote justification not found: {}",
-                vote.justification.to_b58()
-              );
-              return;
-            }
+          // verify that the justification is a known finalized block
+          if !self.in_finalized_history(&vote.justification) {
+            warn!(
+              "Vote justification not found: {}",
+              vote.justification.to_b58()
+            );
+            return;
           }
 
-          let mut unconfirmed = vec![];
-          if !self.confirmed(&target.value) {
-            'confirmations: for ancestor in target.path() {
-              if !self.confirmed(&ancestor.value) {
-                unconfirmed.push(&ancestor.value as *const _);
-              } else {
-                break 'confirmations;
-              }
-            }
-          }
+          // find out which block are unconfirmed prior to the vote
+          let unconfirmed: Vec<_> = target
+            .path() // from all ancestors
+            .filter(|b| !self.confirmed(&b.value)) // select unconfirmed yet
+            .map(|b| &b.value as *const _) // work around the borrow checker by storing a ptr
+            .collect();
 
+          // apply votes to the target and all its ancestors
           target.add_votes(*stake, vote.validator.clone());
 
-          for ancestor in unconfirmed {
-            let ancestor = unsafe { &*ancestor as &_ };
-            if self.confirmed(ancestor) {
-              self.events.push_back(ChainEvent::BlockConfirmed {
-                block: ancestor.block.clone(),
-                votes: ancestor.votes,
+          // find out which blocks got confirmed after counting the vote
+          // and signal their confirmation by emitting an event
+          self.events.append(
+            &mut unconfirmed
+              .iter()
+              .map(|u| unsafe { &**u as &_ }) // borrow checker workaround, back to ref from ptr
+              .filter(|b| self.confirmed(b)) // only the ones that become confirmed
+              .map(|b| ChainEvent::BlockConfirmed { // generate a new event
+                block: b.block.clone(),
+                votes: b.votes,
               })
-            }
-          }
+              .into_iter()
+              .collect(),
+          );
           return;
         }
       }
-      warn!("Vote target {} not found ", vote.target.to_b58());
+
+      // the vote target is not available yet.
+      // store those votes and when the target
+      // block arrives, count them.
+      debug!(
+        "Vote {:?} target not available yet, storing for later.",
+        vote
+      );
+      match self.orphan_votes.entry(vote.target) {
+        Entry::Occupied(mut v) => {
+          v.get_mut().push(vote.clone());
+        }
+        Entry::Vacant(v) => {
+          v.insert(vec![vote.clone()]);
+        }
+      }
     } else {
       warn!("Ignoring vote from unknown validator {}", vote.validator);
     }
@@ -466,14 +501,14 @@ impl<'g, 'f, D: BlockData> Chain<'g, D> {
         if let Some((j, t)) = self.ownvotes.get(&epoch) {
           // 1. no surround vote, never use a justification
           // that is an ancestor of a previous justification.
-          if let Some(prev_just) = root.get(j) {
-            if prev_just.is_descendant_of(&justification_hash) {
-              return; // this will create a slashable surround vote.
-            }
+          if j != &justification_hash && !self.in_finalized_history(j) {
+            return; // this will create a slashable surround vote.
           }
 
+          // make sure that we are voting only on descendants of our
+          // previous votes, and not on conflicting forks.
           if !target.is_descendant_of(t) {
-            return; // this will create a slashable conflicting vote.
+            return; // otherwise it will create a slashable conflicting vote.
           }
         }
 
@@ -602,6 +637,42 @@ impl<'g, 'f, D: BlockData> Chain<'g, D> {
   }
 }
 
+impl<'g, D: BlockData> Chain<'g, D> {
+  /// Invoked whenever a block is successfully included in the forktree
+  fn post_block_included(&mut self, block: &Produced<D>) {
+    self.count_votes(block.votes());
+    if let Some(votes) = self.orphan_votes.remove(&block.hash().unwrap()) {
+      for vote in votes {
+        debug!("counting late vote {:?}", vote);
+        self.vote(&vote);
+      }
+    }
+    while self.try_finalize_roots() {}
+  }
+
+  /// Invoked whenever a block reaches finality
+  fn post_block_finalized(&mut self, block: &Produced<D>) {
+    // keep a sliding window of recently finalized blocks from
+    // up to N specified in genesis epochs.
+    // only those blocks are valid justifications of a vote.
+    let epoch = self.epoch(self.finalized.height());
+    match self.finalized_history.entry(epoch) {
+      Entry::Occupied(mut e) => {
+        e.get_mut().insert(block.hash().unwrap());
+      }
+      Entry::Vacant(e) => {
+        e.insert([block.hash().unwrap()].into_iter().collect());
+      }
+    };
+
+    // clear old epochs
+    let window = self.genesis.max_justification_age;
+    self
+      .finalized_history
+      .retain(|e, _| e >= &epoch.saturating_sub(window));
+  }
+}
+
 impl<D: BlockData> Unpin for Chain<'_, D> {}
 impl<D: BlockData> Stream for Chain<'_, D> {
   type Item = ChainEvent<D>;
@@ -612,17 +683,11 @@ impl<D: BlockData> Stream for Chain<'_, D> {
   ) -> Poll<Option<Self::Item>> {
     if let Some(event) = self.events.pop_back() {
       if let ChainEvent::BlockIncluded(ref block) = event {
-        self.count_votes(block.votes());
-        while self.try_finalize_roots() {}
+        self.post_block_included(block);
       }
 
       if let ChainEvent::BlockFinalized { ref block, .. } = event {
-        self.finalized_history.push_front(block.hash().unwrap());
-        while self.finalized_history.len()
-          > self.genesis.epoch_slots as usize * 4
-        {
-          self.finalized_history.pop_back();
-        }
+        self.post_block_finalized(block);
       }
 
       return Poll::Ready(Some(event));
@@ -666,6 +731,7 @@ mod test {
       epoch_slots: 32,
       genesis_time: Utc::now(),
       max_block_size: 100_000,
+      max_justification_age: 100,
       slot_interval: Duration::from_secs(2),
       state: BTreeMap::new(),
       builtins: vec![],
@@ -728,6 +794,7 @@ mod test {
       chain_id: "1".to_owned(),
       epoch_slots: 32,
       max_block_size: 100_000,
+      max_justification_age: 100,
       genesis_time: Utc::now(),
       slot_interval: Duration::from_secs(2),
       state: BTreeMap::new(),

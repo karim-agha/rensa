@@ -132,6 +132,14 @@ pub struct Genesis<D: BlockData> {
   /// be considered forever immutable.
   pub epoch_slots: u64,
 
+  /// The maximum age in epochs of a finalized block that can be
+  /// used as a justification of a vote on a block. This value should
+  /// be chosen in proportion to epoch slots and block time. If its too
+  /// short then block propagation delays might invalidate votes, if it
+  /// is too long, then it allows for long-range attacks and has higher
+  /// memory footprint.
+  pub max_justification_age: u64,
+
   /// The set of enabled builtin contracts.
   /// Builtins are special contracts implemented by the VM in
   /// native code. They are there for handling some computationally
