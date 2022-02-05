@@ -137,13 +137,13 @@ pub struct Chain<'g, D: BlockData> {
 
   /// The virtual machine that executes transactions
   /// contained within a block
-  _virtual_machine: vm::Machine<D>,
+  _virtual_machine: &'g vm::Machine<'g, D>,
 }
 
 impl<'g, D: BlockData> Chain<'g, D> {
   pub fn new(
     genesis: &'g block::Genesis<D>,
-    machine: vm::Machine<D>,
+    machine: &'g vm::Machine<D>,
     finalized: Finalized<D>,
   ) -> Self {
     Self {
@@ -756,7 +756,8 @@ mod test {
       state: FinalizedState,
     };
 
-    let mut chain = Chain::new(&genesis, vm::Machine::default(), finalized);
+    let vm = vm::Machine::new(&genesis);
+    let mut chain = Chain::new(&genesis, &vm, finalized);
     let block = block::Produced::new(
       &keypair,
       1,
@@ -820,7 +821,8 @@ mod test {
       state: FinalizedState,
     };
 
-    let mut chain = Chain::new(&genesis, vm::Machine::default(), finalized);
+    let vm = vm::Machine::new(&genesis);
+    let mut chain = Chain::new(&genesis, &vm, finalized);
 
     let block = block::Produced::new(
       &keypair,

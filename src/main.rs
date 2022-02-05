@@ -91,10 +91,10 @@ async fn main() -> anyhow::Result<()> {
   };
 
   // the transaction processing runtime
-  let vm = vm::Machine::default();
+  let vm = vm::Machine::new(&genesis);
 
   // componsents of the consensus
-  let mut chain = Chain::new(&genesis, vm, finalized);
+  let mut chain = Chain::new(&genesis, &vm, finalized);
   let mut producer = BlockProducer::new(&genesis, opts.keypair.clone());
   let mut schedule = ValidatorScheduleStream::new(
     ValidatorSchedule::new(seed, &genesis.validators)?,

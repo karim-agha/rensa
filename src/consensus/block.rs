@@ -30,16 +30,17 @@ use {
 /// for tests or specialized chains.
 ///
 /// Essentially we need to be able to serialize and deserialize this data,
-/// compare it for exact equality and print it in debug logs.
+/// compare it for exact equality and print it in debug logs and have the
+/// ability to execute it in a VM that supports the implemented type.
 pub trait BlockData:
   Eq
   + Clone
   + Debug
   + Executable
   + Serialize
-  + for<'a> Deserialize<'a>
   + Send
   + 'static
+  + for<'a> Deserialize<'a>
 {
   fn hash(&self) -> Result<Multihash, std::io::Error>;
 }
@@ -52,9 +53,9 @@ where
     + Debug
     + Executable
     + Serialize
-    + for<'a> Deserialize<'a>
     + Send
-    + 'static,
+    + 'static
+    + for<'a> Deserialize<'a>,
 {
   fn hash(&self) -> Result<Multihash, std::io::Error> {
     let mut sha3 = Sha3_256::default();

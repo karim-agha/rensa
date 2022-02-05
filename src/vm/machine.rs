@@ -1,7 +1,6 @@
 use {
   super::{State, StateDiff, Transaction},
-  crate::consensus::{BlockData, Produced},
-  std::marker::PhantomData,
+  crate::consensus::{BlockData, Genesis, Produced},
   thiserror::Error,
 };
 
@@ -18,15 +17,15 @@ pub trait Executable {
 /// Represents a state machine that takes as an input a state
 /// and a block and outputs a new state. This is the API
 /// entry point to the virtual machine that runs contracts.
-pub struct Machine<D: BlockData>(PhantomData<D>);
-
-impl<D: BlockData> Default for Machine<D> {
-  fn default() -> Self {
-    Self(PhantomData)
-  }
+pub struct Machine<'g, D: BlockData> {
+  _genesis: &'g Genesis<D>,
 }
 
-impl<D: BlockData> Machine<D> {
+impl<'g, D: BlockData> Machine<'g, D> {
+  pub fn new(_genesis: &'g Genesis<D>) -> Self {
+    Self { _genesis }
+  }
+
   pub fn execute(
     &self,
     state: &impl State,
@@ -36,6 +35,7 @@ impl<D: BlockData> Machine<D> {
   }
 }
 
+/// An implementation for blocks that carry a list of transactions.
 impl Executable for Vec<Transaction> {
   fn execute(&self, _state: &impl State) -> Result<StateDiff, MachineError> {
     todo!()
