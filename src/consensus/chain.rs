@@ -49,7 +49,7 @@ use super::{
 };
 use crate::{
   primitives::{Pubkey, ToBase58String},
-  vm::{Finalized, FinalizedState},
+  vm::{self, Finalized, FinalizedState},
 };
 
 #[derive(Debug)]
@@ -134,10 +134,18 @@ pub struct Chain<'g, D: BlockData> {
   /// are valid justifications of epoch as defined in the
   /// genesis maxJustificationAge.
   finalized_history: HashMap<u64, HashSet<Multihash>>,
+
+  /// The virtual machine that executes transactions
+  /// contained within a block
+  _virtual_machine: vm::Machine<D>,
 }
 
 impl<'g, D: BlockData> Chain<'g, D> {
-  pub fn new(genesis: &'g block::Genesis<D>, finalized: Finalized<D>) -> Self {
+  pub fn new(
+    genesis: &'g block::Genesis<D>,
+    machine: vm::Machine<D>,
+    finalized: Finalized<D>,
+  ) -> Self {
     Self {
       genesis,
       finalized,
@@ -152,6 +160,7 @@ impl<'g, D: BlockData> Chain<'g, D> {
         .iter()
         .map(|v| (v.pubkey.clone(), v.stake))
         .collect(),
+      _virtual_machine: machine,
     }
   }
 
@@ -259,7 +268,7 @@ impl<'g, 'f, D: BlockData> Chain<'g, D> {
   ///
   /// The justification must be the last finalized block,
   /// and the target block must be one of its descendants.
-  fn vote(&mut self, vote: &Vote) {
+  fn injest_vote(&mut self, vote: &Vote) {
     if let Some(stake) = self.stakes.get(&vote.validator) {
       for root in self.forktrees.iter_mut() {
         if let Some(target) = root.get_mut(&vote.target) {
@@ -325,7 +334,7 @@ impl<'g, 'f, D: BlockData> Chain<'g, D> {
   /// Count and apply all votes in a block
   fn count_votes(&mut self, votes: &[Vote]) {
     for vote in votes {
-      self.vote(vote);
+      self.injest_vote(vote);
     }
   }
 
@@ -644,7 +653,7 @@ impl<'g, D: BlockData> Chain<'g, D> {
     if let Some(votes) = self.orphan_votes.remove(&block.hash().unwrap()) {
       for vote in votes {
         debug!("counting late vote {:?}", vote);
-        self.vote(&vote);
+        self.injest_vote(&vote);
       }
     }
     while self.try_finalize_roots() {}
@@ -711,7 +720,7 @@ mod test {
       validator::Validator,
     },
     primitives::Keypair,
-    vm::{Finalized, FinalizedState, Transaction},
+    vm::{self, Finalized, FinalizedState, Transaction},
   };
 
   #[test]
@@ -747,7 +756,7 @@ mod test {
       state: FinalizedState,
     };
 
-    let mut chain = Chain::new(&genesis, finalized);
+    let mut chain = Chain::new(&genesis, vm::Machine::default(), finalized);
     let block = block::Produced::new(
       &keypair,
       1,
@@ -811,7 +820,7 @@ mod test {
       state: FinalizedState,
     };
 
-    let mut chain = Chain::new(&genesis, finalized);
+    let mut chain = Chain::new(&genesis, vm::Machine::default(), finalized);
 
     let block = block::Produced::new(
       &keypair,

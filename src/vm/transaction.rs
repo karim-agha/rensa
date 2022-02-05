@@ -1,5 +1,5 @@
 use ed25519_dalek::{Signature, Signer};
-use multihash::{Sha3_256, Hasher};
+use multihash::{Hasher, Sha3_256};
 use serde::{Deserialize, Serialize};
 
 use super::{contract::Environment, State};
@@ -84,10 +84,7 @@ impl Transaction {
     hasher.update(&self.payer);
     for accref in &self.accounts {
       hasher.update(&accref.address);
-      hasher.update(&[match accref.writable {
-        true => 1,
-        false => 0,
-      }]);
+      hasher.update(&[accref.writable as u8]);
     }
     hasher.update(&self.params);
     for sig in &self.signatures {
