@@ -7,23 +7,24 @@ pub mod rpc;
 pub mod storage;
 pub mod vm;
 
-use clap::StructOpt;
-use cli::CliOpts;
-use consensus::{
-  Block,
-  Chain,
-  ChainEvent,
-  ValidatorSchedule,
-  ValidatorScheduleStream,
-  Vote,
+use {
+  crate::{network::NetworkEvent, primitives::ToBase58String},
+  clap::StructOpt,
+  cli::CliOpts,
+  consensus::{
+    Block,
+    Chain,
+    ChainEvent,
+    ValidatorSchedule,
+    ValidatorScheduleStream,
+    Vote,
+  },
+  futures::StreamExt,
+  network::Network,
+  producer::BlockProducer,
+  tracing::{debug, info, Level},
+  vm::{Finalized, FinalizedState},
 };
-use futures::StreamExt;
-use network::Network;
-use producer::BlockProducer;
-use tracing::{debug, info, Level};
-use vm::{Finalized, FinalizedState};
-
-use crate::{network::NetworkEvent, primitives::ToBase58String};
 
 fn print_essentials(opts: &CliOpts) -> anyhow::Result<()> {
   info!("Starting Rensa validator node");

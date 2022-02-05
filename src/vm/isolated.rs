@@ -1,9 +1,9 @@
-use std::collections::HashMap;
-
-use multihash::Multihash;
-
-use super::{Result, State};
-use crate::primitives::{Account, Pubkey};
+use {
+  super::{Result, State},
+  crate::primitives::{Account, Pubkey},
+  multihash::Multihash,
+  std::collections::HashMap,
+};
 
 pub struct IsolatedState {
   data: HashMap<Pubkey, Account>,

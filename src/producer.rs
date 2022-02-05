@@ -1,17 +1,17 @@
-use std::{
-  collections::{HashMap, HashSet, VecDeque},
-  mem::take,
-  pin::Pin,
-  task::{Context, Poll},
-};
-
-use futures::Stream;
-use tracing::info;
-
-use crate::{
-  consensus::{Block, Genesis, Produced, Vote},
-  primitives::{Keypair, Pubkey, ToBase58String},
-  vm::{AccountRef, Transaction},
+use {
+  crate::{
+    consensus::{Block, Genesis, Produced, Vote},
+    primitives::{Keypair, Pubkey, ToBase58String},
+    vm::{AccountRef, Transaction},
+  },
+  futures::Stream,
+  std::{
+    collections::{HashMap, HashSet, VecDeque},
+    mem::take,
+    pin::Pin,
+    task::{Context, Poll},
+  },
+  tracing::info,
 };
 
 pub struct BlockProducer {

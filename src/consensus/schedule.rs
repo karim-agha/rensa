@@ -1,21 +1,21 @@
-use std::{
-  iter::Enumerate,
-  pin::Pin,
-  task::{Context, Poll, Waker},
-  time::Duration,
+use {
+  super::validator::Validator,
+  chrono::{DateTime, Utc},
+  futures::Stream,
+  rand::{
+    distributions::{WeightedError, WeightedIndex},
+    prelude::Distribution,
+    SeedableRng,
+  },
+  rand_chacha::ChaCha20Rng,
+  std::{
+    iter::Enumerate,
+    pin::Pin,
+    task::{Context, Poll, Waker},
+    time::Duration,
+  },
+  tokio::{sync::watch, time::Instant},
 };
-
-use chrono::{DateTime, Utc};
-use futures::Stream;
-use rand::{
-  distributions::{WeightedError, WeightedIndex},
-  prelude::Distribution,
-  SeedableRng,
-};
-use rand_chacha::ChaCha20Rng;
-use tokio::{sync::watch, time::Instant};
-
-use super::validator::Validator;
 
 /// Creates a stake-weighted validator schedule iterator based on
 /// a predefined seed value. This iterator will iterate forever

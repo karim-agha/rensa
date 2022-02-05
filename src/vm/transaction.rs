@@ -1,9 +1,10 @@
-use ed25519_dalek::{Signature, Signer};
-use multihash::{Hasher, Sha3_256};
-use serde::{Deserialize, Serialize};
-
-use super::{contract::Environment, State};
-use crate::primitives::{Keypair, Pubkey, ToBase58String};
+use {
+  super::{contract::Environment, State},
+  crate::primitives::{Keypair, Pubkey, ToBase58String},
+  ed25519_dalek::{Signature, Signer},
+  multihash::{Hasher, Sha3_256},
+  serde::{Deserialize, Serialize},
+};
 
 /// This is a parameter on the transaction that indicates that
 /// a contract is going to touch this account. Only accounts

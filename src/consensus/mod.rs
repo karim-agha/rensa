@@ -9,7 +9,9 @@ mod schedule;
 mod validator;
 mod vote;
 
-pub use block::{Block, BlockData, Genesis, Produced};
-pub use chain::{Chain, ChainEvent};
-pub use schedule::{ValidatorSchedule, ValidatorScheduleStream};
-pub use vote::Vote;
+pub use {
+  block::{Block, BlockData, Genesis, Produced},
+  chain::{Chain, ChainEvent},
+  schedule::{ValidatorSchedule, ValidatorScheduleStream},
+  vote::Vote,
+};

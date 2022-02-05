@@ -1,12 +1,12 @@
-use std::ops::Deref;
-
-use multihash::Multihash;
-use serde::{Deserialize, Serialize};
-
-use super::{Result, State, StateDiff, StateError};
-use crate::{
-  consensus::{Block, BlockData},
-  primitives::{Account, Pubkey},
+use {
+  super::{Result, State, StateDiff, StateError},
+  crate::{
+    consensus::{Block, BlockData},
+    primitives::{Account, Pubkey},
+  },
+  multihash::Multihash,
+  serde::{Deserialize, Serialize},
+  std::ops::Deref,
 };
 
 /// Represents state of the blockchain at the last finalized

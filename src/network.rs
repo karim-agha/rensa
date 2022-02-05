@@ -1,31 +1,31 @@
-use std::collections::HashSet;
-
-use futures::StreamExt;
-use libp2p::{
-  core::{muxing::StreamMuxerBox, transport::Boxed, upgrade::Version},
-  dns::{DnsConfig, ResolverConfig, ResolverOpts},
-  identity::{self, ed25519::SecretKey},
-  noise,
-  swarm::SwarmEvent,
-  tcp::TcpConfig,
-  yamux::YamuxConfig,
-  Multiaddr,
-  PeerId,
-  Swarm,
-  Transport,
-};
-use libp2p_episub::{Config, Episub, EpisubEvent, PeerAuthorizer};
-use tokio::sync::mpsc::{
-  error::SendError,
-  unbounded_channel,
-  UnboundedReceiver,
-  UnboundedSender,
-};
-use tracing::{debug, error, warn};
-
-use crate::{
-  consensus::{Block, BlockData, Genesis, Produced, Vote},
-  primitives::{Keypair, Pubkey},
+use {
+  crate::{
+    consensus::{Block, BlockData, Genesis, Produced, Vote},
+    primitives::{Keypair, Pubkey},
+  },
+  futures::StreamExt,
+  libp2p::{
+    core::{muxing::StreamMuxerBox, transport::Boxed, upgrade::Version},
+    dns::{DnsConfig, ResolverConfig, ResolverOpts},
+    identity::{self, ed25519::SecretKey},
+    noise,
+    swarm::SwarmEvent,
+    tcp::TcpConfig,
+    yamux::YamuxConfig,
+    Multiaddr,
+    PeerId,
+    Swarm,
+    Transport,
+  },
+  libp2p_episub::{Config, Episub, EpisubEvent, PeerAuthorizer},
+  std::collections::HashSet,
+  tokio::sync::mpsc::{
+    error::SendError,
+    unbounded_channel,
+    UnboundedReceiver,
+    UnboundedSender,
+  },
+  tracing::{debug, error, warn},
 };
 
 type BoxedTransport = Boxed<(PeerId, StreamMuxerBox)>;

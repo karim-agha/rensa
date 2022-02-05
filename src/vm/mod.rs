@@ -7,15 +7,18 @@ mod isolated;
 mod machine;
 mod transaction;
 
-pub use diff::StateDiff;
-pub use finalized::{Finalized, FinalizedState};
-pub use isolated::IsolatedState;
-pub use machine::Machine;
-use multihash::Multihash;
-use thiserror::Error;
-pub use transaction::{AccountRef, Transaction};
-
-use crate::primitives::{Account, Pubkey};
+use {
+  crate::primitives::{Account, Pubkey},
+  multihash::Multihash,
+  thiserror::Error,
+};
+pub use {
+  diff::StateDiff,
+  finalized::{Finalized, FinalizedState},
+  isolated::IsolatedState,
+  machine::{Executable, Machine},
+  transaction::{AccountRef, Transaction},
+};
 
 #[derive(Debug, Error)]
 pub enum StateError {
@@ -88,10 +91,12 @@ impl<'s1, 's2> State for Overlayed<'s1, 's2> {
 
 #[cfg(test)]
 mod test {
-  use super::StateDiff;
-  use crate::{
-    primitives::{Account, Pubkey},
-    vm::{Overlayed, State},
+  use {
+    super::StateDiff,
+    crate::{
+      primitives::{Account, Pubkey},
+      vm::{Overlayed, State},
+    },
   };
 
   #[test]

@@ -29,27 +29,27 @@
 //! canonical branch by other validators in the system. The forkchoice rules are
 //! based on the Greedy Heaviest Obvserved SubTree (GHOST) algorithm in Casper.
 
-use std::{
-  cmp::Ordering,
-  collections::{hash_map::Entry, HashMap, HashSet, VecDeque},
-  pin::Pin,
-  task::{Context, Poll},
-};
-
-use futures::Stream;
-use multihash::Multihash;
-use tracing::{debug, warn};
-
-use super::{
-  block::{self, Block, BlockData},
-  forktree::{TreeNode, VolatileBlock},
-  validator::Validator,
-  vote::Vote,
-  Produced,
-};
-use crate::{
-  primitives::{Pubkey, ToBase58String},
-  vm::{self, Finalized, FinalizedState},
+use {
+  super::{
+    block::{self, Block, BlockData},
+    forktree::{TreeNode, VolatileBlock},
+    validator::Validator,
+    vote::Vote,
+    Produced,
+  },
+  crate::{
+    primitives::{Pubkey, ToBase58String},
+    vm::{self, Finalized, FinalizedState},
+  },
+  futures::Stream,
+  multihash::Multihash,
+  std::{
+    cmp::Ordering,
+    collections::{hash_map::Entry, HashMap, HashSet, VecDeque},
+    pin::Pin,
+    task::{Context, Poll},
+  },
+  tracing::{debug, warn},
 };
 
 #[derive(Debug)]
@@ -708,19 +708,19 @@ impl<D: BlockData> Stream for Chain<'_, D> {
 
 #[cfg(test)]
 mod test {
-  use std::{collections::BTreeMap, marker::PhantomData, time::Duration};
-
-  use chrono::Utc;
-  use ed25519_dalek::{PublicKey, SecretKey};
-
-  use super::Chain;
-  use crate::{
-    consensus::{
-      block::{self, Block, Genesis},
-      validator::Validator,
+  use {
+    super::Chain,
+    crate::{
+      consensus::{
+        block::{self, Block, Genesis},
+        validator::Validator,
+      },
+      primitives::Keypair,
+      vm::{self, Finalized, FinalizedState, Transaction},
     },
-    primitives::Keypair,
-    vm::{self, Finalized, FinalizedState, Transaction},
+    chrono::Utc,
+    ed25519_dalek::{PublicKey, SecretKey},
+    std::{collections::BTreeMap, marker::PhantomData, time::Duration},
   };
 
   #[test]

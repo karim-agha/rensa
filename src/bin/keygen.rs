@@ -1,5 +1,7 @@
-use ed25519_dalek::{PublicKey, SecretKey};
-use rand::{prelude::ThreadRng, RngCore};
+use {
+  ed25519_dalek::{PublicKey, SecretKey},
+  rand::{prelude::ThreadRng, RngCore},
+};
 
 fn main() {
   let mut rng = ThreadRng::default();

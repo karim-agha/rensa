@@ -1,17 +1,17 @@
-use std::io::ErrorKind;
-
-use ed25519_dalek::{PublicKey, Signature, Signer, Verifier};
-use multihash::{
-  Code as MultihashCode,
-  Hasher,
-  Multihash,
-  MultihashDigest,
-  Sha3_256,
+use {
+  crate::primitives::{Keypair, Pubkey, ToBase58String},
+  ed25519_dalek::{PublicKey, Signature, Signer, Verifier},
+  multihash::{
+    Code as MultihashCode,
+    Hasher,
+    Multihash,
+    MultihashDigest,
+    Sha3_256,
+  },
+  serde::{Deserialize, Serialize},
+  std::io::ErrorKind,
+  tracing::warn,
 };
-use serde::{Deserialize, Serialize};
-use tracing::warn;
-
-use crate::primitives::{Keypair, Pubkey, ToBase58String};
 
 // vote = (
 //  validator,

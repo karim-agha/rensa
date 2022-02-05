@@ -1,19 +1,28 @@
-use std::collections::HashMap;
-
-use multihash::Multihash;
-
-use super::{Result, State};
-use crate::primitives::{Account, Pubkey};
+use {
+  super::{Result, State},
+  crate::primitives::{Account, Pubkey},
+  multihash::{
+    Code as MultihashCode,
+    Hasher,
+    Multihash,
+    MultihashDigest,
+    Sha3_256,
+  },
+  once_cell::sync::OnceCell,
+  std::collections::BTreeMap,
+};
 
 #[derive(Debug, Default)]
 pub struct StateDiff {
-  pub(super) data: HashMap<Pubkey, Account>,
+  data: BTreeMap<Pubkey, Account>,
+  hashcache: OnceCell<Multihash>,
 }
 
 impl StateDiff {
   pub fn merge(self, newer: StateDiff) -> StateDiff {
     StateDiff {
       data: self.data.into_iter().chain(newer.data).collect(),
+      hashcache: OnceCell::new(),
     }
   }
 }
@@ -32,16 +41,25 @@ impl State for StateDiff {
   }
 
   fn hash(&self) -> Multihash {
-    todo!()
+    *self.hashcache.get_or_init(|| {
+      let mut hasher = Sha3_256::default();
+      for (k, v) in self.data.iter() {
+        hasher.update(k.as_ref());
+        hasher.update(&v.hash().to_bytes());
+      }
+      MultihashCode::Sha3_256.wrap(hasher.finalize()).unwrap()
+    })
   }
 }
 
 #[cfg(test)]
 mod test {
-  use super::StateDiff;
-  use crate::{
-    primitives::{Account, Pubkey},
-    vm::State,
+  use {
+    super::StateDiff,
+    crate::{
+      primitives::{Account, Pubkey},
+      vm::State,
+    },
   };
 
   #[test]

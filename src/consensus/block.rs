@@ -1,25 +1,28 @@
-use std::{
-  collections::BTreeMap,
-  fmt::Debug,
-  io::{Error as StdIoError, ErrorKind},
-  marker::PhantomData,
-  time::Duration,
+use {
+  super::{validator::Validator, vote::Vote},
+  crate::{
+    primitives::{Account, Keypair, Pubkey, ToBase58String},
+    vm::Executable,
+  },
+  chrono::{DateTime, Utc},
+  ed25519_dalek::{PublicKey, Signature, Signer, Verifier},
+  multihash::{
+    Code as MultihashCode,
+    Hasher,
+    Multihash,
+    MultihashDigest,
+    Sha3_256,
+  },
+  once_cell::sync::OnceCell,
+  serde::{Deserialize, Serialize},
+  std::{
+    collections::BTreeMap,
+    fmt::Debug,
+    io::{Error as StdIoError, ErrorKind},
+    marker::PhantomData,
+    time::Duration,
+  },
 };
-
-use chrono::{DateTime, Utc};
-use ed25519_dalek::{PublicKey, Signature, Signer, Verifier};
-use multihash::{
-  Code as MultihashCode,
-  Hasher,
-  Multihash,
-  MultihashDigest,
-  Sha3_256,
-};
-use once_cell::sync::OnceCell;
-use serde::{Deserialize, Serialize};
-
-use super::{validator::Validator, vote::Vote};
-use crate::primitives::{Account, Keypair, Pubkey, ToBase58String};
 
 /// The type requirements for anything that could be carried by a block
 /// in the consensus layer. This is usually a list of transactions in
@@ -29,7 +32,14 @@ use crate::primitives::{Account, Keypair, Pubkey, ToBase58String};
 /// Essentially we need to be able to serialize and deserialize this data,
 /// compare it for exact equality and print it in debug logs.
 pub trait BlockData:
-  Eq + Clone + Debug + Serialize + for<'a> Deserialize<'a> + Send + 'static
+  Eq
+  + Clone
+  + Debug
+  + Executable
+  + Serialize
+  + for<'a> Deserialize<'a>
+  + Send
+  + 'static
 {
   fn hash(&self) -> Result<Multihash, std::io::Error>;
 }
@@ -37,7 +47,14 @@ pub trait BlockData:
 /// Blanket implementation for all types that fulfill those requirements
 impl<T> BlockData for T
 where
-  T: Eq + Clone + Debug + Serialize + for<'a> Deserialize<'a> + Send + 'static,
+  T: Eq
+    + Clone
+    + Debug
+    + Executable
+    + Serialize
+    + for<'a> Deserialize<'a>
+    + Send
+    + 'static,
 {
   fn hash(&self) -> Result<Multihash, std::io::Error> {
     let mut sha3 = Sha3_256::default();

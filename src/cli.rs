@@ -1,12 +1,12 @@
-use std::{
-  net::{IpAddr, SocketAddr},
-  path::PathBuf,
+use {
+  crate::{consensus::Genesis, primitives::Keypair, vm::Transaction},
+  clap::Parser,
+  libp2p::{multiaddr::Protocol, Multiaddr},
+  std::{
+    net::{IpAddr, SocketAddr},
+    path::PathBuf,
+  },
 };
-
-use clap::Parser;
-use libp2p::{multiaddr::Protocol, Multiaddr};
-
-use crate::{consensus::Genesis, primitives::Keypair, vm::Transaction};
 
 #[derive(Debug, Parser)]
 #[clap(version, about)]

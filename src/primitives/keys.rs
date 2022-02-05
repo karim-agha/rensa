@@ -1,18 +1,19 @@
-use std::{
-  fmt::{Debug, Display, Formatter},
-  marker::PhantomData,
-  ops::Deref,
-  str::FromStr,
+use {
+  ed25519_dalek::{PublicKey, SecretKey},
+  serde::{
+    de::{self, Visitor},
+    Deserialize,
+    Deserializer,
+    Serialize,
+  },
+  std::{
+    fmt::{Debug, Display, Formatter},
+    marker::PhantomData,
+    ops::Deref,
+    str::FromStr,
+  },
+  thiserror::Error,
 };
-
-use ed25519_dalek::{PublicKey, SecretKey};
-use serde::{
-  de::{self, Visitor},
-  Deserialize,
-  Deserializer,
-  Serialize,
-};
-use thiserror::Error;
 
 /// Represents an address of an account.
 ///

@@ -1,9 +1,9 @@
-use std::{cmp::Ordering, collections::HashSet, ops::Deref};
-
-use multihash::Multihash;
-
-use super::block::{self, Block, BlockData};
-use crate::primitives::Pubkey;
+use {
+  super::block::{self, Block, BlockData},
+  crate::primitives::Pubkey,
+  multihash::Multihash,
+  std::{cmp::Ordering, collections::HashSet, ops::Deref},
+};
 
 /// A block that is still not finalized and its votes
 /// are still being counted.
@@ -263,13 +263,14 @@ impl<'c, D: BlockData> Iterator for PathIter<'c, D> {
 
 #[cfg(test)]
 mod tests {
-  use ed25519_dalek::{PublicKey, SecretKey};
-  use multihash::Multihash;
-
-  use super::{TreeNode, VolatileBlock};
-  use crate::{
-    consensus::block::{Block, BlockData, Produced},
-    primitives::Keypair,
+  use {
+    super::{TreeNode, VolatileBlock},
+    crate::{
+      consensus::block::{Block, BlockData, Produced},
+      primitives::Keypair,
+    },
+    ed25519_dalek::{PublicKey, SecretKey},
+    multihash::Multihash,
   };
 
   fn generate_child<D: BlockData>(

@@ -1,8 +1,8 @@
-use std::cmp::Ordering;
-
-use serde::{Deserialize, Serialize};
-
-use crate::primitives::Pubkey;
+use {
+  crate::primitives::Pubkey,
+  serde::{Deserialize, Serialize},
+  std::cmp::Ordering,
+};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Validator {

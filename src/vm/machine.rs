@@ -1,14 +1,18 @@
-use std::marker::PhantomData;
-
-use thiserror::Error;
-
-use super::{State, StateDiff, Transaction};
-use crate::consensus::{BlockData, Produced};
+use {
+  super::{State, StateDiff, Transaction},
+  crate::consensus::{BlockData, Produced},
+  std::marker::PhantomData,
+  thiserror::Error,
+};
 
 #[derive(Debug, Error)]
 pub enum MachineError {
   #[error("Unknown error")]
   UnknownError,
+}
+
+pub trait Executable {
+  fn execute(&self, state: &impl State) -> Result<StateDiff, MachineError>;
 }
 
 /// Represents a state machine that takes as an input a state
@@ -25,9 +29,31 @@ impl<D: BlockData> Default for Machine<D> {
 impl<D: BlockData> Machine<D> {
   pub fn execute(
     &self,
-    _state: &impl State,
-    _block: Produced<Vec<Transaction>>,
+    state: &impl State,
+    block: &Produced<D>,
   ) -> Result<StateDiff, MachineError> {
+    block.data.execute(state)
+  }
+}
+
+impl Executable for Vec<Transaction> {
+  fn execute(&self, _state: &impl State) -> Result<StateDiff, MachineError> {
     todo!()
+  }
+}
+
+// used in unit tests only
+#[cfg(test)]
+impl Executable for String {
+  fn execute(&self, _state: &impl State) -> Result<StateDiff, MachineError> {
+    Ok(StateDiff::default())
+  }
+}
+
+// used in unit tests only
+#[cfg(test)]
+impl Executable for u8 {
+  fn execute(&self, _state: &impl State) -> Result<StateDiff, MachineError> {
+    Ok(StateDiff::default())
   }
 }

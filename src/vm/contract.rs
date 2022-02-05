@@ -4,9 +4,10 @@
 //! invoke smart contracts by the virtual machine and carry
 //! input and output data into and from the contract.
 
-use thiserror::Error;
-
-use crate::primitives::{Account, Pubkey};
+use {
+  crate::primitives::{Account, Pubkey},
+  thiserror::Error,
+};
 
 #[derive(Debug, Error)]
 pub enum ContractError {
