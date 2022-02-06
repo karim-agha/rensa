@@ -23,7 +23,7 @@ use {
   network::Network,
   producer::BlockProducer,
   tracing::{debug, info, Level},
-  vm::{Finalized, FinalizedState},
+  vm::Finalized,
 };
 
 fn print_essentials(opts: &CliOpts) -> anyhow::Result<()> {
@@ -85,10 +85,7 @@ async fn main() -> anyhow::Result<()> {
   // the blockchain state.
   // Persistance is not implemented yet, so using
   // the gensis block as the last finalized block
-  let finalized = Finalized {
-    underlying: Box::new(genesis.clone()),
-    state: FinalizedState,
-  };
+  let finalized = Finalized::new(&genesis);
 
   // the transaction processing runtime
   let vm = vm::Machine::new(&genesis);
@@ -137,8 +134,8 @@ async fn main() -> anyhow::Result<()> {
           },
           ChainEvent::BlockIncluded(block) => {
             info!(
-              "included block {block} [epoch {}]",
-              block.height() / genesis.epoch_slots
+              "included block {} [epoch {}]",
+              *block, block.height() / genesis.epoch_slots
             );
             // don't duplicate votes if they were
             // already included be an accepted block.
@@ -147,7 +144,7 @@ async fn main() -> anyhow::Result<()> {
           ChainEvent::BlockConfirmed { block, votes } => {
             info!(
               "confirmed block {} with {:.02}% votes [epoch {}]",
-              block,
+              *block,
               ((votes as f64 / chain.total_stake() as f64) * 100f64),
               block.height() / genesis.epoch_slots
             );
@@ -155,7 +152,7 @@ async fn main() -> anyhow::Result<()> {
           ChainEvent::BlockFinalized { block, votes } => {
             info!(
               "finalized block {} with {:.02}% votes [epoch {}]",
-              block,
+              *block,
               ((votes as f64 / chain.total_stake() as f64) * 100f64),
               block.height() / genesis.epoch_slots
             );

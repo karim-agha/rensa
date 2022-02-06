@@ -1,6 +1,9 @@
 use {
   super::block::{self, Block, BlockData},
-  crate::primitives::Pubkey,
+  crate::{
+    primitives::{Account, Pubkey},
+    vm::{Executed, State, StateError},
+  },
   multihash::Multihash,
   std::{cmp::Ordering, collections::HashSet, ops::Deref},
 };
@@ -13,7 +16,7 @@ use {
 /// voted on and finalized.
 #[derive(Debug, Clone)]
 pub struct VolatileBlock<D: BlockData> {
-  pub block: block::Produced<D>,
+  pub block: Executed<D>,
   pub votes: u64,
   pub voters: HashSet<Pubkey>,
 }
@@ -27,7 +30,7 @@ impl<D: BlockData> Deref for VolatileBlock<D> {
 }
 
 impl<D: BlockData> VolatileBlock<D> {
-  pub fn new(block: block::Produced<D>) -> Self {
+  pub fn new(block: Executed<D>) -> Self {
     Self {
       block,
       votes: 0,
@@ -234,8 +237,18 @@ impl<D: BlockData> TreeNode<D> {
       self
     }
   }
+
+  /// Returns a state object that gives access to the entire
+  /// state of this block and all its parents up to the root
+  /// of the unfinalized state.
+  pub fn state<'s>(&'s self) -> CascadingState<'s, D> {
+    CascadingState::<'s, D> {
+      iterator: PathIter::new(self),
+    }
+  }
 }
 
+#[derive(Debug, Clone)]
 struct PathIter<'c, D: BlockData> {
   current: Option<&'c TreeNode<D>>,
 }
@@ -261,33 +274,81 @@ impl<'c, D: BlockData> Iterator for PathIter<'c, D> {
   }
 }
 
+/// This is a read-only view of a state of a forktree from a node
+/// up until the root. The idea here is that every block in the fork
+/// tree accumulates state changes. This view of the combined state
+/// is passed to the blocks that are about to be attached to the current
+/// head.
+///
+/// Whenever asked for an account data, it will traverse the tree upwards
+/// until the first node returns a value for the requested address or none
+/// if it wasn't found and it should be retreived from the finalized state.
+pub struct CascadingState<'c, D: BlockData> {
+  iterator: PathIter<'c, D>,
+}
+
+impl<'c, D: BlockData> State for CascadingState<'c, D> {
+  fn get(&self, address: &Pubkey) -> Option<&Account> {
+    for current in self.iterator.clone() {
+      if let Some(value) = current.value.block.state().get(address) {
+        return Some(value);
+      }
+    }
+    None
+  }
+
+  fn set(
+    &mut self,
+    _address: Pubkey,
+    _account: Account,
+  ) -> Result<Option<Account>, StateError> {
+    Err(StateError::WritesNotSupported)
+  }
+
+  fn hash(&self) -> Multihash {
+    unimplemented!() // not applicable here
+  }
+}
+
 #[cfg(test)]
 mod tests {
   use {
     super::{TreeNode, VolatileBlock},
     crate::{
-      consensus::block::{Block, BlockData, Produced},
+      consensus::{
+        block::{Block, BlockData, Produced},
+        validator::Validator,
+        Genesis,
+      },
       primitives::Keypair,
+      vm::{self, Executed, StateDiff},
     },
+    chrono::Utc,
     ed25519_dalek::{PublicKey, SecretKey},
     multihash::Multihash,
+    std::{collections::BTreeMap, marker::PhantomData, time::Duration},
   };
 
-  fn generate_child<D: BlockData>(
+  fn generate_child<'g, D: BlockData>(
     keypair: &Keypair,
     parent: &Produced<D>,
     data: D,
-  ) -> Produced<D> {
-    Produced::new(
-      keypair,
-      parent.height + 1,
-      parent.hash().unwrap(),
-      data,
-      vec![],
+    vm: &'g vm::Machine<'g, D>,
+  ) -> Executed<D> {
+    Executed::new(
+      &StateDiff::default(),
+      Produced::new(
+        keypair,
+        parent.height + 1,
+        parent.hash().unwrap(),
+        data,
+        vec![],
+      )
+      .unwrap(),
+      vm,
     )
     .unwrap()
   }
-
   #[test]
   fn forktree_smoke() {
     let secret = SecretKey::from_bytes(&[
@@ -300,9 +361,28 @@ mod tests {
     let public: PublicKey = (&secret).into();
     let keypair: Keypair = ed25519_dalek::Keypair { secret, public }.into();
 
-    let mut root = TreeNode::new(VolatileBlock::new(
-      Produced::new(&keypair, 1, Multihash::default(), 1u8, vec![]).unwrap(),
-    ));
+    let genesis = Genesis::<u8> {
+      chain_id: "1".to_owned(),
+      epoch_slots: 32,
+      genesis_time: Utc::now(),
+      max_block_size: 100_000,
+      max_justification_age: 100,
+      slot_interval: Duration::from_secs(2),
+      state: BTreeMap::new(),
+      builtins: vec![],
+      validators: vec![Validator {
+        pubkey: keypair.public(),
+        stake: 200000,
+      }],
+      _marker: PhantomData,
+    };
+
+    let vm = vm::Machine::new(&genesis);
+    let produced =
+      Produced::new(&keypair, 1, Multihash::default(), 1u8, vec![]).unwrap();
+    let executed = Executed::new(&StateDiff::default(), produced, &vm).unwrap();
+
+    let mut root = TreeNode::new(VolatileBlock::new(executed));
 
     let root_hash = root.value.hash().unwrap();
 
@@ -310,13 +390,13 @@ mod tests {
 
     assert_eq!(h1.value.hash().unwrap(), root_hash);
 
-    let child1 = generate_child(&keypair, &root.value, 2u8);
-    let child1_1 = generate_child(&keypair, &child1, 11u8);
-    let child1_2 = generate_child(&keypair, &child1, 12u8);
+    let child1 = generate_child(&keypair, &root.value, 2u8, &vm);
+    let child1_1 = generate_child(&keypair, &child1, 11u8, &vm);
+    let child1_2 = generate_child(&keypair, &child1, 12u8, &vm);
 
-    let child2 = generate_child(&keypair, &root.value, 3u8);
-    let child2_1 = generate_child(&keypair, &child2, 31u8);
-    let child2_2 = generate_child(&keypair, &child2, 32u8);
+    let child2 = generate_child(&keypair, &root.value, 3u8, &vm);
+    let child2_1 = generate_child(&keypair, &child2, 31u8, &vm);
+    let child2_2 = generate_child(&keypair, &child2, 32u8, &vm);
 
     let child1_hash = child1.hash().unwrap();
     let child1_1_hash = child1_1.hash().unwrap();
