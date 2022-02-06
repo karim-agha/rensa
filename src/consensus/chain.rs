@@ -137,13 +137,13 @@ pub struct Chain<'g, D: BlockData> {
 
   /// The virtual machine that executes transactions
   /// contained within a block
-  virtual_machine: &'g vm::Machine<'g, D>,
+  virtual_machine: &'g vm::Machine,
 }
 
 impl<'g, D: BlockData> Chain<'g, D> {
   pub fn new(
     genesis: &'g block::Genesis<D>,
-    machine: &'g vm::Machine<D>,
+    machine: &'g vm::Machine,
     finalized: Finalized<D>,
   ) -> Self {
     Self {
@@ -738,7 +738,7 @@ mod test {
         validator::Validator,
       },
       primitives::Keypair,
-      vm::{self, Finalized, FinalizedState, Transaction},
+      vm::{self, Finalized, Transaction},
     },
     chrono::Utc,
     ed25519_dalek::{PublicKey, SecretKey},
@@ -775,7 +775,7 @@ mod test {
 
     let finalized = Finalized::new(&genesis);
 
-    let vm = vm::Machine::new(&genesis);
+    let vm = vm::Machine::new(&genesis).unwrap();
     let mut chain = Chain::new(&genesis, &vm, finalized);
     let block = block::Produced::new(
       &keypair,
@@ -837,7 +837,7 @@ mod test {
 
     let finalized = Finalized::new(&genesis);
 
-    let vm = vm::Machine::new(&genesis);
+    let vm = vm::Machine::new(&genesis).unwrap();
     let mut chain = Chain::new(&genesis, &vm, finalized);
 
     let block = block::Produced::new(

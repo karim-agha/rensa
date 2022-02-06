@@ -88,7 +88,7 @@ async fn main() -> anyhow::Result<()> {
   let finalized = Finalized::new(&genesis);
 
   // the transaction processing runtime
-  let vm = vm::Machine::new(&genesis);
+  let vm = vm::Machine::new(&genesis)?;
 
   // componsents of the consensus
   let mut chain = Chain::new(&genesis, &vm, finalized);

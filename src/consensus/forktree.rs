@@ -329,11 +329,11 @@ mod tests {
     std::{collections::BTreeMap, marker::PhantomData, time::Duration},
   };
 
-  fn generate_child<'g, D: BlockData>(
+  fn generate_child<D: BlockData>(
     keypair: &Keypair,
     parent: &Produced<D>,
     data: D,
-    vm: &'g vm::Machine<'g, D>,
+    vm: &vm::Machine,
   ) -> Executed<D> {
     Executed::new(
       &StateDiff::default(),
@@ -377,7 +377,7 @@ mod tests {
       _marker: PhantomData,
     };
 
-    let vm = vm::Machine::new(&genesis);
+    let vm = vm::Machine::new(&genesis).unwrap();
     let produced =
       Produced::new(&keypair, 1, Multihash::default(), 1u8, vec![]).unwrap();
     let executed = Executed::new(&StateDiff::default(), produced, &vm).unwrap();

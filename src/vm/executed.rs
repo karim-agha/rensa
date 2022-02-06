@@ -21,7 +21,7 @@ impl<D: BlockData> Executed<D> {
   pub fn new(
     state: &impl State,
     block: Produced<D>,
-    machine: &Machine<D>,
+    machine: &Machine,
   ) -> Result<Self, MachineError> {
     Ok(Self {
       state_diff: machine.execute(state, &block)?,
