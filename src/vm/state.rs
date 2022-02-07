@@ -230,10 +230,10 @@ impl State for IsolatedState {
 
   fn set(
     &mut self,
-    address: Pubkey,
-    account: Account,
+    _address: Pubkey,
+    _account: Account,
   ) -> Result<Option<Account>> {
-    Ok(self.data.insert(address, account))
+    Err(StateError::WritesNotSupported)
   }
 
   fn hash(&self) -> Multihash {

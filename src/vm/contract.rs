@@ -28,18 +28,34 @@ pub enum ContractError {
 #[derive(Debug)]
 pub struct LogEntry(pub String, pub String);
 
+/// Represents creation of a new account.
+///
+/// The modified account should be set as writable in the transaction
+/// inputs, otherwise the transaction will fail.
+#[derive(Debug)]
+pub struct AccountCreated(pub Pubkey, pub Account);
+
 /// Represents a modification to the contents of an account.
 ///
 /// The modified account should be set as writable in the transaction
 /// inputs, otherwise the transaction will fail.
 #[derive(Debug)]
-pub struct StateChange(pub Pubkey, pub Option<Account>);
+pub struct StateChange(pub Pubkey, pub Option<Vec<u8>>);
+
+/// Represents a modification to the balance of an account.
+///
+/// The modified account should be set as writable in the transaction
+/// inputs, otherwise the transaction will fail.
+#[derive(Debug)]
+pub struct BalanceChange(pub Pubkey, pub u64);
 
 // todo: add cross-contract invocation type.
 #[derive(Debug)]
 pub enum Output {
   LogEntry(LogEntry),
   StateChange(StateChange),
+  _AccountCreated(AccountCreated),
+  _BalanceChange(BalanceChange),
 }
 
 /// Represents the output of invocing a smart contract by a transaction.

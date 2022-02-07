@@ -14,7 +14,7 @@ use {
     Output,
     StateChange,
   },
-  crate::primitives::{Account, Pubkey},
+  crate::primitives::Pubkey,
   multihash::{Hasher, Sha3_256},
   std::collections::HashMap,
 };
@@ -38,10 +38,7 @@ fn sha3_test(env: Environment, params: &[u8]) -> contract::Result {
     return Ok(vec![
       Output::StateChange(StateChange(
         env.accounts[0].0.clone(),
-        Some(Account {
-          data: Some(sha.finalize().as_ref().to_vec()),
-          ..account.clone()
-        }),
+        Some(sha.finalize().to_vec()),
       )),
       Output::LogEntry(LogEntry("action".into(), "sha3".into())),
     ]);

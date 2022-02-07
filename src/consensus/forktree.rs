@@ -342,6 +342,7 @@ mod tests {
         parent.height + 1,
         parent.hash().unwrap(),
         data,
+        Multihash::default(),
         vec![],
       )
       .unwrap(),
@@ -378,8 +379,15 @@ mod tests {
     };
 
     let vm = vm::Machine::new(&genesis).unwrap();
-    let produced =
-      Produced::new(&keypair, 1, Multihash::default(), 1u8, vec![]).unwrap();
+    let produced = Produced::new(
+      &keypair,
+      1,
+      Multihash::default(),
+      1u8,
+      Multihash::default(),
+      vec![],
+    )
+    .unwrap();
     let executed = Executed::new(&StateDiff::default(), produced, &vm).unwrap();
 
     let mut root = TreeNode::new(VolatileBlock::new(executed));

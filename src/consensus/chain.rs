@@ -39,7 +39,7 @@ use {
   },
   crate::{
     primitives::{Pubkey, ToBase58String},
-    vm::{self, Executed, Finalized, MachineError, Overlayed},
+    vm::{self, Executed, Finalized, MachineError, Overlayed, State},
   },
   futures::Stream,
   multihash::Multihash,
@@ -187,7 +187,7 @@ impl<'g, D: BlockData> Chain<'g, D> {
   }
 
   /// Returns the block that is currently considered the
-  /// head of the chain.
+  /// head of the chain and the state at that block.
   ///
   /// The selection of this block uses the Greedy Heaviest
   /// Observed Subtree algorithm (GHOST), and it basically
@@ -201,7 +201,7 @@ impl<'g, D: BlockData> Chain<'g, D> {
   ///
   /// This method returns the last finalized block if the
   /// volatile history is empty ingested or produced so far.
-  pub fn head(&self) -> &dyn Block<D> {
+  pub fn head(&self) -> (&dyn State, &dyn Block<D>) {
     let mut heads: Vec<_> = self.forktrees.iter().map(|f| f.head()).collect();
 
     // get the most voted on subtree and if there is a draw, get
@@ -214,8 +214,8 @@ impl<'g, D: BlockData> Chain<'g, D> {
     // if no volatile state, either all blocks
     // are finalized or we are still at genesis block.
     match heads.last() {
-      Some(head) => &*head.value.block,
-      None => self.finalized.as_ref(),
+      Some(head) => (&*head.value.block.state(), &*head.value.block),
+      None => (self.finalized.state(), self.finalized.as_ref()),
     }
   }
 
@@ -493,7 +493,7 @@ impl<'g, 'f, D: BlockData> Chain<'g, D> {
 
           // if the newly inserted block have successfully
           // replaced our head of the chain, then vote for it.
-          if self.head().hash().unwrap() == bhash {
+          if self.head().1.hash().unwrap() == bhash {
             self.commit_and_vote(bhash);
           }
         }
@@ -742,6 +742,7 @@ mod test {
     },
     chrono::Utc,
     ed25519_dalek::{PublicKey, SecretKey},
+    multihash::Multihash,
     std::{collections::BTreeMap, marker::PhantomData, time::Duration},
   };
 
@@ -782,29 +783,31 @@ mod test {
       1,
       genesis.hash().unwrap(),
       vec![],
+      Multihash::default(),
       vec![],
     )
     .unwrap();
 
-    assert_eq!(chain.head().hash().unwrap(), genesis.hash().unwrap());
+    assert_eq!(chain.head().1.hash().unwrap(), genesis.hash().unwrap());
 
     let hash = block.hash().unwrap();
 
     chain.include(block);
-    assert_eq!(hash, chain.head().hash().unwrap());
+    assert_eq!(hash, chain.head().1.hash().unwrap());
 
     let block2 = block::Produced::new(
       &keypair,
       2,
-      chain.head().hash().unwrap(),
+      chain.head().1.hash().unwrap(),
       vec![],
+      Multihash::default(),
       vec![],
     )
     .unwrap();
 
     let hash2 = block2.hash().unwrap();
     chain.include(block2);
-    assert_eq!(hash2, chain.head().hash().unwrap());
+    assert_eq!(hash2, chain.head().1.hash().unwrap());
   }
 
   #[test]
@@ -845,36 +848,49 @@ mod test {
       1,
       genesis.hash().unwrap(),
       "two".to_string(),
+      Multihash::default(),
       vec![],
     )
     .unwrap();
     let hash = block.hash().unwrap();
 
     // no we should have only genesis
-    assert_eq!(chain.head().hash().unwrap(), genesis.hash().unwrap());
+    assert_eq!(chain.head().1.hash().unwrap(), genesis.hash().unwrap());
 
     // block should be the head
     chain.include(block);
-    assert_eq!(hash, chain.head().hash().unwrap());
+    assert_eq!(hash, chain.head().1.hash().unwrap());
 
-    let block2 =
-      block::Produced::new(&keypair, 2, hash, "three".to_string(), vec![])
-        .unwrap();
+    let block2 = block::Produced::new(
+      &keypair,
+      2,
+      hash,
+      "three".to_string(),
+      Multihash::default(),
+      vec![],
+    )
+    .unwrap();
     let hash2 = block2.hash().unwrap();
 
-    let block3 =
-      block::Produced::new(&keypair, 3, hash2, "four".to_string(), vec![])
-        .unwrap();
+    let block3 = block::Produced::new(
+      &keypair,
+      3,
+      hash2,
+      "four".to_string(),
+      Multihash::default(),
+      vec![],
+    )
+    .unwrap();
     let hash3 = block3.hash().unwrap();
 
     // out of order insertion, the head should not change
     // after block3, instead it should be stored as an orphan
     chain.include(block3);
-    assert_eq!(hash, chain.head().hash().unwrap());
+    assert_eq!(hash, chain.head().1.hash().unwrap());
 
     // include the missing parent, now the chain should match
     // it with the orphan and block3 shold be the new head
     chain.include(block2);
-    assert_eq!(hash3, chain.head().hash().unwrap());
+    assert_eq!(hash3, chain.head().1.hash().unwrap());
   }
 }

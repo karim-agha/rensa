@@ -2,7 +2,7 @@ use {
   crate::{
     consensus::{Block, Genesis, Produced, Vote},
     primitives::{Keypair, Pubkey, ToBase58String},
-    vm::{AccountRef, Transaction},
+    vm::{self, AccountRef, Executable, State, Transaction},
   },
   futures::Stream,
   std::{
@@ -14,16 +14,22 @@ use {
   tracing::info,
 };
 
-pub struct BlockProducer {
+pub struct BlockProducer<'v> {
   keypair: Keypair,
+  vm: &'v vm::Machine,
   votes: HashMap<[u8; 64], Vote>,
   validators: HashSet<Pubkey>,
   pending: VecDeque<Produced<Vec<Transaction>>>,
 }
 
-impl BlockProducer {
-  pub fn new(genesis: &Genesis<Vec<Transaction>>, keypair: Keypair) -> Self {
+impl<'v> BlockProducer<'v> {
+  pub fn new(
+    genesis: &Genesis<Vec<Transaction>>,
+    vm: &'v vm::Machine,
+    keypair: Keypair,
+  ) -> Self {
     BlockProducer {
+      vm,
       keypair,
       votes: HashMap::new(),
       validators: genesis
@@ -49,7 +55,12 @@ impl BlockProducer {
     }
   }
 
-  pub fn produce(&mut self, slot: u64, prev: &dyn Block<Vec<Transaction>>) {
+  pub fn produce(
+    &mut self,
+    slot: u64,
+    state: &dyn State,
+    prev: &dyn Block<Vec<Transaction>>,
+  ) {
     let prevhash = prev.hash().unwrap();
 
     let payer = "6MiU5w4RZVvCDqvmitDqFdU5QMoeS7ywA6cAnSeEFdW"
@@ -76,26 +87,30 @@ impl BlockProducer {
       &[&signer],
     );
 
-    // let votes = take(&mut self.votes);
+    let txs = vec![tx; 5000];
+    let statediff = txs.execute(self.vm, state).unwrap();
+    let state_hash = statediff.hash();
 
     let block = Produced::new(
       &self.keypair,
       slot,
       prevhash,
-      vec![tx; 5000],
+      txs,
+      state_hash,
       take(&mut self.votes).into_iter().map(|(_, v)| v).collect(),
     )
     .unwrap();
     info!(
-      "Produced {block} on top of {} with {} transactions",
+      "Produced {block} on top of {} with {} transactions with state hash: {}",
       prevhash.to_b58(),
-      block.data.len()
+      block.data.len(),
+      state_hash.to_b58()
     );
     self.pending.push_back(block);
   }
 }
 
-impl Stream for BlockProducer {
+impl<'v> Stream for BlockProducer<'v> {
   type Item = Produced<Vec<Transaction>>;
 
   fn poll_next(

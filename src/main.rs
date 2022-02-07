@@ -8,7 +8,7 @@ pub mod storage;
 pub mod vm;
 
 use {
-  crate::{network::NetworkEvent, primitives::ToBase58String},
+  crate::{network::NetworkEvent, primitives::ToBase58String, vm::State},
   clap::StructOpt,
   cli::CliOpts,
   consensus::{
@@ -92,7 +92,7 @@ async fn main() -> anyhow::Result<()> {
 
   // componsents of the consensus
   let mut chain = Chain::new(&genesis, &vm, finalized);
-  let mut producer = BlockProducer::new(&genesis, opts.keypair.clone());
+  let mut producer = BlockProducer::new(&genesis, &vm, opts.keypair.clone());
   let mut schedule = ValidatorScheduleStream::new(
     ValidatorSchedule::new(seed, &genesis.validators)?,
     genesis.genesis_time,
@@ -103,11 +103,11 @@ async fn main() -> anyhow::Result<()> {
   loop {
     tokio::select! {
       Some((slot, validator)) = schedule.next() => {
-        let head = chain.head();
+        let (state, block) = chain.head();
         debug!("[slot {}]: {} is considered head of chain @ height {}",
-          slot, head.hash()?.to_b58(), head.height());
+          slot, block.hash()?.to_b58(), block.height());
         if validator.pubkey == me {
-          producer.produce(slot, head);
+          producer.produce(slot, state, block);
         }
       }
       Some(event) = network.poll() => {
@@ -134,8 +134,9 @@ async fn main() -> anyhow::Result<()> {
           },
           ChainEvent::BlockIncluded(block) => {
             info!(
-              "included block {} [epoch {}]",
-              *block, block.height() / genesis.epoch_slots
+              "included block {} [epoch {}] [state hash: {}]",
+              *block, block.height() / genesis.epoch_slots,
+              block.state().hash().to_bytes().to_b58()
             );
             // don't duplicate votes if they were
             // already included be an accepted block.
@@ -143,18 +144,20 @@ async fn main() -> anyhow::Result<()> {
           }
           ChainEvent::BlockConfirmed { block, votes } => {
             info!(
-              "confirmed block {} with {:.02}% votes [epoch {}]",
+              "confirmed block {} with {:.02}% votes [epoch {}] [state hash: {}]",
               *block,
               ((votes as f64 / chain.total_stake() as f64) * 100f64),
-              block.height() / genesis.epoch_slots
+              block.height() / genesis.epoch_slots,
+              block.state().hash().to_bytes().to_b58()
             );
           }
           ChainEvent::BlockFinalized { block, votes } => {
             info!(
-              "finalized block {} with {:.02}% votes [epoch {}]",
+              "finalized block {} with {:.02}% votes [epoch {}] [state hash: {}]",
               *block,
               ((votes as f64 / chain.total_stake() as f64) * 100f64),
-              block.height() / genesis.epoch_slots
+              block.height() / genesis.epoch_slots,
+              block.state().hash().to_bytes().to_b58()
             );
           }
         }

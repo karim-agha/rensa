@@ -23,10 +23,17 @@ impl<D: BlockData> Executed<D> {
     block: Produced<D>,
     machine: &Machine,
   ) -> Result<Self, MachineError> {
-    Ok(Self {
-      state_diff: machine.execute(state, &block)?,
-      underlying: block,
-    })
+    let state_diff = machine.execute(state, &block)?;
+    let underlying = block;
+
+    if state_diff.hash() == underlying.state_hash {
+      Ok(Self {
+        state_diff,
+        underlying,
+      })
+    } else {
+      Err(MachineError::InconsistentStateHash)
+    }
   }
 
   pub fn state(&self) -> &impl State {
