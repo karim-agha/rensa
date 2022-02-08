@@ -14,6 +14,9 @@ pub enum ContractError {
   #[error("Account does not exist")]
   AccountDoesNotExist,
 
+  #[error("Contract error: {0:?}")]
+  Other(#[from] Box<dyn std::error::Error>),
+
   #[error("The specified account is not writable")]
   _AccountNotWritable,
 

@@ -1,4 +1,5 @@
 use {
+  borsh::{BorshDeserialize, BorshSerialize},
   curve25519_dalek::edwards::CompressedEdwardsY,
   ed25519_dalek::{PublicKey, SecretKey},
   multihash::{Hasher, Sha3_256},
@@ -23,16 +24,22 @@ use {
 /// has a corresponding private key on the ed25519 curve or a
 /// program owned account that is not on the curve and is writable
 /// only by its program.
-#[derive(Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
+#[derive(
+  Clone, PartialEq, Eq, Hash, PartialOrd, Ord, BorshSerialize, BorshDeserialize,
+)]
 pub struct Pubkey([u8; 32]);
 
 impl Pubkey {
   /// Given a list of seeds this method will generate a new
-  /// derived pubkey that is not on the Rd25519 curve (and
+  /// derived pubkey that is not on the Ed25519 curve (and
   /// no private key exists).
   ///
   /// This method is used to generate addresses that are
   /// related to some original address.
+  ///
+  /// The same set of seeds will always return the same
+  /// derived address, so it can be used as a hashmap
+  /// in contracts.
   pub fn derive(&self, seeds: &[&[u8]]) -> Self {
     let mut bump: u32 = 0;
     loop {
