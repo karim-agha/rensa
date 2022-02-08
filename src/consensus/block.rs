@@ -181,6 +181,13 @@ pub struct Genesis<D: BlockData> {
   /// does not change the hash of the genesis.
   pub validators: Vec<Validator>,
 
+  /// The minimum amount a validator has to stake to have its blocks
+  /// accepted by the consensus. When a validator is offline for long
+  /// enough, the penalties will start eating up its stake up to point
+  /// where it drops below this level and then is excluded from 
+  /// consensus.
+  pub minimum_stake: u64,
+
   /// The initial accounts state of the chain at the very first block.
   /// This is a list of accounts along with their balances, owners and
   /// data. This is the very first finalized state in the chain before

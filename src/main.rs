@@ -94,7 +94,7 @@ async fn main() -> anyhow::Result<()> {
   let mut chain = Chain::new(&genesis, &vm, finalized);
   let mut producer = BlockProducer::new(&genesis, &vm, opts.keypair.clone());
   let mut schedule = ValidatorScheduleStream::new(
-    ValidatorSchedule::new(seed, &genesis.validators)?,
+    ValidatorSchedule::new(seed, &genesis)?,
     genesis.genesis_time,
     genesis.slot_interval,
   );

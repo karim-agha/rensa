@@ -371,6 +371,7 @@ mod tests {
       slot_interval: Duration::from_secs(2),
       state: BTreeMap::new(),
       builtins: vec![],
+      minimum_stake: 100,
       validators: vec![Validator {
         pubkey: keypair.public(),
         stake: 200000,

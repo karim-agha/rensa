@@ -225,14 +225,22 @@ impl<'g, D: BlockData> Chain<'g, D> {
   ///
   /// In the next iteration validators will be able to
   /// join and leave the blockchain.
-  pub fn validators(&self) -> &'g [Validator] {
-    &self.genesis.validators
+  pub fn validators(&self) -> impl Iterator<Item = &Validator> {
+    self
+      .genesis
+      .validators
+      .iter()
+      .filter(|v| v.stake < self.genesis.minimum_stake)
   }
 
   /// The sum of all staked tokens that are taking part in
   /// the consensus.
   pub fn total_stake(&self) -> u64 {
-    self.stakes.iter().fold(0, |a, (_, s)| a + s)
+    self
+      .stakes
+      .iter()
+      .filter(|(_, s)| **s < self.genesis.minimum_stake)
+      .fold(0, |a, (_, s)| a + s)
   }
 
   /// The minimum voted stake that constitutes a 2/3 majority
@@ -270,6 +278,14 @@ impl<'g, 'f, D: BlockData> Chain<'g, D> {
   /// and the target block must be one of its descendants.
   fn injest_vote(&mut self, vote: &Vote) {
     if let Some(stake) = self.stakes.get(&vote.validator) {
+      if *stake < self.genesis.minimum_stake {
+        debug!(
+          "Rejecting vote from {} because it has not enough stake",
+          vote.validator
+        );
+        return;
+      }
+
       for root in self.forktrees.iter_mut() {
         if let Some(target) = root.get_mut(&vote.target) {
           let target = unsafe { &mut *target as &mut TreeNode<D> };
@@ -460,6 +476,16 @@ impl<'g, 'f, D: BlockData> Chain<'g, D> {
     if !self.stakes.contains_key(&block.signature.0) {
       warn!(
         "Rejecting block {block} from non-staking proposer {}",
+        block.signature.0
+      );
+      return;
+    }
+
+    if *self.stakes.get(&block.signature.0).unwrap()
+      < self.genesis.minimum_stake
+    {
+      warn!(
+        "Rejecting block {block} from {} because it has not enough stake.",
         block.signature.0
       );
       return;
@@ -767,6 +793,7 @@ mod test {
       slot_interval: Duration::from_secs(2),
       state: BTreeMap::new(),
       builtins: vec![],
+      minimum_stake: 100,
       validators: vec![Validator {
         pubkey: keypair.public(),
         stake: 200000,
@@ -831,6 +858,7 @@ mod test {
       slot_interval: Duration::from_secs(2),
       state: BTreeMap::new(),
       builtins: vec![],
+      minimum_stake: 100,
       validators: vec![Validator {
         pubkey: keypair.public(),
         stake: 200000,

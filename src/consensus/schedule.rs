@@ -1,5 +1,5 @@
 use {
-  super::validator::Validator,
+  super::{validator::Validator, BlockData, Genesis},
   chrono::{DateTime, Utc},
   futures::Stream,
   rand::{
@@ -36,30 +36,37 @@ use {
 /// let epoch_validators = schedule.take(64);
 /// ```
 #[derive(Debug)]
-pub struct ValidatorSchedule<'a> {
+pub struct ValidatorSchedule<'g, D: BlockData> {
   rng: ChaCha20Rng,
   dist: WeightedIndex<u64>,
-  validators: &'a [Validator],
+  genesis: &'g Genesis<D>,
 }
 
-impl<'a> ValidatorSchedule<'a> {
+impl<'g, D: BlockData> ValidatorSchedule<'g, D> {
   pub fn new(
     seed: [u8; 32],
-    validators: &'a [Validator],
+    genesis: &'g Genesis<D>,
   ) -> Result<Self, WeightedError> {
     Ok(Self {
       rng: ChaCha20Rng::from_seed(seed),
-      dist: WeightedIndex::new(validators.iter().map(|v| v.stake))?,
-      validators,
+      dist: WeightedIndex::new(Self::validators(genesis).map(|v| v.stake))?,
+      genesis,
     })
+  }
+
+  fn validators(genesis: &'g Genesis<D>) -> impl Iterator<Item = &Validator> {
+    genesis
+      .validators
+      .iter()
+      .filter(|v| v.stake >= genesis.minimum_stake)
   }
 }
 
-impl<'a> Iterator for ValidatorSchedule<'a> {
-  type Item = &'a Validator;
+impl<'g, D: BlockData> Iterator for ValidatorSchedule<'g, D> {
+  type Item = &'g Validator;
 
   fn next(&mut self) -> Option<Self::Item> {
-    Some(&self.validators[self.dist.sample(&mut self.rng)])
+    Self::validators(self.genesis).nth(self.dist.sample(&mut self.rng))
   }
 }
 
@@ -88,16 +95,16 @@ impl<'a> Iterator for ValidatorSchedule<'a> {
 ///   info!("I think that slot {slot} is for: {validator:?}");
 /// }
 /// ```
-pub struct ValidatorScheduleStream<'a> {
+pub struct ValidatorScheduleStream<'g, D: BlockData> {
   pos: u64,
   waker: watch::Sender<Option<Waker>>,
   notif: watch::Receiver<u64>,
-  schedule: Enumerate<ValidatorSchedule<'a>>,
+  schedule: Enumerate<ValidatorSchedule<'g, D>>,
 }
 
-impl<'a> ValidatorScheduleStream<'a> {
+impl<'g, D: BlockData> ValidatorScheduleStream<'g, D> {
   pub fn new(
-    schedule: ValidatorSchedule<'a>,
+    schedule: ValidatorSchedule<'g, D>,
     genesis: DateTime<Utc>,
     slot: Duration,
   ) -> Self {
@@ -161,8 +168,8 @@ impl<'a> ValidatorScheduleStream<'a> {
   }
 }
 
-impl<'a> Stream for ValidatorScheduleStream<'a> {
-  type Item = (u64, &'a Validator);
+impl<'g, D: BlockData> Stream for ValidatorScheduleStream<'g, D> {
+  type Item = (u64, &'g Validator);
 
   // (slot#, validator)
 

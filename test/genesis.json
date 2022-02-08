@@ -5,6 +5,7 @@
   "epochSlots": 16,
   "maxJustificationAge": 3,
   "maxBlockSize": 5000000,
+  "minimumStake": 1000,
   "state": {
     "CKDN1WjimfErkbgecnEfoPfs7CU1TknwMhpgbiXNknGC": {
       "owner": null,
