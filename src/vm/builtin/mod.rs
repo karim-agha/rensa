@@ -15,8 +15,8 @@ use {
 lazy_static::lazy_static! {
   pub static ref BUILTIN_CONTRACTS: HashMap<Pubkey, ContractEntrypoint> = {
     let mut funcs = HashMap::<Pubkey, ContractEntrypoint>::new();
-    funcs.insert("Sha3111111111111111111111111111111111111111".parse().unwrap(), sha3::contract);
-    funcs.insert("Currency11111111111111111111111111111111111".parse().unwrap(), currency::contract);
+    funcs.insert("Sha3xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx".parse().unwrap(), sha3::contract);
+    funcs.insert("Currency1xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx".parse().unwrap(), currency::contract);
     funcs
   };
 }

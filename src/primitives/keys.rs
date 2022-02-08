@@ -1,5 +1,7 @@
 use {
+  curve25519_dalek::edwards::CompressedEdwardsY,
   ed25519_dalek::{PublicKey, SecretKey},
+  multihash::{Hasher, Sha3_256},
   serde::{
     de::{self, Visitor},
     Deserialize,
@@ -23,6 +25,47 @@ use {
 /// only by its program.
 #[derive(Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct Pubkey([u8; 32]);
+
+impl Pubkey {
+  /// Given a list of seeds this method will generate a new
+  /// derived pubkey that is not on the Rd25519 curve (and
+  /// no private key exists).
+  ///
+  /// This method is used to generate addresses that are
+  /// related to some original address.
+  pub fn derive(&self, seeds: &[&[u8]]) -> Self {
+    let mut bump: u32 = 0;
+    loop {
+      let mut hasher = Sha3_256::default();
+      for seed in seeds.iter() {
+        hasher.update(seed);
+      }
+      hasher.update(&bump.to_le_bytes());
+      let key = Pubkey(hasher.finalize().try_into().unwrap());
+      if !key.has_private_key() {
+        return key;
+      } else {
+        bump += 1;
+      }
+    }
+  }
+
+  /// Checks if the given pubkey lies on the Ed25519 elliptic curve.
+  ///
+  /// When true, then it means that there exists a private key that
+  /// make up together a valid Ed25519 keypair. Otherwise, when false
+  /// it means that there is no corresponding valid private key.
+  ///
+  /// This is useful in cases we want to make sure that an account
+  /// could not be ever modified except by its owning contract, as
+  /// it is not possible to have a signer of a transaction that will
+  /// give write access to an account.
+  pub fn has_private_key(&self) -> bool {
+    CompressedEdwardsY::from_slice(&self.0)
+      .decompress()
+      .is_some()
+  }
+}
 
 impl Deref for Pubkey {
   type Target = [u8];
@@ -219,5 +262,27 @@ impl Serialize for Pubkey {
     S: serde::Serializer,
   {
     serializer.serialize_str(&bs58::encode(self.0).into_string())
+  }
+}
+
+#[cfg(test)]
+mod test {
+  use super::Pubkey;
+
+  #[test]
+  fn pubkey_derive_some() {
+    // corresponding private key: 9Rt2PJombdzAEjdgiybg4woayTwKVD89uYYc1vFy7Hoa
+    let pk1: Pubkey = "GBQEQGo5zQYCFdewiWuZ5FT9pi6D4muTAvyYzqR4ty4U"
+      .parse()
+      .unwrap();
+    assert!(pk1.has_private_key());
+
+    let der1 = pk1.derive(&[b"some random seed"]);
+    assert!(!der1.has_private_key());
+
+    for i in 0..1000u32 {
+      let pk = pk1.derive(&[&i.to_le_bytes()]);
+      assert!(!pk.has_private_key());
+    }
   }
 }

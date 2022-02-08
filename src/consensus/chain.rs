@@ -764,11 +764,10 @@ mod test {
         validator::Validator,
       },
       primitives::Keypair,
-      vm::{self, Finalized, Transaction},
+      vm::{self, Executable, Finalized, State, Transaction},
     },
     chrono::Utc,
     ed25519_dalek::{PublicKey, SecretKey},
-    multihash::Multihash,
     std::{collections::BTreeMap, marker::PhantomData, time::Duration},
   };
 
@@ -802,20 +801,27 @@ mod test {
     };
 
     let finalized = Finalized::new(&genesis);
-
     let vm = vm::Machine::new(&genesis).unwrap();
     let mut chain = Chain::new(&genesis, &vm, finalized);
+
+    let (hstate, hblock) = chain.head();
+
+    // blocks have no txs, so the statehash won't change across
+    // blocks, but it needs to be a valid hash otherwise the block
+    // gets rejected and not appended to the chain.
+    let statehash = vec![].execute(&vm, hstate).unwrap().hash();
+
     let block = block::Produced::new(
       &keypair,
       1,
       genesis.hash().unwrap(),
       vec![],
-      Multihash::default(),
+      statehash,
       vec![],
     )
     .unwrap();
 
-    assert_eq!(chain.head().1.hash().unwrap(), genesis.hash().unwrap());
+    assert_eq!(hblock.hash().unwrap(), genesis.hash().unwrap());
 
     let hash = block.hash().unwrap();
 
@@ -827,7 +833,7 @@ mod test {
       2,
       chain.head().1.hash().unwrap(),
       vec![],
-      Multihash::default(),
+      statehash,
       vec![],
     )
     .unwrap();
@@ -871,19 +877,26 @@ mod test {
     let vm = vm::Machine::new(&genesis).unwrap();
     let mut chain = Chain::new(&genesis, &vm, finalized);
 
+    let (hstate, hblock) = chain.head();
+
+    // blocks have no txs, so the statehash won't change across
+    // blocks, but it needs to be a valid hash otherwise the block
+    // gets rejected and not appended to the chain.
+    let statehash = vec![].execute(&vm, hstate).unwrap().hash();
+
     let block = block::Produced::new(
       &keypair,
       1,
       genesis.hash().unwrap(),
       "two".to_string(),
-      Multihash::default(),
+      statehash,
       vec![],
     )
     .unwrap();
     let hash = block.hash().unwrap();
 
     // no we should have only genesis
-    assert_eq!(chain.head().1.hash().unwrap(), genesis.hash().unwrap());
+    assert_eq!(hblock.hash().unwrap(), genesis.hash().unwrap());
 
     // block should be the head
     chain.include(block);
@@ -894,7 +907,7 @@ mod test {
       2,
       hash,
       "three".to_string(),
-      Multihash::default(),
+      statehash,
       vec![],
     )
     .unwrap();
@@ -905,7 +918,7 @@ mod test {
       3,
       hash2,
       "four".to_string(),
-      Multihash::default(),
+      statehash,
       vec![],
     )
     .unwrap();

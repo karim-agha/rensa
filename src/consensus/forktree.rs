@@ -321,7 +321,7 @@ mod tests {
         Genesis,
       },
       primitives::Keypair,
-      vm::{self, Executed, StateDiff},
+      vm::{self, Executable, Executed, State, StateDiff},
     },
     chrono::Utc,
     ed25519_dalek::{PublicKey, SecretKey},
@@ -342,7 +342,7 @@ mod tests {
         parent.height + 1,
         parent.hash().unwrap(),
         data,
-        Multihash::default(),
+        vec![].execute(&vm, &StateDiff::default()).unwrap().hash(),
         vec![],
       )
       .unwrap(),
@@ -380,21 +380,19 @@ mod tests {
     };
 
     let vm = vm::Machine::new(&genesis).unwrap();
-    let produced = Produced::new(
-      &keypair,
-      1,
-      Multihash::default(),
-      1u8,
-      Multihash::default(),
-      vec![],
-    )
-    .unwrap();
+
+    // blocks have no txs, so the statehash won't change across
+    // blocks, but it needs to be a valid hash otherwise the block
+    // gets rejected and not appended to the chain.
+    let statehash = vec![].execute(&vm, &StateDiff::default()).unwrap().hash();
+
+    let produced =
+      Produced::new(&keypair, 1, Multihash::default(), 1u8, statehash, vec![])
+        .unwrap();
+
     let executed = Executed::new(&StateDiff::default(), produced, &vm).unwrap();
-
     let mut root = TreeNode::new(VolatileBlock::new(executed));
-
     let root_hash = root.value.hash().unwrap();
-
     let h1 = root.head();
 
     assert_eq!(h1.value.hash().unwrap(), root_hash);
