@@ -184,7 +184,7 @@ pub struct Genesis<D: BlockData> {
   /// The minimum amount a validator has to stake to have its blocks
   /// accepted by the consensus. When a validator is offline for long
   /// enough, the penalties will start eating up its stake up to point
-  /// where it drops below this level and then is excluded from 
+  /// where it drops below this level and then is excluded from
   /// consensus.
   pub minimum_stake: u64,
 
@@ -275,6 +275,9 @@ impl<D: BlockData> Block<D> for Genesis<D> {
     sha3.update(&self.genesis_time.timestamp_millis().to_le_bytes());
     sha3.update(&self.slot_interval.as_millis().to_le_bytes());
     sha3.update(&self.epoch_slots.to_le_bytes());
+    sha3.update(&self.max_justification_age.to_le_bytes());
+    sha3.update(&self.max_block_size.to_le_bytes());
+    sha3.update(&self.minimum_stake.to_le_bytes());
 
     for builtin in &self.builtins {
       sha3.update(builtin);
@@ -287,7 +290,6 @@ impl<D: BlockData> Block<D> for Genesis<D> {
 
     for (addr, acc) in &self.state {
       sha3.update(addr);
-      sha3.update(&acc.balance.to_le_bytes());
       sha3.update(&match acc.executable {
         true => [1],
         false => [0],

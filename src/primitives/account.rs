@@ -12,7 +12,6 @@ use {
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Account {
-  pub balance: u64,
   #[serde(default)]
   pub executable: bool,
   pub owner: Option<Pubkey>,
@@ -23,7 +22,6 @@ impl Account {
   #[cfg(test)]
   pub fn test_new(value: u8) -> Self {
     Self {
-      balance: 0,
       executable: false,
       owner: None,
       data: Some(vec![value]),
@@ -32,7 +30,6 @@ impl Account {
 
   pub fn hash(&self) -> Multihash {
     let mut hasher = Sha3_256::default();
-    hasher.update(&self.balance.to_le_bytes());
     hasher.update(&[self.executable as u8]);
     if let Some(ref owner) = self.owner {
       hasher.update(owner.as_ref());
