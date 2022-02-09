@@ -8,20 +8,27 @@ use {
 
 pub fn contract(env: Environment, params: &[u8]) -> contract::Result {
   let mut sha = Sha3_256::default();
-  if let Some(account) = &env.accounts[0].1 {
-    if let Some(data) = &account.data {
-      sha.update(data);
-    } else {
-      sha.update(params);
-    }
-    return Ok(vec![
-      Output::ModifyAccountData(
-        env.accounts[0].0.clone(),
-        Some(sha.finalize().to_vec()),
-      ),
-      Output::LogEntry("action".into(), "sha3".into()),
-    ]);
+
+  if env.accounts.len() != 1 {
+    return Err(ContractError::InvalidInputAccounts);
   }
 
-  Err(ContractError::AccountDoesNotExist)
+  let (addr, accinfo) = &env.accounts[0];
+
+  if !accinfo.writable {
+    return Err(ContractError::AccountNotWritable);
+  }
+
+  // if has existing content hash it
+  if let Some(ref data) = accinfo.data {
+    sha.update(data);
+  } else {
+    // otherwise hash the initial value from params
+    sha.update(params);
+  }
+
+  Ok(vec![
+    Output::ModifyAccountData(addr.clone(), Some(sha.finalize().to_vec())),
+    Output::LogEntry("action".into(), "sha3".into()),
+  ])
 }

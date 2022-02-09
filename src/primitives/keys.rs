@@ -31,7 +31,7 @@ pub struct Pubkey([u8; 32]);
 
 impl Pubkey {
   /// Given a list of seeds this method will generate a new
-  /// derived pubkey that is not on the Ed25519 curve 
+  /// derived pubkey that is not on the Ed25519 curve
   /// (no private key exists for the resulting pubkey).
   ///
   /// This method is used to generate addresses that are
@@ -108,6 +108,14 @@ impl FromStr for Pubkey {
     let mut bytes = [0u8; 32];
     bs58::decode(s).into(&mut bytes)?;
     Ok(Self(bytes))
+  }
+}
+
+impl TryFrom<&str> for Pubkey {
+  type Error = bs58::decode::Error;
+
+  fn try_from(value: &str) -> Result<Self, Self::Error> {
+    FromStr::from_str(value)
   }
 }
 

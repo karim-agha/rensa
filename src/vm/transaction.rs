@@ -1,9 +1,14 @@
 use {
-  super::{contract::Environment, State},
+  super::{
+    contract::{AccountView, Environment},
+    MachineError,
+    State,
+  },
   crate::primitives::{Keypair, Pubkey, ToBase58String},
-  ed25519_dalek::{Signature, Signer},
+  ed25519_dalek::{PublicKey, Signature, Signer, Verifier},
   multihash::{Hasher, Sha3_256},
   serde::{Deserialize, Serialize},
+  std::io::{Error as StdError, ErrorKind},
 };
 
 /// This is a parameter on the transaction that indicates that
@@ -14,6 +19,35 @@ use {
 pub struct AccountRef {
   pub address: Pubkey,
   pub writable: bool,
+  pub signer: bool,
+}
+
+impl AccountRef {
+  pub fn readonly(
+    address: impl TryInto<Pubkey>,
+    signer: bool,
+  ) -> Result<AccountRef, StdError> {
+    Ok(Self {
+      address: address.try_into().map_err(|_| {
+        StdError::new(ErrorKind::InvalidInput, "invalid pubkey")
+      })?,
+      writable: false,
+      signer,
+    })
+  }
+
+  pub fn writable(
+    address: impl TryInto<Pubkey>,
+    signer: bool,
+  ) -> Result<AccountRef, StdError> {
+    Ok(Self {
+      address: address.try_into().map_err(|_| {
+        StdError::new(ErrorKind::InvalidInput, "invalid pubkey")
+      })?,
+      writable: true,
+      signer,
+    })
+  }
 }
 
 /// Represents a single invocation of the state machine.
@@ -66,17 +100,91 @@ impl Transaction {
     }
   }
 
+  pub fn verify_signatures(&self) -> Result<(), MachineError> {
+    let mut hasher = Sha3_256::default();
+    hasher.update(&self.contract);
+    hasher.update(&self.payer);
+
+    for accref in &self.accounts {
+      hasher.update(&accref.address);
+      hasher.update(&[match accref.writable {
+        true => 1,
+        false => 0,
+      }]);
+    }
+    hasher.update(&self.params);
+    let fields_hash = hasher.finalize();
+
+    // first verify the payer
+    if self.signatures.is_empty() {
+      // expecting at least one signature that
+      // pays for transaction fees.
+      return Err(MachineError::MissingSigners);
+    }
+
+    if let Ok(payer_key) = PublicKey::from_bytes(&self.payer) {
+      if payer_key
+        .verify(fields_hash.as_ref(), self.signatures.first().unwrap())
+        .is_err()
+      {
+        return Err(MachineError::SignatureVerificationFailed);
+      }
+    } else {
+      return Err(MachineError::SignatureVerificationFailed);
+    }
+
+    // then the rest of signers
+    let signers = self
+      .accounts
+      .iter()
+      .filter(|a| a.signer)
+      .map(|a| &a.address)
+      .zip(self.signatures.iter().skip(1));
+
+    if signers.clone().count() != self.signatures.len() - 1 {
+      return Err(MachineError::MissingSigners);
+    }
+
+    for (pubkey, sig) in signers {
+      if let Ok(pk) = PublicKey::from_bytes(pubkey) {
+        if pk.verify(fields_hash.as_ref(), sig).is_ok() {
+          continue;
+        }
+      }
+      return Err(MachineError::SignatureVerificationFailed);
+    }
+
+    Ok(())
+  }
+
   /// Creates a self-contained environment object that can be used to
   /// invoke a contract at a given version of the blockchain state.
-  pub fn create_environment(&self, state: &impl State) -> Environment {
-    Environment {
+  pub fn create_environment(
+    &self,
+    state: &impl State,
+  ) -> Result<Environment, MachineError> {
+    if let Err(err) = self.verify_signatures() {
+      return Err(err);
+    }
+
+    Ok(Environment {
       address: self.contract.clone(),
       accounts: self
         .accounts
         .iter()
-        .map(|a| (a.address.clone(), state.get(&a.address).cloned()))
+        .map(|a| {
+          let account_data = state.get(&a.address);
+          let account_view = AccountView {
+            signer: a.signer,
+            writable: a.writable,
+            executable: account_data.map(|a| a.executable).unwrap_or(false),
+            owner: account_data.and_then(|d| d.owner.clone()),
+            data: account_data.and_then(|a| a.data.clone()),
+          };
+          (a.address.clone(), account_view)
+        })
         .collect(),
-    }
+    })
   }
 
   pub fn hash(&self) -> Vec<u8> {

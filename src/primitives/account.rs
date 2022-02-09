@@ -12,6 +12,8 @@ use {
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Account {
+  #[serde(skip)]
+  pub executable: bool,
   pub owner: Option<Pubkey>,
   pub data: Option<Vec<u8>>,
 }
@@ -20,6 +22,7 @@ impl Account {
   #[cfg(test)]
   pub fn test_new(value: u8) -> Self {
     Self {
+      executable: false,
       owner: None,
       data: Some(vec![value]),
     }

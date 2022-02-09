@@ -4,10 +4,7 @@
 //! invoke smart contracts by the virtual machine and carry
 //! input and output data into and from the contract.
 
-use {
-  crate::primitives::{Account, Pubkey},
-  thiserror::Error,
-};
+use {crate::primitives::Pubkey, thiserror::Error};
 
 #[derive(Debug, Error)]
 pub enum ContractError {
@@ -20,17 +17,23 @@ pub enum ContractError {
   #[error("Invalid contract input accounts")]
   InvalidInputAccounts,
 
-  #[error("Account does not exist")]
-  AccountDoesNotExist,
-
   #[error("Contract error: {0:?}")]
   Other(#[from] Box<dyn std::error::Error>),
 
   #[error("The specified account is not writable")]
-  _AccountNotWritable,
+  AccountNotWritable,
 
   #[error("The transaction has used up all compute units before completing")]
   _ComputationalBudgetExhausted,
+}
+
+#[derive(Debug)]
+pub struct AccountView {
+  pub signer: bool,
+  pub writable: bool,
+  pub executable: bool,
+  pub owner: Option<Pubkey>,
+  pub data: Option<Vec<u8>>,
 }
 
 #[derive(Debug)]
@@ -41,17 +44,19 @@ pub enum Output {
   /// visible to external observers through the RPC interface.
   LogEntry(String, String),
 
-  /// Represents a modification to the contents of an account.
+  /// Represents a modification to the contents of an account owned 
+  /// by the contract.
   ///
   /// The modified account should be set as writable in the transaction
   /// inputs, otherwise the transaction will fail.
   ModifyAccountData(Pubkey, Option<Vec<u8>>),
 
-  /// Represents creation of a new account.
+  /// Represents creation of a new account that is owned by a calling 
+  /// contract.
   ///
   /// The modified account should be set as writable in the transaction
   /// inputs, otherwise the transaction will fail.
-  CreateAccount(Pubkey, Account),
+  CreateOwnedAccount(Pubkey, Option<Vec<u8>>),
 }
 
 /// Represents the output of invocing a smart contract by a transaction.
@@ -68,7 +73,7 @@ pub struct Environment {
   pub address: Pubkey,
 
   /// A list of all input accounts specified by the transaction
-  pub accounts: Vec<(Pubkey, Option<Account>)>,
+  pub accounts: Vec<(Pubkey, AccountView)>,
 }
 
 /// This is the signature of a contract entrypoint.

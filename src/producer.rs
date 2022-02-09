@@ -55,6 +55,27 @@ impl<'v> BlockProducer<'v> {
     }
   }
 
+  fn create_sha_tx(payer: &Keypair) -> Transaction {
+    // private key of account CKDN1WjimfErkbgecnEfoPfs7CU1TknwMhpgbiXNknGC
+    let signer = "9XhCqH1LxmziWmBb8WnqzuvKFjX7koBuyzwdcFkL1ym7"
+      .parse()
+      .unwrap();
+
+    Transaction::new(
+      "Sha3xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+        .parse()
+        .unwrap(),
+      payer,
+      vec![AccountRef::writable(
+        "CKDN1WjimfErkbgecnEfoPfs7CU1TknwMhpgbiXNknGC",
+        true,
+      )
+      .unwrap()],
+      b"initial-seed".to_vec(),
+      &[&signer],
+    )
+  }
+
   pub fn produce(
     &mut self,
     slot: u64,
@@ -63,30 +84,12 @@ impl<'v> BlockProducer<'v> {
   ) {
     let prevhash = prev.hash().unwrap();
 
+    // this account pays the tx costs
     let payer = "6MiU5w4RZVvCDqvmitDqFdU5QMoeS7ywA6cAnSeEFdW"
       .parse()
       .unwrap();
 
-    // private key of account CKDN1WjimfErkbgecnEfoPfs7CU1TknwMhpgbiXNknGC
-    let signer = "9XhCqH1LxmziWmBb8WnqzuvKFjX7koBuyzwdcFkL1ym7"
-      .parse()
-      .unwrap();
-
-    let tx = Transaction::new(
-      "Sha3111111111111111111111111111111111111111"
-        .parse()
-        .unwrap(),
-      &payer,
-      vec![AccountRef {
-        address: "CKDN1WjimfErkbgecnEfoPfs7CU1TknwMhpgbiXNknGC"
-          .parse()
-          .unwrap(),
-        writable: true,
-      }],
-      b"initial-seed".to_vec(),
-      &[&signer],
-    );
-
+    let tx = Self::create_sha_tx(&payer);
     let txs = vec![tx; 5000];
     let statediff = txs.execute(self.vm, state).unwrap();
     let state_hash = statediff.hash();

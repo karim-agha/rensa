@@ -5,7 +5,7 @@
 
 use {
   crate::{
-    primitives::{Account, Pubkey},
+    primitives::Pubkey,
     vm::{
       contract,
       contract::{ContractError, Environment},
@@ -200,7 +200,7 @@ fn process_create(
   }
 
   // is this already in use by some other mint?
-  if value.is_some() {
+  if value.data.is_some() || value.owner.is_some() {
     return Err(ContractError::AccountAlreadyInUse);
   }
 
@@ -232,13 +232,13 @@ fn process_create(
 
   Ok(vec![
     // initialize the mint account
-    contract::Output::CreateAccount(expected_mint_address, Account {
-      data: Some(
+    contract::Output::CreateOwnedAccount(
+      expected_mint_address,
+      Some(
         borsh::to_vec(&spec)
           .map_err(|_| ContractError::InvalidInputParameters)?,
       ),
-      owner: Some(env.address),
-    }),
+    ),
     // generate logs
     contract::Output::LogEntry("action".into(), "mint-created".into()),
     contract::Output::LogEntry("address".into(), addr.to_string()),

@@ -9,13 +9,11 @@
   "state": {
     "CKDN1WjimfErkbgecnEfoPfs7CU1TknwMhpgbiXNknGC": {
       "owner": null,
-      "data": null,
-      "balance": 400000000000
+      "data": null
     },
     "CoTjo2WBfa9AQWqR8UHxisz1VU7YrAzLxi68iA7VRn4j": {
       "owner": null,
-      "data": null,
-      "balance": 4000000000
+      "data": null
     }
   },
   "builtins": [
