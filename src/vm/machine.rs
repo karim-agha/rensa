@@ -13,7 +13,7 @@ use {
   },
   std::collections::HashMap,
   thiserror::Error,
-  tracing::debug,
+  tracing::{trace, warn},
 };
 
 #[derive(Debug, Error)]
@@ -88,25 +88,39 @@ impl Executable for Vec<Transaction> {
     for transaction in self {
       if let Some(entrypoint) = vm.builtins.get(&transaction.contract) {
         let state = Overlayed::new(state, &accstate);
-        if let Ok(env) = transaction.create_environment(&state) {
-          match entrypoint(env, &transaction.params) {
-            Ok(outputs) => {
-              let txstate =
-                outputs.into_iter().fold(StateDiff::default(), |s, o| {
-                  s.merge(process_transaction_output(o, &state, transaction))
-                });
-              accstate = accstate.merge(txstate);
-            }
-            Err(error) => {
-              // when a transaction fails, none of its state changes
-              // gets persisted. Todo: Add failure logs.
-              debug!(
-                "transaction {} failed: {error:?}",
-                transaction.hash().to_b58()
-              );
+        match transaction.create_environment(&state) {
+          Ok(env) => {
+            match entrypoint(env, &transaction.params) {
+              Ok(outputs) => {
+                let txstate =
+                  outputs.into_iter().fold(StateDiff::default(), |s, o| {
+                    s.merge(process_transaction_output(o, &state, transaction))
+                  });
+                accstate = accstate.merge(txstate);
+              }
+              Err(error) => {
+                // when a transaction fails, none of its state changes
+                // gets persisted. Todo: Add failure logs.
+                warn!(
+                  "transaction {} failed: {error}",
+                  transaction.hash().to_b58()
+                );
+              }
             }
           }
+          Err(error) => {
+            warn!(
+              "transaction {} failed: {error}",
+              transaction.hash().to_b58()
+            );
+          }
         }
+      } else {
+        warn!(
+          "transaction {} failed: unknown contract {}",
+          transaction.hash().to_b58(),
+          transaction.contract
+        );
       }
     }
     Ok(accstate)
@@ -121,15 +135,23 @@ fn process_transaction_output(
   let mut txstate = StateDiff::default();
   match output {
     Output::LogEntry(key, value) => {
-      debug!(
+      trace!(
         "transaction {} log: {key} => {value}",
         transaction.hash().to_b58()
       ); // todo
     }
     Output::ModifyAccountData(addr, data) => {
+      trace!(
+        "transaction {} modifying account {addr} with {data:?}",
+        transaction.hash().to_b58()
+      );
       modify_account_data(addr, data, state, &mut txstate, transaction);
     }
     Output::CreateOwnedAccount(addr, data) => {
+      trace!(
+        "transaction {} creating account {addr} with: {data:?}",
+        transaction.hash().to_b58(),
+      );
       create_owned_account(addr, data, state, &mut txstate, transaction);
     }
   };

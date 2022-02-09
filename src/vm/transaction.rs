@@ -134,14 +134,16 @@ impl Transaction {
     }
 
     // then the rest of signers
-    let signers = self
+    let signing_accs = self
       .accounts
       .iter()
       .filter(|a| a.signer)
-      .map(|a| &a.address)
-      .zip(self.signatures.iter().skip(1));
+      .map(|a| &a.address);
 
-    if signers.clone().count() != self.signatures.len() - 1 {
+    let expected_signatures = signing_accs.clone().count();
+    let signers = signing_accs.zip(self.signatures.iter().skip(1));
+
+    if signers.clone().count() != expected_signatures {
       return Err(MachineError::MissingSigners);
     }
 
