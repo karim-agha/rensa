@@ -222,7 +222,7 @@ impl<D: BlockData> TreeNode<D> {
   /// checking if the two consecutive epoch checkpoints
   /// are finalized.
   pub fn epoch_start(&self, epoch_slots: u64) -> &TreeNode<D> {
-    let epoch = |n: &TreeNode<D>| n.value.height() / epoch_slots;
+    let epoch = |n: &TreeNode<D>| n.value.slot() / epoch_slots;
     let mut needle = self;
     for step in self.path().skip(1) {
       if epoch(step) == epoch(self) {
@@ -340,6 +340,7 @@ mod tests {
       Produced::new(
         keypair,
         parent.height + 1,
+        parent.height + 1,
         parent.hash().unwrap(),
         data,
         vec![].execute(&vm, &StateDiff::default()).unwrap().hash(),
@@ -386,9 +387,16 @@ mod tests {
     // gets rejected and not appended to the chain.
     let statehash = vec![].execute(&vm, &StateDiff::default()).unwrap().hash();
 
-    let produced =
-      Produced::new(&keypair, 1, Multihash::default(), 1u8, statehash, vec![])
-        .unwrap();
+    let produced = Produced::new(
+      &keypair,
+      1,
+      1,
+      Multihash::default(),
+      1u8,
+      statehash,
+      vec![],
+    )
+    .unwrap();
 
     let executed = Executed::new(&StateDiff::default(), produced, &vm).unwrap();
     let mut root = TreeNode::new(VolatileBlock::new(executed));

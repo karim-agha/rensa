@@ -1,14 +1,7 @@
 use {
   super::{
     builtin::BUILTIN_CONTRACTS,
-    contract::{
-      AccountCreated,
-      BalanceChange,
-      ContractEntrypoint,
-      Environment,
-      Output,
-      StateChange,
-    },
+    contract::{ContractEntrypoint, Environment, Output},
     Overlayed,
     State,
     StateDiff,
@@ -33,6 +26,9 @@ pub enum MachineError {
      hash decalred in the block header"
   )]
   InconsistentStateHash,
+
+  #[error("Invalid block height, expected a monotonically increasing value")]
+  InvalidBlockHeight,
 
   #[error("Undefined builtin in genesis: {0}")]
   UndefinedBuiltin(Pubkey),
@@ -99,13 +95,13 @@ impl Executable for Vec<Transaction> {
             let mut txstate = StateDiff::default();
             for output in outputs {
               match output {
-                Output::LogEntry(log) => {
+                Output::LogEntry(key, value) => {
                   debug!(
-                    "transaction {} log: {log:?}",
+                    "transaction {} log: {key} => {value}",
                     transaction.hash().to_b58()
                   ); // todo
                 }
-                Output::StateChange(StateChange(addr, data)) => {
+                Output::ModifyAccountData(addr, data) => {
                   for acc in &transaction.accounts {
                     if acc.address == addr && acc.writable {
                       if let Some(acc) = state.get(&addr) {
@@ -120,8 +116,7 @@ impl Executable for Vec<Transaction> {
                     }
                   }
                 }
-                Output::_AccountCreated(AccountCreated(_addr, _acc)) => {}
-                Output::_BalanceChange(BalanceChange(_addr, _bal)) => {}
+                Output::CreateAccount(_addr, _acc) => {}
               };
             }
             accstate = accstate.merge(txstate);

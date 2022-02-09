@@ -11,6 +11,15 @@ use {
 
 #[derive(Debug, Error)]
 pub enum ContractError {
+  #[error("Account already in use")]
+  AccountAlreadyInUse,
+
+  #[error("Invalid contract input paramters data")]
+  InvalidInputParameters,
+
+  #[error("Invalid contract input accounts")]
+  InvalidInputAccounts,
+
   #[error("Account does not exist")]
   AccountDoesNotExist,
 
@@ -24,41 +33,25 @@ pub enum ContractError {
   _ComputationalBudgetExhausted,
 }
 
-/// This type represents a log entry emitted by a smart contract.
-///
-/// Log entries are key-value pairs that are emitted by a contract and
-/// visible to external observers through the RPC interface.
-#[derive(Debug)]
-pub struct LogEntry(pub String, pub String);
-
-/// Represents creation of a new account.
-///
-/// The modified account should be set as writable in the transaction
-/// inputs, otherwise the transaction will fail.
-#[derive(Debug)]
-pub struct AccountCreated(pub Pubkey, pub Account);
-
-/// Represents a modification to the contents of an account.
-///
-/// The modified account should be set as writable in the transaction
-/// inputs, otherwise the transaction will fail.
-#[derive(Debug)]
-pub struct StateChange(pub Pubkey, pub Option<Vec<u8>>);
-
-/// Represents a modification to the balance of an account.
-///
-/// The modified account should be set as writable in the transaction
-/// inputs, otherwise the transaction will fail.
-#[derive(Debug)]
-pub struct BalanceChange(pub Pubkey, pub u64);
-
-// todo: add cross-contract invocation type.
 #[derive(Debug)]
 pub enum Output {
-  LogEntry(LogEntry),
-  StateChange(StateChange),
-  _AccountCreated(AccountCreated),
-  _BalanceChange(BalanceChange),
+  /// This type represents a log entry emitted by a smart contract.
+  ///
+  /// Log entries are key-value pairs that are emitted by a contract and
+  /// visible to external observers through the RPC interface.
+  LogEntry(String, String),
+
+  /// Represents a modification to the contents of an account.
+  ///
+  /// The modified account should be set as writable in the transaction
+  /// inputs, otherwise the transaction will fail.
+  ModifyAccountData(Pubkey, Option<Vec<u8>>),
+
+  /// Represents creation of a new account.
+  ///
+  /// The modified account should be set as writable in the transaction
+  /// inputs, otherwise the transaction will fail.
+  CreateAccount(Pubkey, Account),
 }
 
 /// Represents the output of invocing a smart contract by a transaction.
@@ -71,7 +64,10 @@ pub type Result = std::result::Result<Vec<Output>, ContractError>;
 /// transaction.
 #[derive(Debug)]
 pub struct Environment {
+  /// Address of the contract that is being invoked
   pub address: Pubkey,
+
+  /// A list of all input accounts specified by the transaction
   pub accounts: Vec<(Pubkey, Option<Account>)>,
 }
 

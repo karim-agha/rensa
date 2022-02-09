@@ -5,8 +5,11 @@
 
 use {
   crate::{
-    primitives::Pubkey,
-    vm::{contract, contract::Environment},
+    primitives::{Account, Pubkey},
+    vm::{
+      contract,
+      contract::{ContractError, Environment},
+    },
   },
   borsh::{BorshDeserialize, BorshSerialize},
 };
@@ -35,7 +38,7 @@ pub struct Mint {
   /// The long version of the token name
   pub name: Option<String>,
 
-  /// An optional short ticker symbol of the token.
+  /// The short ticker symbol of the token.
   /// Limited to 9 alphanumeric symbols.
   pub symbol: Option<String>,
 }
@@ -45,6 +48,13 @@ pub struct Mint {
 /// Token accounts are never on the Ed25519 curve and will never directly
 /// have a corresponding private key, instead all operations are authorized
 /// by checking the presence of the signature of the owner account.
+///
+/// A single wallet may have many token account controlled by the same wallet.
+/// Those accounts are generated using this formula:
+///   TokenAccount = CurrencyPubKey.derive([mint_pubkey_bytes,
+/// wallet_pubkey_bytes])
+///
+/// The owner of the token acconut is always the currency module
 #[derive(Debug, BorshSerialize, BorshDeserialize)]
 pub struct TokenAccount {
   /// The token mint associated with this account
@@ -60,8 +70,22 @@ pub struct TokenAccount {
 /// This is the instruction param to the currency contract
 #[derive(Debug, BorshSerialize, BorshDeserialize)]
 pub enum Instruction {
-  /// Creates new token type
-  Create(Mint),
+  /// Creates new token mint
+  ///
+  /// Accounts expected by this instruction:
+  ///   0. [d-rw] Mint address
+  Create {
+    /// A unique seed that is used to generate the mint address
+    /// for an account. The mit address account will be the result
+    /// of running: `Pubkey(Currency).derive(seed)`. it must be a
+    /// non-existing account, the currencly module will create it
+    /// and configure it according to the spec.   
+    seed: [u8; 32],
+
+    /// Specifications of the newly created token.
+    /// See [`Mint`] for description of its individual fields.
+    spec: Mint,
+  },
 
   /// Mints new tokens
   ///
@@ -69,19 +93,38 @@ pub enum Instruction {
   /// the transaction is signed by the authority private key
   /// or invoked by a contract with address equal to the mint
   /// authority.
+  ///
+  /// Accounts expected by this instruction:
+  ///  0. [d-rw] The mint address
+  ///  1. [d-rw] The recipient address (generated through
+  /// Currency.derive([mint, wallet])).  2. [-s--] The mint authority as
+  /// signer.
   Mint(u64),
 
   /// Transfers tokens between wallets.
   ///
   /// Must be signed by the private key of the wallet
-  /// owner of the sender or the contract that owns the 
+  /// owner of the sender or the contract that owns the
   /// tokens.
+  ///
+  /// Accounts expected by this instruction:
+  ///  0. [d-r--] The mint address
+  ///  1. [---s] The sender wallet owner address as signer
+  ///  2. [drw-] The sender token address (generated through
+  /// Currency.derive([mint, wallet]))  2. [drw-] The recipient token address
+  /// (generated through Currency.derive([mint, wallet]))
   Transfer(u64),
 
   /// Remove tokens from circulation.
   ///
   /// Must be signed by the private key of the wallet
   /// owner or called by the owning contract.
+  ///
+  /// Accounts expected by this instruction:
+  ///  0. [drw-] The mint address
+  ///  1. [---s] The wallet owner address as signer
+  ///  2. [drw-] The token address (generated through Currency.derive([mint,
+  /// wallet]))
   Burn(u64),
 
   /// Changes the mint authority of the token.
@@ -94,9 +137,99 @@ pub enum Instruction {
   /// Setting the authority to None is an irreversible operation
   /// and forever foregoes the ability to mint new tokens of this
   /// type.
+  ///
+  /// Accounts expected by this instruction:
+  ///  0. [drw-] The mint address
+  ///  1. [---s] The the current authority wallet as signer
   SetAuthority(Option<Pubkey>),
 }
 
-pub fn contract(_env: Environment, _params: &[u8]) -> contract::Result {
-  todo!()
+pub fn contract(env: Environment, params: &[u8]) -> contract::Result {
+  let mut params = params;
+  let instruction: Instruction =
+    borsh::de::BorshDeserialize::deserialize(&mut params)
+      .map_err(|_| ContractError::InvalidInputParameters)?;
+
+  match instruction {
+    Instruction::Create { seed, spec } => process_create(env, &seed, spec),
+    Instruction::Mint(amount) => process_mint(env, amount),
+    Instruction::Transfer(amount) => process_transfer(env, amount),
+    Instruction::Burn(amount) => process_burn(env, amount),
+    Instruction::SetAuthority(account) => process_set_authority(env, account),
+  }
+}
+
+fn process_create(
+  env: Environment,
+  seed: &[u8],
+  spec: Mint,
+) -> contract::Result {
+  if env.accounts.len() != 1 {
+    return Err(ContractError::InvalidInputAccounts);
+  }
+
+  if seed.len() == 0 {
+    return Err(ContractError::InvalidInputParameters);
+  }
+
+  let (mint_addr, mint_value) = &env.accounts[0];
+
+  // check if the mint address in the accounts list
+  // is correctly derived from the seed and the currency
+  // module pubkey
+  let expected_mint_address = env.address.derive(&[&seed]);
+  if &expected_mint_address != mint_addr {
+    return Err(ContractError::InvalidInputAccounts);
+  }
+
+  // is this already in use by some other mint?
+  if mint_value.is_some() {
+    return Err(ContractError::AccountAlreadyInUse);
+  }
+
+  let mut outputs = vec![];
+
+  // initialize the mint account
+  outputs.push(contract::Output::CreateAccount(
+    expected_mint_address,
+    Account {
+      data: Some(
+        borsh::to_vec(&spec)
+          .map_err(|_| ContractError::InvalidInputParameters)?,
+      ),
+      executable: false,
+      owner: Some(env.address),
+    },
+  ));
+
+  // generate logs
+  outputs.push(contract::Output::LogEntry(
+    "action".into(),
+    "mint-created".into(),
+  ));
+  outputs.push(contract::Output::LogEntry(
+    "address".into(),
+    mint_addr.to_string(),
+  ));
+
+  Ok(outputs)
+}
+
+fn process_mint(_env: Environment, _amount: u64) -> contract::Result {
+  todo!();
+}
+
+fn process_transfer(_env: Environment, _amount: u64) -> contract::Result {
+  todo!();
+}
+
+fn process_burn(_env: Environment, _amount: u64) -> contract::Result {
+  todo!();
+}
+
+fn process_set_authority(
+  _env: Environment,
+  _authority: Option<Pubkey>,
+) -> contract::Result {
+  todo!();
 }

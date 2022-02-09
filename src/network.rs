@@ -108,7 +108,7 @@ impl<D: BlockData> Network<D> {
     let vset: HashSet<_> = genesis
       .validators
       .iter()
-      .filter(|v| v.stake > genesis.minimum_stake)
+      .filter(|v| v.stake >= genesis.minimum_stake)
       .map(|v| v.pubkey.clone())
       .collect();
 

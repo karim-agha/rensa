@@ -1,7 +1,7 @@
 use {
   crate::vm::{
     contract,
-    contract::{ContractError, Environment, LogEntry, Output, StateChange},
+    contract::{ContractError, Environment, Output},
   },
   multihash::{Hasher, Sha3_256},
 };
@@ -15,11 +15,11 @@ pub fn contract(env: Environment, params: &[u8]) -> contract::Result {
       sha.update(params);
     }
     return Ok(vec![
-      Output::StateChange(StateChange(
+      Output::ModifyAccountData(
         env.accounts[0].0.clone(),
         Some(sha.finalize().to_vec()),
-      )),
-      Output::LogEntry(LogEntry("action".into(), "sha3".into())),
+      ),
+      Output::LogEntry("action".into(), "sha3".into()),
     ]);
   }
 

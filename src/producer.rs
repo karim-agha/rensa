@@ -93,6 +93,7 @@ impl<'v> BlockProducer<'v> {
 
     let block = Produced::new(
       &self.keypair,
+      prev.height() + 1,
       slot,
       prevhash,
       txs,
@@ -108,6 +109,20 @@ impl<'v> BlockProducer<'v> {
     );
     self.pending.push_back(block);
   }
+}
+
+/// Generates a fixed number of user wallet keypair
+/// Used for test scenarios only.
+fn _generate_wallets(count: usize) -> Vec<Keypair> {
+  use rand::{prelude::ThreadRng, RngCore};
+  let mut rng = ThreadRng::default();
+  (0..count)
+    .filter_map(|_| {
+      let mut secret = [0u8; 32];
+      rng.fill_bytes(&mut secret);
+      (&secret[..]).try_into().ok()
+    })
+    .collect()
 }
 
 impl<'v> Stream for BlockProducer<'v> {

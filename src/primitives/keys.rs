@@ -23,7 +23,7 @@ use {
 /// The same address could either represent a user wallet that
 /// has a corresponding private key on the ed25519 curve or a
 /// program owned account that is not on the curve and is writable
-/// only by its program.
+/// only by the contract owning it.
 #[derive(
   Clone, PartialEq, Eq, Hash, PartialOrd, Ord, BorshSerialize, BorshDeserialize,
 )]
@@ -31,17 +31,18 @@ pub struct Pubkey([u8; 32]);
 
 impl Pubkey {
   /// Given a list of seeds this method will generate a new
-  /// derived pubkey that is not on the Ed25519 curve (and
-  /// no private key exists).
+  /// derived pubkey that is not on the Ed25519 curve 
+  /// (no private key exists for the resulting pubkey).
   ///
   /// This method is used to generate addresses that are
-  /// related to some original address.
+  /// related to some original address but manipulated by
+  /// contracts.
   ///
   /// The same set of seeds will always return the same
   /// derived address, so it can be used as a hashmap
   /// in contracts.
   pub fn derive(&self, seeds: &[&[u8]]) -> Self {
-    let mut bump: u32 = 0;
+    let mut bump: u64 = 0;
     loop {
       let mut hasher = Sha3_256::default();
       for seed in seeds.iter() {

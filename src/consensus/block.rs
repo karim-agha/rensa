@@ -101,6 +101,9 @@ pub trait Block<D: BlockData>: Debug {
   /// Slot height at which the block was produced.
   fn height(&self) -> u64;
 
+  /// Slot height at which the block was produced.
+  fn slot(&self) -> u64;
+
   /// Block contents, that are opaque to the consensus.
   /// In most cases this is a list of transactions.
   fn payload(&self) -> &D;
@@ -202,70 +205,6 @@ pub struct Genesis<D: BlockData> {
   pub _marker: PhantomData<D>,
 }
 
-/// A block produced by one of the validators after Genesis.
-///
-/// A block of this type is at height at least 1 and is dynamically
-/// appended to the chain by block producers and voted on by other
-/// validators.
-#[derive(Clone, Serialize, Deserialize)]
-#[serde(
-  bound = "D: Serialize, D: Eq, for<'a> D: Deserialize<'a>",
-  rename_all = "camelCase"
-)]
-pub struct Produced<D: BlockData> {
-  /// Hash of the parent block
-  pub parent: Multihash,
-
-  /// Hash of the state diff between this block and its parent.
-  pub state_hash: Multihash,
-
-  /// The slot height at which it was produced.
-  pub height: u64,
-
-  /// The public key of the validator that produced this block
-  /// along with a signature using their private key of the hash
-  /// of this block.
-  pub signature: (Pubkey, Signature),
-
-  /// Block data stored in the block.
-  ///
-  /// This is specific to the execution layer that is responsible
-  /// for executing blocks and building state. Usually this is a list
-  /// of transactions.
-  pub data: D,
-
-  /// a list of signatures attesting to this block or previous blocks.
-  /// a validator can sign any block link they want and the signature
-  /// might arrive even few blocks late due to network latency or other
-  /// factors.
-  pub votes: Vec<Vote>,
-
-  /// A cached version of the hash, once the hash is computed for the
-  /// first time, its value is stored here, then retreived.
-  #[serde(skip)]
-  hashcahe: OnceCell<Multihash>,
-}
-
-impl<D: BlockData> Debug for Produced<D> {
-  fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-    f.debug_struct("Produced")
-      .field("parent", &self.parent.to_b58())
-      .field("height", &self.height)
-      .field(
-        "signature",
-        &format!(
-          "Pubkey({}), ed25519({})",
-          self.signature.0,
-          self.signature.1.to_b58()
-        ),
-      )
-      .field("data", &self.data)
-      .field("votes", &self.votes)
-      .field("hash", &self.hash().unwrap().to_b58())
-      .finish()
-  }
-}
-
 impl<D: BlockData> Block<D> for Genesis<D> {
   /// The hash of the genesis is used to determine a
   /// unique fingerprint of a blockchain configuration.
@@ -342,6 +281,11 @@ impl<D: BlockData> Block<D> for Genesis<D> {
     0
   }
 
+  /// Constant zero
+  fn slot(&self) -> u64 {
+    0
+  }
+
   /// The initial set of data stored in the genesis.
   /// This data is specific to the execution layer
   /// that drives the chain
@@ -365,6 +309,73 @@ impl<D: BlockData> Block<D> for Genesis<D> {
   }
 }
 
+/// A block produced by one of the validators after Genesis.
+///
+/// A block of this type is at height at least 1 and is dynamically
+/// appended to the chain by block producers and voted on by other
+/// validators.
+#[derive(Clone, Serialize, Deserialize)]
+#[serde(
+  bound = "D: Serialize, D: Eq, for<'a> D: Deserialize<'a>",
+  rename_all = "camelCase"
+)]
+pub struct Produced<D: BlockData> {
+  /// Hash of the parent block
+  pub parent: Multihash,
+
+  /// Hash of the state diff between this block and its parent.
+  pub state_hash: Multihash,
+
+  /// The slot at which it was produced.  
+  pub slot: u64,
+
+  /// The height at which it was produced.
+  pub height: u64,
+
+  /// The public key of the validator that produced this block
+  /// along with a signature using their private key of the hash
+  /// of this block.
+  pub signature: (Pubkey, Signature),
+
+  /// Block data stored in the block.
+  ///
+  /// This is specific to the execution layer that is responsible
+  /// for executing blocks and building state. Usually this is a list
+  /// of transactions.
+  pub data: D,
+
+  /// a list of signatures attesting to this block or previous blocks.
+  /// a validator can sign any block link they want and the signature
+  /// might arrive even few blocks late due to network latency or other
+  /// factors.
+  pub votes: Vec<Vote>,
+
+  /// A cached version of the hash, once the hash is computed for the
+  /// first time, its value is stored here, then retreived.
+  #[serde(skip)]
+  hashcahe: OnceCell<Multihash>,
+}
+
+impl<D: BlockData> Debug for Produced<D> {
+  fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    f.debug_struct("Produced")
+      .field("parent", &self.parent.to_b58())
+      .field("height", &self.height)
+      .field(
+        "signature",
+        &format!(
+          "Pubkey({}), ed25519({})",
+          self.signature.0,
+          self.signature.1.to_b58()
+        ),
+      )
+      .field("data", &self.data)
+      .field("votes", &self.votes)
+      .field("hash", &self.hash().unwrap().to_b58())
+      .finish()
+  }
+}
+
 impl<D: BlockData> Block<D> for Produced<D> {
   /// Hashes of the current block.
   ///
@@ -377,6 +388,7 @@ impl<D: BlockData> Block<D> for Produced<D> {
       .get_or_try_init(|| {
         Self::hash_parts(
           &self.signature.0,
+          &self.slot,
           &self.height,
           &self.parent,
           &self.state_hash,
@@ -415,11 +427,19 @@ impl<D: BlockData> Block<D> for Produced<D> {
     Some(&self.signature)
   }
 
-  /// The number of the time slot at which the block was produced.
+  /// The time slot at which the block was produced.
   ///
   /// This is always a value greater than zero, and there may be gaps
   /// in the block height in the blockchain if a producer fails to
   /// produce a block during its turn.
+  fn slot(&self) -> u64 {
+    self.slot
+  }
+
+  /// The height at which the block was produced.
+  ///
+  /// This is always a value greater than zero, and there are no gaps
+  /// for this value, it is always parent height + 1
   fn height(&self) -> u64 {
     self.height
   }
@@ -456,6 +476,7 @@ impl<D: BlockData> Produced<D> {
   pub fn new(
     keypair: &Keypair,
     height: u64,
+    slot: u64,
     parent: Multihash,
     data: D,
     state_hash: Multihash,
@@ -466,6 +487,7 @@ impl<D: BlockData> Produced<D> {
       (*keypair).sign(
         &Self::hash_parts(
           &keypair.public(),
+          &slot,
           &height,
           &parent,
           &state_hash,
@@ -478,6 +500,7 @@ impl<D: BlockData> Produced<D> {
 
     Ok(Self {
       parent,
+      slot,
       height,
       signature,
       data,
@@ -503,6 +526,7 @@ impl<D: BlockData> Produced<D> {
   /// Those are the bytes used to calculate block hash
   fn hash_parts(
     validator: &Pubkey,
+    slot: &u64,
     height: &u64,
     parent: &Multihash,
     state_hash: &Multihash,
@@ -513,6 +537,7 @@ impl<D: BlockData> Produced<D> {
     sha3.update(validator);
     sha3.update(&parent.to_bytes());
     sha3.update(&state_hash.to_bytes());
+    sha3.update(&slot.to_le_bytes());
     sha3.update(&height.to_le_bytes());
     sha3.update(&data.hash()?.to_bytes());
     for vote in votes {

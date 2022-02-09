@@ -135,7 +135,7 @@ async fn main() -> anyhow::Result<()> {
           ChainEvent::BlockIncluded(block) => {
             info!(
               "included block {} [epoch {}] [state hash: {}]",
-              *block, block.height() / genesis.epoch_slots,
+              *block, block.slot() / genesis.epoch_slots,
               block.state().hash().to_bytes().to_b58()
             );
             // don't duplicate votes if they were
@@ -146,8 +146,8 @@ async fn main() -> anyhow::Result<()> {
             info!(
               "confirmed block {} with {:.02}% votes [epoch {}] [state hash: {}]",
               *block,
-              ((votes as f64 / chain.total_stake() as f64) * 100f64),
-              block.height() / genesis.epoch_slots,
+              (votes as f64 * 100f64) / chain.total_stake() as f64,
+              block.slot() / genesis.epoch_slots,
               block.state().hash().to_bytes().to_b58()
             );
           }
@@ -155,8 +155,8 @@ async fn main() -> anyhow::Result<()> {
             info!(
               "finalized block {} with {:.02}% votes [epoch {}] [state hash: {}]",
               *block,
-              ((votes as f64 / chain.total_stake() as f64) * 100f64),
-              block.height() / genesis.epoch_slots,
+              (votes as f64 * 100f64) / chain.total_stake() as f64,
+              block.slot() / genesis.epoch_slots,
               block.state().hash().to_bytes().to_b58()
             );
           }
