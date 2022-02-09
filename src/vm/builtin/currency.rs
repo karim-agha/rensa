@@ -82,9 +82,19 @@ pub enum Instruction {
     /// and configure it according to the spec.   
     seed: [u8; 32],
 
-    /// Specifications of the newly created token.
-    /// See [`Mint`] for description of its individual fields.
-    spec: Mint,
+    /// The initial creation of a mint must have a mint authority
+    /// otherwise no tokens will ever be minted.
+    authority: Pubkey,
+
+    /// The number of base 10 digits to the right of the decimal place.
+    decimals: u8,
+
+    /// The long version of the token name (64 bytes max)
+    name: Option<String>,
+
+    /// The short ticker symbol of the token.
+    /// between 1-9 bytes.
+    symbol: Option<String>,
   },
 
   /// Mints new tokens
@@ -96,7 +106,9 @@ pub enum Instruction {
   ///
   /// Accounts expected by this instruction:
   ///  0. [d-rw] The mint address
-  ///  1. [d-rw] The recipient address (generated through
+  ///  1. [---s] The mint authority as signer
+  ///  2. [----] The recipient wallet owner address
+  ///  3. [d-rw] The recipient address (generated through
   /// Currency.derive([mint, wallet])).  2. [-s--] The mint authority as
   /// signer.
   Mint(u64),
@@ -151,7 +163,13 @@ pub fn contract(env: Environment, params: &[u8]) -> contract::Result {
       .map_err(|_| ContractError::InvalidInputParameters)?;
 
   match instruction {
-    Instruction::Create { seed, spec } => process_create(env, &seed, spec),
+    Instruction::Create {
+      seed,
+      authority,
+      decimals,
+      name,
+      symbol,
+    } => process_create(env, &seed, authority, decimals, name, symbol),
     Instruction::Mint(amount) => process_mint(env, amount),
     Instruction::Transfer(amount) => process_transfer(env, amount),
     Instruction::Burn(amount) => process_burn(env, amount),
@@ -162,61 +180,82 @@ pub fn contract(env: Environment, params: &[u8]) -> contract::Result {
 fn process_create(
   env: Environment,
   seed: &[u8],
-  spec: Mint,
+  authority: Pubkey,
+  decimals: u8,
+  name: Option<String>,
+  symbol: Option<String>,
 ) -> contract::Result {
   if env.accounts.len() != 1 {
     return Err(ContractError::InvalidInputAccounts);
   }
 
-  if seed.len() == 0 {
-    return Err(ContractError::InvalidInputParameters);
-  }
-
-  let (mint_addr, mint_value) = &env.accounts[0];
+  let (addr, value) = &env.accounts[0];
 
   // check if the mint address in the accounts list
   // is correctly derived from the seed and the currency
   // module pubkey
-  let expected_mint_address = env.address.derive(&[&seed]);
-  if &expected_mint_address != mint_addr {
+  let expected_mint_address = env.address.derive(&[seed]);
+  if &expected_mint_address != addr {
     return Err(ContractError::InvalidInputAccounts);
   }
 
   // is this already in use by some other mint?
-  if mint_value.is_some() {
+  if value.is_some() {
     return Err(ContractError::AccountAlreadyInUse);
   }
 
-  let mut outputs = vec![];
+  // validate mint specs
+  if let Some(ref symbol) = symbol {
+    if symbol.is_empty() || symbol.len() > 10 {
+      return Err(ContractError::InvalidInputParameters);
+    }
+  }
 
-  // initialize the mint account
-  outputs.push(contract::Output::CreateAccount(
-    expected_mint_address,
-    Account {
+  if let Some(ref name) = name {
+    if name.is_empty() || name.len() > 64 {
+      return Err(ContractError::InvalidInputParameters);
+    }
+  }
+
+  if decimals > 20 {
+    // won't fit in u64
+    return Err(ContractError::InvalidInputParameters);
+  }
+
+  let spec = Mint {
+    authority: Some(authority),
+    supply: 0,
+    decimals,
+    name,
+    symbol,
+  };
+
+  Ok(vec![
+    // initialize the mint account
+    contract::Output::CreateAccount(expected_mint_address, Account {
       data: Some(
         borsh::to_vec(&spec)
           .map_err(|_| ContractError::InvalidInputParameters)?,
       ),
-      executable: false,
       owner: Some(env.address),
-    },
-  ));
-
-  // generate logs
-  outputs.push(contract::Output::LogEntry(
-    "action".into(),
-    "mint-created".into(),
-  ));
-  outputs.push(contract::Output::LogEntry(
-    "address".into(),
-    mint_addr.to_string(),
-  ));
-
-  Ok(outputs)
+    }),
+    // generate logs
+    contract::Output::LogEntry("action".into(), "mint-created".into()),
+    contract::Output::LogEntry("address".into(), addr.to_string()),
+  ])
 }
 
-fn process_mint(_env: Environment, _amount: u64) -> contract::Result {
-  todo!();
+fn process_mint(env: Environment, _amount: u64) -> contract::Result {
+  if env.accounts.len() != 4 {
+    return Err(ContractError::InvalidInputAccounts);
+  }
+
+  let (_mint_addr, _mint_data) = &env.accounts[0];
+  let (_authority, _) = &env.accounts[1];
+  let (_wallet_addr, _) = &env.accounts[2];
+  let (_token_acc_addr, _token_acc_data) = &env.accounts[3];
+
+  Ok(vec![])
 }
 
 fn process_transfer(_env: Environment, _amount: u64) -> contract::Result {

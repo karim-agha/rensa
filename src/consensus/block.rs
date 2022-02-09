@@ -229,10 +229,6 @@ impl<D: BlockData> Block<D> for Genesis<D> {
 
     for (addr, acc) in &self.state {
       sha3.update(addr);
-      sha3.update(&match acc.executable {
-        true => [1],
-        false => [0],
-      });
       match &acc.owner {
         Some(o) => sha3.update(o),
         None => sha3.update(&[0]),
