@@ -44,11 +44,13 @@ pub trait Executable {
 /// and a block and outputs a new state. This is the API
 /// entry point to the virtual machine that runs contracts.
 pub struct Machine {
+  max_input_accounts: usize,
   builtins: HashMap<Pubkey, ContractEntrypoint>,
 }
 
 impl Machine {
   pub fn new<D: BlockData>(genesis: &Genesis<D>) -> Result<Self, MachineError> {
+    let max_input_accounts = genesis.max_input_accounts;
     let mut builtins = HashMap::new();
     for addr in &genesis.builtins {
       if let Some(entrypoint) = BUILTIN_CONTRACTS.get(addr) {
@@ -57,11 +59,21 @@ impl Machine {
         return Err(MachineError::UndefinedBuiltin(addr.clone()));
       }
     }
-    Ok(Self { builtins })
+    Ok(Self {
+      builtins,
+      max_input_accounts,
+    })
   }
 
+  /// Gets a VM-native builtin contract.
+  /// Those contracts have to be enabled in the genesis config.
   pub fn builtin(&self, addr: &Pubkey) -> Option<&ContractEntrypoint> {
     self.builtins.get(addr)
+  }
+
+  /// The maximum number of accounts a transaction can reference.
+  pub fn max_input_accounts(&self) -> usize {
+    self.max_input_accounts
   }
 
   pub fn execute<D: BlockData>(
@@ -98,6 +110,7 @@ impl Executable for Vec<Transaction> {
           accstate = accstate.merge(statediff);
         }
         Err(error) => {
+          // on error, don't apply any of transaction changes
           warn!(
             "transaction {} failed: {error}",
             transaction.hash().to_b58()

@@ -6,7 +6,7 @@ use {
   multihash::{Hasher, Sha3_256},
 };
 
-pub fn contract(env: Environment, params: &[u8]) -> contract::Result {
+pub fn contract(env: &Environment, params: &[u8]) -> contract::Result {
   let mut sha = Sha3_256::default();
 
   if env.accounts.len() != 1 {

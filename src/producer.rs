@@ -5,6 +5,7 @@ use {
     vm::{self, AccountRef, Executable, State, Transaction},
   },
   futures::Stream,
+  rayon::prelude::*,
   std::{
     collections::{HashMap, HashSet, VecDeque},
     mem::take,
@@ -118,11 +119,11 @@ impl<'v> BlockProducer<'v> {
 /// Used for test scenarios only.
 fn _generate_wallets(count: usize) -> Vec<Keypair> {
   use rand::{prelude::ThreadRng, RngCore};
-  let mut rng = ThreadRng::default();
   (0..count)
+    .into_par_iter()
     .filter_map(|_| {
       let mut secret = [0u8; 32];
-      rng.fill_bytes(&mut secret);
+      ThreadRng::default().fill_bytes(&mut secret);
       (&secret[..]).try_into().ok()
     })
     .collect()

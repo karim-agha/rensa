@@ -123,7 +123,7 @@ impl<D: BlockData> Network<D> {
       create_transport(&keypair).await?,
       Episub::new(Config {
         authorizer,
-        max_transmit_size: genesis.max_block_size as usize,
+        max_transmit_size: genesis.max_block_size,
         // 2 epochs are needed until block finalization
         history_window: genesis.slot_interval
           * (genesis.epoch_slots as u32 * 2),

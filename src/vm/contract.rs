@@ -18,14 +18,29 @@ pub enum ContractError {
   #[error("Signature Error: {0}")]
   SignatureError(#[from] SignatureError),
 
-  #[error("Account already in use")]
-  AccountAlreadyInUse,
+  #[error("Account already exists")]
+  AccountAlreadyExists,
+
+  #[error("Account does not exist")]
+  AccountDoesNotExist,
+
+  #[error("The number of input accounts exceeds the maximum limit")]
+  TooManyInputAccounts,
 
   #[error("Invalid contract input paramters data")]
   InvalidInputParameters,
 
   #[error("Invalid contract input accounts")]
   InvalidInputAccounts,
+
+  #[error("Attempt to modify an account not owned by the contract")]
+  InvalidAccountOwner,
+
+  #[error(
+    "Contract attempting to write to an account not in the transaction \
+     accounts list"
+  )]
+  InvalidOutputAccount,
 
   #[error("Contract error: {0:?}")]
   Other(#[from] Box<dyn std::error::Error>),
@@ -90,4 +105,4 @@ pub struct Environment {
 ///
 /// It is the same signature for builtin contracts and wasm contract
 /// and any futute contract runtimes.
-pub type ContractEntrypoint = fn(Environment, &[u8]) -> Result;
+pub type ContractEntrypoint = fn(&Environment, &[u8]) -> Result;

@@ -156,7 +156,7 @@ pub enum Instruction {
   SetAuthority(Option<Pubkey>),
 }
 
-pub fn contract(env: Environment, params: &[u8]) -> contract::Result {
+pub fn contract(env: &Environment, params: &[u8]) -> contract::Result {
   let mut params = params;
   let instruction: Instruction =
     borsh::de::BorshDeserialize::deserialize(&mut params)
@@ -177,8 +177,10 @@ pub fn contract(env: Environment, params: &[u8]) -> contract::Result {
   }
 }
 
+/// Creates new Currency type and allocates
+/// its mint account.
 fn process_create(
-  env: Environment,
+  env: &Environment,
   seed: &[u8],
   authority: Pubkey,
   decimals: u8,
@@ -201,7 +203,7 @@ fn process_create(
 
   // is this already in use by some other mint?
   if value.data.is_some() || value.owner.is_some() {
-    return Err(ContractError::AccountAlreadyInUse);
+    return Err(ContractError::AccountAlreadyExists);
   }
 
   // validate mint specs
@@ -245,7 +247,7 @@ fn process_create(
   ])
 }
 
-fn process_mint(env: Environment, _amount: u64) -> contract::Result {
+fn process_mint(env: &Environment, _amount: u64) -> contract::Result {
   if env.accounts.len() != 4 {
     return Err(ContractError::InvalidInputAccounts);
   }
@@ -258,16 +260,16 @@ fn process_mint(env: Environment, _amount: u64) -> contract::Result {
   Ok(vec![])
 }
 
-fn process_transfer(_env: Environment, _amount: u64) -> contract::Result {
+fn process_transfer(_env: &Environment, _amount: u64) -> contract::Result {
   todo!();
 }
 
-fn process_burn(_env: Environment, _amount: u64) -> contract::Result {
+fn process_burn(_env: &Environment, _amount: u64) -> contract::Result {
   todo!();
 }
 
 fn process_set_authority(
-  _env: Environment,
+  _env: &Environment,
   _authority: Option<Pubkey>,
 ) -> contract::Result {
   todo!();

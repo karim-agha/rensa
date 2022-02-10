@@ -12,10 +12,16 @@ use {
     StateDiff,
     Transaction,
   },
-  crate::primitives::{Account, Pubkey, ToBase58String},
-  tracing::trace,
+  crate::primitives::{Account, Pubkey},
 };
 
+/// Represents the execution context of a single transaction.
+///
+/// This type is responsible for running the transaction logic
+/// and then processing all its outputs that affect the external
+/// blockchain state. Any failure in the contract logic or in
+/// any of the outputs will cause the entire transaction to fail
+/// and none of its changes will be persisted.
 pub struct ExecutionUnit<'s, 't> {
   entrypoint: ContractEntrypoint,
   env: Environment,
@@ -29,6 +35,16 @@ impl<'s, 't> ExecutionUnit<'s, 't> {
     state: &'s impl State,
     vm: &Machine,
   ) -> Result<Self, ContractError> {
+    // this value is defined in genesis
+    if transaction.accounts.len() > vm.max_input_accounts() {
+      return Err(ContractError::TooManyInputAccounts);
+    }
+
+    // don't proceed unless all tx signatures are valid.
+    transaction.verify_signatures()?;
+
+    // for now only builtin contracts are supported, later wasm
+    // contracts will be pulled here as well.
     if let Some(entrypoint) = vm.builtin(&transaction.contract).cloned() {
       let env = Self::create_environment(state, transaction)?;
       Ok(Self {
@@ -42,17 +58,25 @@ impl<'s, 't> ExecutionUnit<'s, 't> {
     }
   }
 
+  /// Consumes the execution unit and returns the state difference
+  /// that is caused by running this transaction and all its outputs.
   pub fn execute(self) -> Result<StateDiff, ContractError> {
     let entrypoint = self.entrypoint;
-    entrypoint(self.env, &self.transaction.params).map(|outputs| {
-      outputs.into_iter().fold(StateDiff::default(), |s, o| {
-        s.merge(Self::process_transaction_output(
-          o,
-          self.state,
-          self.transaction,
-        ))
-      })
-    })
+    match entrypoint(&self.env, &self.transaction.params) {
+      Ok(outputs) => {
+        let mut txstate = StateDiff::default();
+        // if the transaction execution successfully ran to
+        // completion, then process all its outputs that
+        // modify global state. Those outputs may still
+        // fail. Any failure in processing returned
+        // outputs will revert the entire transaction.
+        for output in outputs {
+          txstate = txstate.merge(self.process_output(output)?);
+        }
+        Ok(txstate)
+      }
+      Err(err) => Err(err),
+    }
   }
 
   /// Creates a self-contained environment object that can be used to
@@ -61,9 +85,6 @@ impl<'s, 't> ExecutionUnit<'s, 't> {
     state: &impl State,
     transaction: &Transaction,
   ) -> Result<Environment, ContractError> {
-    // don't proceed unless all signatures are ok.
-    transaction.verify_signatures()?;
-
     Ok(Environment {
       address: transaction.contract.clone(),
       accounts: transaction
@@ -74,7 +95,6 @@ impl<'s, 't> ExecutionUnit<'s, 't> {
           let mut writable = a.writable;
 
           if writable {
-
             // on-curve accounts are writable only if
             // the private key of that account signs
             // the transaction.
@@ -82,22 +102,21 @@ impl<'s, 't> ExecutionUnit<'s, 't> {
               if !a.signer {
                 writable = false;
               }
-            } 
-            
+            }
             // otherwise, we're dealing with a program owned
             // account, if it already exists, check if
             // it belongs to the called contract.
-            // 
+            //
             // if it does not exist, it may be created by the
-            // invoked contract.
+            // invoked contract, so it stays writable.
             else if let Some(existing) = account_data {
-              // executable contracts are never writable
+              // executable accounts are never writable
               if existing.executable {
                 writable = false;
               }
 
               // an existing non-executable account that
-              // is not on the Ed25519 curve is writable 
+              // is not on the Ed25519 curve is writable
               // only if its owner is the invoked contract.
               if let Some(ref owner) = existing.owner {
                 if owner != &transaction.contract {
@@ -122,95 +141,64 @@ impl<'s, 't> ExecutionUnit<'s, 't> {
     })
   }
 
-  fn process_transaction_output(
-    output: Output,
-    state: &dyn State,
-    transaction: &Transaction,
-  ) -> StateDiff {
-    let mut txstate = StateDiff::default();
+  fn process_output(&self, output: Output) -> Result<StateDiff, ContractError> {
     match output {
-      Output::LogEntry(key, value) => {
-        trace!(
-          "transaction {} log: {key} => {value}",
-          transaction.hash().to_b58()
-        ); // todo
-      }
-      Output::ModifyAccountData(addr, data) => {
-        trace!(
-          "transaction {} modifying account {addr} with {data:?}",
-          transaction.hash().to_b58()
-        );
-        Self::modify_account_data(addr, data, state, &mut txstate, transaction);
-      }
-      Output::CreateOwnedAccount(addr, data) => {
-        trace!(
-          "transaction {} creating account {addr} with: {data:?}",
-          transaction.hash().to_b58(),
-        );
-        Self::create_owned_account(
-          addr,
-          data,
-          state,
-          &mut txstate,
-          transaction,
-        );
-      }
-    };
-    txstate
-  }
-
-  fn create_owned_account(
-    address: Pubkey,
-    data: Option<Vec<u8>>,
-    state: &dyn State,
-    txstate: &mut dyn State,
-    transaction: &Transaction,
-  ) {
-    if state.get(&address).is_none() {
-      Self::set_state_if_writable(
-        txstate,
-        address,
-        Account {
-          executable: false,
-          owner: Some(transaction.contract.clone()),
-          data,
-        },
-        transaction,
-      );
+      Output::LogEntry(_, _) => Ok(StateDiff::default()), // todo
+      Output::CreateOwnedAccount(addr, data) => self.create_account(addr, data),
+      Output::ModifyAccountData(addr, data) => self.modify_account(addr, data),
     }
   }
 
-  fn modify_account_data(
+  /// Creates a new account owned by the executing contract.
+  fn create_account(
+    &self,
     address: Pubkey,
     data: Option<Vec<u8>>,
-    state: &dyn State,
-    txstate: &mut dyn State,
-    transaction: &Transaction,
-  ) {
-    if let Some(acc) = state.get(&address) {
-      Self::set_state_if_writable(
-        txstate,
-        address,
-        Account {
-          data,
-          ..acc.clone()
-        },
-        transaction,
-      );
+  ) -> Result<StateDiff, ContractError> {
+    if self.state.get(&address).is_none() {
+      self.set_account(address, Account {
+        executable: false,
+        owner: Some(self.transaction.contract.clone()),
+        data,
+      })
+    } else {
+      Err(ContractError::AccountAlreadyExists)
     }
   }
 
-  fn set_state_if_writable(
-    state: &mut dyn State,
-    addr: Pubkey,
+  /// Process an output that modifies an existing
+  /// contract owned account.
+  fn modify_account(
+    &self,
+    address: Pubkey,
+    data: Option<Vec<u8>>,
+  ) -> Result<StateDiff, ContractError> {
+    if let Some(acc) = self.state.get(&address) {
+      self.set_account(address, Account {
+        data,
+        ..acc.clone()
+      })
+    } else {
+      Err(ContractError::AccountDoesNotExist)
+    }
+  }
+
+  fn set_account(
+    &self,
+    address: Pubkey,
     value: Account,
-    transaction: &Transaction,
-  ) {
-    for acc in &transaction.accounts {
-      if acc.address == addr && acc.writable {
-        state.set(addr, value).unwrap();
-        break;
+  ) -> Result<StateDiff, ContractError> {
+    for (addr, view) in &self.env.accounts {
+      if addr == &address {
+        if view.writable {
+          let mut output = StateDiff::default();
+          output.set(address, value).unwrap();
+          return Ok(output);
+        } else {
+          return Err(ContractError::AccountNotWritable);
+        }
       }
     }
+    Err(ContractError::InvalidOutputAccount)
   }
 }

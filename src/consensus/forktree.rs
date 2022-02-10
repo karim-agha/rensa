@@ -373,6 +373,7 @@ mod tests {
       state: BTreeMap::new(),
       builtins: vec![],
       minimum_stake: 100,
+      max_input_accounts: 32,
       validators: vec![Validator {
         pubkey: keypair.public(),
         stake: 200000,
