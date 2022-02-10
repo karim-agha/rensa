@@ -1,21 +1,20 @@
 use {
   super::{
-    contract::{AccountView, ContractEntrypoint, ContractError, Environment},
+    contract::{
+      AccountView,
+      ContractEntrypoint,
+      ContractError,
+      Environment,
+      Output,
+    },
     Machine,
     State,
     StateDiff,
     Transaction,
   },
-  crate::primitives::{Account, Pubkey},
-};
-
-
-use {
-  super::contract::Output,
-  crate::primitives::ToBase58String,
+  crate::primitives::{Account, Pubkey, ToBase58String},
   tracing::trace,
 };
-
 
 pub struct ExecutionUnit<'s, 't> {
   entrypoint: ContractEntrypoint,

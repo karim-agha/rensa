@@ -19,9 +19,6 @@ use {
 
 #[derive(Debug, Error)]
 pub enum MachineError {
-  #[error("Unknown error")]
-  UnknownError,
-
   #[error(
     "The resulting state diff of this block is inconsistent with the state \
      hash decalred in the block header"
@@ -89,22 +86,17 @@ impl Executable for Vec<Transaction> {
       // and the state accumulated so far by the block.
       let state = Overlayed::new(state, &accstate);
 
-      // try instanciating the contract and execute it then
-      // injest all its outputs.
-      match ExecutionUnit::new(&transaction, &state, &vm) {
-        Ok(exec_unit) => match exec_unit.execute() {
-          Ok(statediff) => {
-            // transaction execution successfully ran to completion.
-            // merge and accumulate state changes in this block.
-            accstate = accstate.merge(statediff);
-          }
-          Err(error) => {
-            warn!(
-              "transaction {} failed: {error}",
-              transaction.hash().to_b58()
-            );
-          }
-        },
+      // try instantiating the contract, construct its
+      // isolated environment and execute it then injest
+      // all its outputs if ran successfully to completion.
+      match ExecutionUnit::new(&transaction, &state, &vm)
+        .and_then(|exec_unit| exec_unit.execute())
+      {
+        Ok(statediff) => {
+          // transaction execution successfully ran to completion.
+          // merge and accumulate state changes in this block.
+          accstate = accstate.merge(statediff);
+        }
         Err(error) => {
           warn!(
             "transaction {} failed: {error}",
