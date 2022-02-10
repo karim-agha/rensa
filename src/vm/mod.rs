@@ -4,6 +4,7 @@ mod executed;
 mod machine;
 mod state;
 mod transaction;
+mod unit;
 
 pub use {
   executed::Executed,

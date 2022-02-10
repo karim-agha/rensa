@@ -1,7 +1,8 @@
 use {
   super::{
     builtin::BUILTIN_CONTRACTS,
-    contract::{ContractEntrypoint, Output},
+    contract::ContractEntrypoint,
+    unit::ExecutionUnit,
     Overlayed,
     State,
     StateDiff,
@@ -9,11 +10,11 @@ use {
   },
   crate::{
     consensus::{BlockData, Genesis, Produced},
-    primitives::{Account, Pubkey, ToBase58String},
+    primitives::{Pubkey, ToBase58String},
   },
   std::collections::HashMap,
   thiserror::Error,
-  tracing::{trace, warn},
+  tracing::warn,
 };
 
 #[derive(Debug, Error)]
@@ -29,12 +30,6 @@ pub enum MachineError {
 
   #[error("Invalid block height, expected a monotonically increasing value")]
   InvalidBlockHeight,
-
-  #[error("Signature verification failed")]
-  SignatureVerificationFailed,
-
-  #[error("Not all accounts declared as signers have signatures")]
-  MissingSigners,
 
   #[error("Undefined builtin in genesis: {0}")]
   UndefinedBuiltin(Pubkey),
@@ -68,6 +63,10 @@ impl Machine {
     Ok(Self { builtins })
   }
 
+  pub fn builtin(&self, addr: &Pubkey) -> Option<&ContractEntrypoint> {
+    self.builtins.get(addr)
+  }
+
   pub fn execute<D: BlockData>(
     &self,
     state: &impl State,
@@ -86,27 +85,18 @@ impl Executable for Vec<Transaction> {
   ) -> Result<StateDiff, MachineError> {
     let mut accstate = StateDiff::default();
     for transaction in self {
-      if let Some(entrypoint) = vm.builtins.get(&transaction.contract) {
-        let state = Overlayed::new(state, &accstate);
-        match transaction.create_environment(&state) {
-          Ok(env) => {
-            match entrypoint(env, &transaction.params) {
-              Ok(outputs) => {
-                let txstate =
-                  outputs.into_iter().fold(StateDiff::default(), |s, o| {
-                    s.merge(process_transaction_output(o, &state, transaction))
-                  });
-                accstate = accstate.merge(txstate);
-              }
-              Err(error) => {
-                // when a transaction fails, none of its state changes
-                // gets persisted. Todo: Add failure logs.
-                warn!(
-                  "transaction {} failed: {error}",
-                  transaction.hash().to_b58()
-                );
-              }
-            }
+      // Create a view of the state that encompasses the global state
+      // and the state accumulated so far by the block.
+      let state = Overlayed::new(state, &accstate);
+
+      // try instanciating the contract and execute it then
+      // injest all its outputs.
+      match ExecutionUnit::new(&transaction, &state, &vm) {
+        Ok(exec_unit) => match exec_unit.execute() {
+          Ok(statediff) => {
+            // transaction execution successfully ran to completion.
+            // merge and accumulate state changes in this block.
+            accstate = accstate.merge(statediff);
           }
           Err(error) => {
             warn!(
@@ -114,102 +104,16 @@ impl Executable for Vec<Transaction> {
               transaction.hash().to_b58()
             );
           }
+        },
+        Err(error) => {
+          warn!(
+            "transaction {} failed: {error}",
+            transaction.hash().to_b58()
+          );
         }
-      } else {
-        warn!(
-          "transaction {} failed: unknown contract {}",
-          transaction.hash().to_b58(),
-          transaction.contract
-        );
       }
     }
     Ok(accstate)
-  }
-}
-
-fn process_transaction_output(
-  output: Output,
-  state: &impl State,
-  transaction: &Transaction,
-) -> StateDiff {
-  let mut txstate = StateDiff::default();
-  match output {
-    Output::LogEntry(key, value) => {
-      trace!(
-        "transaction {} log: {key} => {value}",
-        transaction.hash().to_b58()
-      ); // todo
-    }
-    Output::ModifyAccountData(addr, data) => {
-      trace!(
-        "transaction {} modifying account {addr} with {data:?}",
-        transaction.hash().to_b58()
-      );
-      modify_account_data(addr, data, state, &mut txstate, transaction);
-    }
-    Output::CreateOwnedAccount(addr, data) => {
-      trace!(
-        "transaction {} creating account {addr} with: {data:?}",
-        transaction.hash().to_b58(),
-      );
-      create_owned_account(addr, data, state, &mut txstate, transaction);
-    }
-  };
-  txstate
-}
-
-fn create_owned_account(
-  address: Pubkey,
-  data: Option<Vec<u8>>,
-  state: &impl State,
-  txstate: &mut impl State,
-  transaction: &Transaction,
-) {
-  if state.get(&address).is_none() {
-    set_state_if_writable(
-      txstate,
-      address,
-      Account {
-        executable: false,
-        owner: Some(transaction.contract.clone()),
-        data,
-      },
-      transaction,
-    );
-  }
-}
-
-fn modify_account_data(
-  address: Pubkey,
-  data: Option<Vec<u8>>,
-  state: &impl State,
-  txstate: &mut impl State,
-  transaction: &Transaction,
-) {
-  if let Some(acc) = state.get(&address) {
-    set_state_if_writable(
-      txstate,
-      address,
-      Account {
-        data,
-        ..acc.clone()
-      },
-      transaction,
-    );
-  }
-}
-
-fn set_state_if_writable(
-  state: &mut impl State,
-  addr: Pubkey,
-  value: Account,
-  transaction: &Transaction,
-) {
-  for acc in &transaction.accounts {
-    if acc.address == addr && acc.writable {
-      state.set(addr, value).unwrap();
-      break;
-    }
   }
 }
 

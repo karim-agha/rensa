@@ -1,14 +1,10 @@
 use {
-  super::{
-    contract::{AccountView, Environment},
-    MachineError,
-    State,
-  },
   crate::primitives::{Keypair, Pubkey, ToBase58String},
   ed25519_dalek::{PublicKey, Signature, Signer, Verifier},
   multihash::{Hasher, Sha3_256},
   serde::{Deserialize, Serialize},
   std::io::{Error as StdError, ErrorKind},
+  thiserror::Error,
 };
 
 /// This is a parameter on the transaction that indicates that
@@ -48,6 +44,15 @@ impl AccountRef {
       signer,
     })
   }
+}
+
+#[derive(Debug, Error)]
+pub enum SignatureError {
+  #[error("Signature verification failed")]
+  InvalidSignature,
+
+  #[error("Missing Signers")]
+  MissingSigners,
 }
 
 /// Represents a single invocation of the state machine.
@@ -100,7 +105,7 @@ impl Transaction {
     }
   }
 
-  pub fn verify_signatures(&self) -> Result<(), MachineError> {
+  pub fn verify_signatures(&self) -> Result<(), SignatureError> {
     let mut hasher = Sha3_256::default();
     hasher.update(&self.contract);
     hasher.update(&self.payer);
@@ -119,7 +124,7 @@ impl Transaction {
     if self.signatures.is_empty() {
       // expecting at least one signature that
       // pays for transaction fees.
-      return Err(MachineError::MissingSigners);
+      return Err(SignatureError::MissingSigners);
     }
 
     if let Ok(payer_key) = PublicKey::from_bytes(&self.payer) {
@@ -127,10 +132,10 @@ impl Transaction {
         .verify(fields_hash.as_ref(), self.signatures.first().unwrap())
         .is_err()
       {
-        return Err(MachineError::SignatureVerificationFailed);
+        return Err(SignatureError::InvalidSignature);
       }
     } else {
-      return Err(MachineError::SignatureVerificationFailed);
+      return Err(SignatureError::InvalidSignature);
     }
 
     // then the rest of signers
@@ -144,7 +149,7 @@ impl Transaction {
     let signers = signing_accs.zip(self.signatures.iter().skip(1));
 
     if signers.clone().count() != expected_signatures {
-      return Err(MachineError::MissingSigners);
+      return Err(SignatureError::MissingSigners);
     }
 
     for (pubkey, sig) in signers {
@@ -153,40 +158,10 @@ impl Transaction {
           continue;
         }
       }
-      return Err(MachineError::SignatureVerificationFailed);
+      return Err(SignatureError::InvalidSignature);
     }
 
     Ok(())
-  }
-
-  /// Creates a self-contained environment object that can be used to
-  /// invoke a contract at a given version of the blockchain state.
-  pub fn create_environment(
-    &self,
-    state: &impl State,
-  ) -> Result<Environment, MachineError> {
-    if let Err(err) = self.verify_signatures() {
-      return Err(err);
-    }
-
-    Ok(Environment {
-      address: self.contract.clone(),
-      accounts: self
-        .accounts
-        .iter()
-        .map(|a| {
-          let account_data = state.get(&a.address);
-          let account_view = AccountView {
-            signer: a.signer,
-            writable: a.writable,
-            executable: account_data.map(|a| a.executable).unwrap_or(false),
-            owner: account_data.and_then(|d| d.owner.clone()),
-            data: account_data.and_then(|a| a.data.clone()),
-          };
-          (a.address.clone(), account_view)
-        })
-        .collect(),
-    })
   }
 
   pub fn hash(&self) -> Vec<u8> {

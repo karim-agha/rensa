@@ -4,10 +4,20 @@
 //! invoke smart contracts by the virtual machine and carry
 //! input and output data into and from the contract.
 
-use {crate::primitives::Pubkey, thiserror::Error};
+use {
+  super::transaction::SignatureError,
+  crate::primitives::Pubkey,
+  thiserror::Error,
+};
 
 #[derive(Debug, Error)]
 pub enum ContractError {
+  #[error("Contract does not exit")]
+  ContractDoesNotExit,
+
+  #[error("Signature Error: {0}")]
+  SignatureError(#[from] SignatureError),
+
   #[error("Account already in use")]
   AccountAlreadyInUse,
 
@@ -44,14 +54,14 @@ pub enum Output {
   /// visible to external observers through the RPC interface.
   LogEntry(String, String),
 
-  /// Represents a modification to the contents of an account owned 
+  /// Represents a modification to the contents of an account owned
   /// by the contract.
   ///
   /// The modified account should be set as writable in the transaction
   /// inputs, otherwise the transaction will fail.
   ModifyAccountData(Pubkey, Option<Vec<u8>>),
 
-  /// Represents creation of a new account that is owned by a calling 
+  /// Represents creation of a new account that is owned by a calling
   /// contract.
   ///
   /// The modified account should be set as writable in the transaction

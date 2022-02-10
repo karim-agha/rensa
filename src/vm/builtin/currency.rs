@@ -51,8 +51,8 @@ pub struct Mint {
 ///
 /// A single wallet may have many token account controlled by the same wallet.
 /// Those accounts are generated using this formula:
-///   TokenAccount = CurrencyPubKey.derive([mint_pubkey_bytes,
-/// wallet_pubkey_bytes])
+///
+///   TokenAccount = Currency.derive([mint_pubkey,wallet_pubkey])
 ///
 /// The owner of the token acconut is always the currency module
 #[derive(Debug, BorshSerialize, BorshDeserialize)]
