@@ -89,7 +89,7 @@ impl Executable for Vec<Transaction> {
       // try instantiating the contract, construct its
       // isolated environment and execute it then injest
       // all its outputs if ran successfully to completion.
-      match ExecutionUnit::new(&transaction, &state, &vm)
+      match ExecutionUnit::new(transaction, &state, vm)
         .and_then(|exec_unit| exec_unit.execute())
       {
         Ok(statediff) => {

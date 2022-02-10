@@ -44,14 +44,14 @@ impl<'s, 't> ExecutionUnit<'s, 't> {
 
   pub fn execute(self) -> Result<StateDiff, ContractError> {
     let entrypoint = self.entrypoint;
-    entrypoint(self.env, &self.transaction.params).and_then(|outputs| {
-      Ok(outputs.into_iter().fold(StateDiff::default(), |s, o| {
+    entrypoint(self.env, &self.transaction.params).map(|outputs| {
+      outputs.into_iter().fold(StateDiff::default(), |s, o| {
         s.merge(Self::process_transaction_output(
           o,
           self.state,
           self.transaction,
         ))
-      }))
+      })
     })
   }
 
@@ -71,9 +71,47 @@ impl<'s, 't> ExecutionUnit<'s, 't> {
         .iter()
         .map(|a| {
           let account_data = state.get(&a.address);
+          let mut writable = a.writable;
+
+          if writable {
+
+            // on-curve accounts are writable only if
+            // the private key of that account signs
+            // the transaction.
+            if a.address.has_private_key() {
+              if !a.signer {
+                writable = false;
+              }
+            } 
+            
+            // otherwise, we're dealing with a program owned
+            // account, if it already exists, check if
+            // it belongs to the called contract.
+            // 
+            // if it does not exist, it may be created by the
+            // invoked contract.
+            else if let Some(existing) = account_data {
+              // executable contracts are never writable
+              if existing.executable {
+                writable = false;
+              }
+
+              // an existing non-executable account that
+              // is not on the Ed25519 curve is writable 
+              // only if its owner is the invoked contract.
+              if let Some(ref owner) = existing.owner {
+                if owner != &transaction.contract {
+                  writable = false;
+                }
+              } else {
+                writable = false;
+              }
+            }
+          }
+
           let account_view = AccountView {
             signer: a.signer,
-            writable: a.writable,
+            writable,
             executable: account_data.map(|a| a.executable).unwrap_or(false),
             owner: account_data.and_then(|d| d.owner.clone()),
             data: account_data.and_then(|a| a.data.clone()),

@@ -74,19 +74,8 @@ impl Transaction {
     params: Vec<u8>,
     signers: &[&Keypair],
   ) -> Self {
-    let mut hasher = Sha3_256::default();
-    hasher.update(&contract);
-    hasher.update(&payer.public());
-
-    for accref in &accounts {
-      hasher.update(&accref.address);
-      hasher.update(&[match accref.writable {
-        true => 1,
-        false => 0,
-      }]);
-    }
-    hasher.update(&params);
-    let fields_hash = hasher.finalize();
+    let fields_hash =
+      Self::hash_fields(&contract, &payer.public(), &accounts, &params);
 
     // payers signature alwyas goes first
     let mut signatures = vec![payer.sign(fields_hash.as_ref())];
@@ -106,19 +95,12 @@ impl Transaction {
   }
 
   pub fn verify_signatures(&self) -> Result<(), SignatureError> {
-    let mut hasher = Sha3_256::default();
-    hasher.update(&self.contract);
-    hasher.update(&self.payer);
-
-    for accref in &self.accounts {
-      hasher.update(&accref.address);
-      hasher.update(&[match accref.writable {
-        true => 1,
-        false => 0,
-      }]);
-    }
-    hasher.update(&self.params);
-    let fields_hash = hasher.finalize();
+    let fields_hash = Self::hash_fields(
+      &self.contract,
+      &self.payer,
+      &self.accounts,
+      &self.params,
+    );
 
     // first verify the payer
     if self.signatures.is_empty() {
@@ -177,6 +159,25 @@ impl Transaction {
       hasher.update(sig.as_ref());
     }
     hasher.finalize().as_ref().to_vec()
+  }
+
+  fn hash_fields(
+    contract: &Pubkey,
+    payer: &Pubkey,
+    accounts: &[AccountRef],
+    params: &[u8],
+  ) -> Vec<u8> {
+    let mut hasher = Sha3_256::default();
+    hasher.update(contract);
+    hasher.update(payer);
+
+    for accref in accounts {
+      hasher.update(&accref.address);
+      hasher.update(&[accref.writable as u8]);
+      hasher.update(&[accref.signer as u8]);
+    }
+    hasher.update(params);
+    hasher.finalize().to_vec()
   }
 }
 
