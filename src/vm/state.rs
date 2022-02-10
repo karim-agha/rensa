@@ -266,9 +266,9 @@ mod test {
       .parse()
       .unwrap();
 
-    assert!(s1.set(key1.clone(), Account::test_new(1)).is_ok());
-    assert!(s2.set(key2.clone(), Account::test_new(2)).is_ok());
-    assert!(s3.set(key1.clone(), Account::test_new(3)).is_ok());
+    assert!(s1.set(key1, Account::test_new(1)).is_ok());
+    assert!(s2.set(key2, Account::test_new(2)).is_ok());
+    assert!(s3.set(key1, Account::test_new(3)).is_ok());
 
     assert!(s1.get(&key3).is_none());
     assert!(s1.get(&key2).is_none());
@@ -311,9 +311,9 @@ mod test {
       .parse()
       .unwrap();
 
-    assert!(s1.set(key1.clone(), Account::test_new(1)).is_ok());
-    assert!(s2.set(key2.clone(), Account::test_new(2)).is_ok());
-    assert!(s3.set(key1.clone(), Account::test_new(3)).is_ok());
+    assert!(s1.set(key1, Account::test_new(1)).is_ok());
+    assert!(s2.set(key2, Account::test_new(2)).is_ok());
+    assert!(s3.set(key1, Account::test_new(3)).is_ok());
 
     assert!(s1.get(&key3).is_none());
     assert!(s1.get(&key2).is_none());

@@ -86,7 +86,7 @@ impl<'s, 't> ExecutionUnit<'s, 't> {
     transaction: &Transaction,
   ) -> Result<Environment, ContractError> {
     Ok(Environment {
-      address: transaction.contract.clone(),
+      address: transaction.contract,
       accounts: transaction
         .accounts
         .iter()
@@ -132,10 +132,10 @@ impl<'s, 't> ExecutionUnit<'s, 't> {
             signer: a.signer,
             writable,
             executable: account_data.map(|a| a.executable).unwrap_or(false),
-            owner: account_data.and_then(|d| d.owner.clone()),
+            owner: account_data.and_then(|d| d.owner),
             data: account_data.and_then(|a| a.data.clone()),
           };
-          (a.address.clone(), account_view)
+          (a.address, account_view)
         })
         .collect(),
     })
@@ -158,7 +158,7 @@ impl<'s, 't> ExecutionUnit<'s, 't> {
     if self.state.get(&address).is_none() {
       self.set_account(address, Account {
         executable: false,
-        owner: Some(self.transaction.contract.clone()),
+        owner: Some(self.transaction.contract),
         data,
       })
     } else {

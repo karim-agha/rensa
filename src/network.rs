@@ -109,7 +109,7 @@ impl<D: BlockData> Network<D> {
       .validators
       .iter()
       .filter(|v| v.stake >= genesis.minimum_stake)
-      .map(|v| v.pubkey.clone())
+      .map(|v| v.pubkey)
       .collect();
 
     // use an authentiator predicate that denies connections

@@ -25,7 +25,15 @@ use {
 /// program owned account that is not on the curve and is writable
 /// only by the contract owning it.
 #[derive(
-  Clone, PartialEq, Eq, Hash, PartialOrd, Ord, BorshSerialize, BorshDeserialize,
+  Copy,
+  Clone,
+  PartialEq,
+  Eq,
+  Hash,
+  PartialOrd,
+  Ord,
+  BorshSerialize,
+  BorshDeserialize,
 )]
 pub struct Pubkey([u8; 32]);
 

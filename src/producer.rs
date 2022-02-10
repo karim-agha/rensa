@@ -33,11 +33,7 @@ impl<'v> BlockProducer<'v> {
       vm,
       keypair,
       votes: HashMap::new(),
-      validators: genesis
-        .validators
-        .iter()
-        .map(|v| v.pubkey.clone())
-        .collect(),
+      validators: genesis.validators.iter().map(|v| v.pubkey).collect(),
       pending: VecDeque::new(),
     }
   }

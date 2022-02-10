@@ -7,8 +7,8 @@ use {
   crate::{
     primitives::Pubkey,
     vm::{
-      contract,
-      contract::{ContractError, Environment},
+      contract::{self, ContractError, Environment},
+      transaction::SignatureError,
     },
   },
   borsh::{BorshDeserialize, BorshSerialize},
@@ -43,20 +43,20 @@ pub struct Mint {
   pub symbol: Option<String>,
 }
 
-/// Represents a token account associated with a user wallet.
+/// Represents a Coin account associated with a user wallet.
 ///
-/// Token accounts are never on the Ed25519 curve and will never directly
+/// Coin accounts are never on the Ed25519 curve and will never directly
 /// have a corresponding private key, instead all operations are authorized
 /// by checking the presence of the signature of the owner account.
 ///
 /// A single wallet may have many token account controlled by the same wallet.
 /// Those accounts are generated using this formula:
 ///
-///   TokenAccount = Currency.derive([mint_pubkey,wallet_pubkey])
+///   CoinAccount = Currency.derive([mint_pubkey,wallet_pubkey])
 ///
 /// The owner of the token acconut is always the currency module
 #[derive(Debug, BorshSerialize, BorshDeserialize)]
-pub struct TokenAccount {
+pub struct CoinAccount {
   /// The token mint associated with this account
   pub mint: Pubkey,
 
@@ -158,9 +158,8 @@ pub enum Instruction {
 
 pub fn contract(env: &Environment, params: &[u8]) -> contract::Result {
   let mut params = params;
-  let instruction: Instruction =
-    borsh::de::BorshDeserialize::deserialize(&mut params)
-      .map_err(|_| ContractError::InvalidInputParameters)?;
+  let instruction: Instruction = BorshDeserialize::deserialize(&mut params)
+    .map_err(|_| ContractError::InvalidInputParameters)?;
 
   match instruction {
     Instruction::Create {
@@ -177,7 +176,7 @@ pub fn contract(env: &Environment, params: &[u8]) -> contract::Result {
   }
 }
 
-/// Creates new Currency type and allocates
+/// Creates new Currency coin and allocates
 /// its mint account.
 fn process_create(
   env: &Environment,
@@ -237,7 +236,8 @@ fn process_create(
     contract::Output::CreateOwnedAccount(
       expected_mint_address,
       Some(
-        borsh::to_vec(&spec)
+        spec
+          .try_to_vec()
           .map_err(|_| ContractError::InvalidInputParameters)?,
       ),
     ),
@@ -247,17 +247,125 @@ fn process_create(
   ])
 }
 
-fn process_mint(env: &Environment, _amount: u64) -> contract::Result {
+/// Mints new tokens to a specific wallet associated token account
+/// and increases the total token supply by the given amount.
+fn process_mint(env: &Environment, amount: u64) -> contract::Result {
   if env.accounts.len() != 4 {
     return Err(ContractError::InvalidInputAccounts);
   }
 
-  let (_mint_addr, _mint_data) = &env.accounts[0];
-  let (_authority, _) = &env.accounts[1];
-  let (_wallet_addr, _) = &env.accounts[2];
-  let (_token_acc_addr, _token_acc_data) = &env.accounts[3];
+  let (mint_addr, mint_data) = &env.accounts[0];
+  let (authority, authority_acc) = &env.accounts[1];
+  let (wallet_addr, _) = &env.accounts[2];
+  let (coin_addr, coin_acc) = &env.accounts[3];
 
-  Ok(vec![])
+  // the mint account must be a derived account
+  if mint_addr.has_private_key() {
+    return Err(ContractError::InvalidInputAccounts);
+  }
+
+  // the mint account must be owned by the currency contract
+  match mint_data.owner {
+    Some(ref owner) => {
+      if owner != &env.address {
+        return Err(ContractError::InvalidAccountOwner);
+      }
+    }
+    None => {
+      return Err(ContractError::InvalidAccountOwner);
+    }
+  }
+
+  // get the mint account data
+  let mut mint: Mint = match mint_data.data {
+    Some(ref data) => BorshDeserialize::try_from_slice(data)
+      .map_err(|_| ContractError::InvalidInputAccounts)?,
+    None => {
+      return Err(ContractError::InvalidInputAccounts);
+    }
+  };
+
+  // make sure that the caller is authorized to mint new tokens
+  if let Some(ref mint_authority) = mint.authority {
+    // fail if accounts do not match
+    if mint_authority != authority {
+      return Err(ContractError::Other(std::io::Error::new(
+        std::io::ErrorKind::PermissionDenied,
+        "account not authorized to mint new coins of this currency",
+      )));
+    }
+
+    // fail if the authority is not a signer of the transaction
+    if !authority_acc.signer {
+      return Err(ContractError::SignatureError(
+        SignatureError::MissingSigners,
+      ));
+    }
+  } else {
+    return Err(ContractError::Other(std::io::Error::new(
+      std::io::ErrorKind::PermissionDenied,
+      "Minting new coins is disabled for this currency",
+    )));
+  }
+
+  // verify that the coin account is the exected
+  // currency account for the given wallet
+  if coin_addr != &env.address.derive(&[mint_addr, wallet_addr]) {
+    return Err(ContractError::InvalidInputAccounts);
+  }
+
+  // verify that it is owned by the currency contract
+  if let Some(ref owner) = coin_acc.owner {
+    if owner != &env.address {
+      return Err(ContractError::InvalidAccountOwner);
+    }
+  }
+
+  let mut outputs = vec![
+    contract::Output::LogEntry("action".into(), "mint-coins".into()),
+    contract::Output::LogEntry("to".into(), wallet_addr.to_string()),
+  ];
+
+  // all checks passed, now the coin account either
+  // has to be created because this is the first time
+  // this wallet is used for this coin, or modified
+  // by increasing its balance of this coin
+  if let Some(ref data) = coin_acc.data {
+    // already exists, read its contents
+    let mut coin: CoinAccount = BorshDeserialize::try_from_slice(data)
+      .map_err(|_| ContractError::InvalidInputAccounts)?;
+
+    // make sure that the coin account is for the minted coin type
+    if mint_addr != &coin.mint {
+      return Err(ContractError::InvalidInputAccounts);
+    }
+
+    coin.balance = coin.balance.saturating_add(amount);
+    outputs.push(contract::Output::ModifyAccountData(
+      *coin_addr,
+      Some(coin.try_to_vec()?),
+    ))
+  } else {
+    // never used before for this coin, create
+    let coin = CoinAccount {
+      mint: *mint_addr,
+      balance: amount,
+      owner: *wallet_addr,
+    };
+    outputs.push(contract::Output::CreateOwnedAccount(
+      *coin_addr,
+      Some(coin.try_to_vec()?),
+    ));
+  }
+
+  // update the global supply value
+  mint.supply = mint.supply.saturating_add(amount);
+  outputs.push(contract::Output::ModifyAccountData(
+    *mint_addr,
+    Some(mint.try_to_vec()?),
+  ));
+
+  Ok(outputs)
 }
 
 fn process_transfer(_env: &Environment, _amount: u64) -> contract::Result {

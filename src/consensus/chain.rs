@@ -158,7 +158,7 @@ impl<'g, D: BlockData> Chain<'g, D> {
       stakes: genesis
         .validators
         .iter()
-        .map(|v| (v.pubkey.clone(), v.stake))
+        .map(|v| (v.pubkey, v.stake))
         .collect(),
       virtual_machine: machine,
     }
@@ -307,7 +307,7 @@ impl<'g, 'f, D: BlockData> Chain<'g, D> {
             .collect();
 
           // apply votes to the target and all its ancestors
-          target.add_votes(*stake, vote.validator.clone());
+          target.add_votes(*stake, vote.validator);
 
           // find out which blocks got confirmed after counting the vote
           // and signal their confirmation by emitting an event
@@ -781,9 +781,9 @@ mod test {
   #[test]
   fn append_block_smoke() {
     let secret = SecretKey::from_bytes(&[
-      157, 097, 177, 157, 239, 253, 090, 096, 186, 132, 074, 244, 146, 236,
-      044, 196, 068, 073, 197, 105, 123, 050, 105, 025, 112, 059, 172, 003,
-      028, 174, 127, 096,
+      157, 97, 177, 157, 239, 253, 90, 96, 186, 132, 74, 244, 146, 236, 44,
+      196, 68, 73, 197, 105, 123, 50, 105, 25, 112, 59, 172, 3, 28, 174, 127,
+      96,
     ])
     .unwrap();
 
@@ -856,9 +856,9 @@ mod test {
   #[test]
   fn append_blocks_out_of_order() {
     let secret = SecretKey::from_bytes(&[
-      157, 097, 177, 157, 239, 253, 090, 096, 186, 132, 074, 244, 146, 236,
-      044, 196, 068, 073, 197, 105, 123, 050, 105, 025, 112, 059, 172, 003,
-      028, 174, 127, 096,
+      157, 97, 177, 157, 239, 253, 90, 96, 186, 132, 74, 244, 146, 236, 44,
+      196, 68, 73, 197, 105, 123, 50, 105, 25, 112, 59, 172, 3, 28, 174, 127,
+      96,
     ])
     .unwrap();
 

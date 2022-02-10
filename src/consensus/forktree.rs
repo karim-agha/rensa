@@ -175,7 +175,7 @@ impl<D: BlockData> TreeNode<D> {
   pub fn add_votes(&mut self, votes: u64, voter: Pubkey) {
     // apply those votes to the current block, but don't duplicate
     // validator votes on the same block.
-    if self.value.voters.insert(voter.clone()) {
+    if self.value.voters.insert(voter) {
       self.value.votes += votes;
     }
 
@@ -184,7 +184,7 @@ impl<D: BlockData> TreeNode<D> {
     let mut current = self;
     while let Some(ancestor) = current.parent {
       let ancestor = unsafe { &mut *(ancestor as *mut Self) as &mut Self };
-      if ancestor.value.voters.insert(voter.clone()) {
+      if ancestor.value.voters.insert(voter) {
         ancestor.value.votes += votes;
       }
       current = ancestor;
@@ -343,7 +343,7 @@ mod tests {
         parent.height + 1,
         parent.hash().unwrap(),
         data,
-        vec![].execute(&vm, &StateDiff::default()).unwrap().hash(),
+        vec![].execute(vm, &StateDiff::default()).unwrap().hash(),
         vec![],
       )
       .unwrap(),
@@ -354,9 +354,9 @@ mod tests {
   #[test]
   fn forktree_smoke() {
     let secret = SecretKey::from_bytes(&[
-      157, 097, 177, 157, 239, 253, 090, 096, 186, 132, 074, 244, 146, 236,
-      044, 196, 068, 073, 197, 105, 123, 050, 105, 025, 112, 059, 172, 003,
-      028, 174, 127, 096,
+      157, 97, 177, 157, 239, 253, 90, 96, 186, 132, 74, 244, 146, 236, 44,
+      196, 68, 73, 197, 105, 123, 50, 105, 25, 112, 59, 172, 3, 28, 174, 127,
+      96,
     ])
     .unwrap();
 

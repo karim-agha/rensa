@@ -28,7 +28,7 @@ pub fn contract(env: &Environment, params: &[u8]) -> contract::Result {
   }
 
   Ok(vec![
-    Output::ModifyAccountData(addr.clone(), Some(sha.finalize().to_vec())),
+    Output::ModifyAccountData(*addr, Some(sha.finalize().to_vec())),
     Output::LogEntry("action".into(), "sha3".into()),
   ])
 }

@@ -12,12 +12,6 @@ use {
 
 #[derive(Debug, Error)]
 pub enum ContractError {
-  #[error("Contract does not exit")]
-  ContractDoesNotExit,
-
-  #[error("Signature Error: {0}")]
-  SignatureError(#[from] SignatureError),
-
   #[error("Account already exists")]
   AccountAlreadyExists,
 
@@ -26,9 +20,6 @@ pub enum ContractError {
 
   #[error("The number of input accounts exceeds the maximum limit")]
   TooManyInputAccounts,
-
-  #[error("Invalid contract input paramters data")]
-  InvalidInputParameters,
 
   #[error("Invalid contract input accounts")]
   InvalidInputAccounts,
@@ -42,11 +33,20 @@ pub enum ContractError {
   )]
   InvalidOutputAccount,
 
-  #[error("Contract error: {0:?}")]
-  Other(#[from] Box<dyn std::error::Error>),
-
   #[error("The specified account is not writable")]
   AccountNotWritable,
+
+  #[error("Contract does not exit")]
+  ContractDoesNotExit,
+
+  #[error("Signature Error: {0}")]
+  SignatureError(#[from] SignatureError),
+
+  #[error("Invalid contract input paramters data")]
+  InvalidInputParameters,
+
+  #[error("Contract error: {0:?}")]
+  Other(#[from] std::io::Error),
 
   #[error("The transaction has used up all compute units before completing")]
   _ComputationalBudgetExhausted,

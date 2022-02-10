@@ -254,7 +254,7 @@ impl<D: BlockData> Block<D> for Genesis<D> {
   fn state_hash(&self) -> Multihash {
     let mut state = StateDiff::default();
     for (k, v) in &self.state {
-      state.set(k.clone(), v.clone()).unwrap();
+      state.set(*k, v.clone()).unwrap();
     }
     state.hash()
   }

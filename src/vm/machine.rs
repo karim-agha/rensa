@@ -54,9 +54,9 @@ impl Machine {
     let mut builtins = HashMap::new();
     for addr in &genesis.builtins {
       if let Some(entrypoint) = BUILTIN_CONTRACTS.get(addr) {
-        builtins.insert(addr.clone(), *entrypoint);
+        builtins.insert(*addr, *entrypoint);
       } else {
-        return Err(MachineError::UndefinedBuiltin(addr.clone()));
+        return Err(MachineError::UndefinedBuiltin(*addr));
       }
     }
     Ok(Self {
