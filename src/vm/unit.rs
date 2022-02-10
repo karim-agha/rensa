@@ -9,6 +9,14 @@ use {
   crate::primitives::{Account, Pubkey},
 };
 
+
+use {
+  super::contract::Output,
+  crate::primitives::ToBase58String,
+  tracing::trace,
+};
+
+
 pub struct ExecutionUnit<'s, 't> {
   entrypoint: ContractEntrypoint,
   env: Environment,
@@ -169,14 +177,3 @@ impl<'s, 't> ExecutionUnit<'s, 't> {
     }
   }
 }
-
-// let txstate =
-// outputs.into_iter().fold(StateDiff::default(), |s, o| {
-// s.merge(process_transaction_output(o, &state, transaction))
-// });
-
-use {
-  super::contract::Output,
-  crate::primitives::ToBase58String,
-  tracing::trace,
-};
