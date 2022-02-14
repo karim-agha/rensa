@@ -1,0 +1,84 @@
+syntax = "proto2";
+
+package rpc.pb;
+
+/// Represents a member of the p2p network
+message AddressablePeer {
+	required bytes peer_id = 1;
+	repeated bytes addresses = 2;
+}
+
+// Represents a message that is sent between peer nodes
+message Rpc {
+	required string topic = 1;
+	oneof Action {
+		// hyparview
+		Join join = 2;
+		ForwardJoin forwardJoin = 3;
+		Neighbor neighbor = 4;
+		Shuffle shuffle = 5;
+		ShuffleReply shuffleReply = 6;
+		Disconnect disconnect = 7;
+		
+		// plumtree
+		Message message = 9;
+		IHave ihave = 10;
+		Prune prune = 11;
+		Graft graft = 12;
+	}
+}
+
+message Join {
+	required uint32 ttl = 1;
+	required AddressablePeer peer = 2;
+}
+
+message ForwardJoin {
+	required uint32 ttl = 2;
+	required AddressablePeer peer = 3;
+}
+
+message Neighbor {
+	required AddressablePeer peer = 1;
+	required Priority priority = 2;
+
+	enum Priority {
+		LOW = 0;
+		HIGH = 1;
+	}
+}
+
+message Shuffle {
+	required uint32 ttl = 2;
+	required AddressablePeer origin = 3;
+	repeated AddressablePeer nodes = 4;
+}
+
+message ShuffleReply {
+	repeated AddressablePeer nodes = 2;
+}
+
+message Disconnect {
+	required bool alive = 2;
+}
+
+message Message {
+	required bytes id = 1;
+	required uint32 hop = 2;
+	required bytes payload = 3;
+}
+
+message IHave {
+	message MessageRecord {
+		required uint32 hop = 1;
+		required bytes id = 2;
+	}
+
+	repeated MessageRecord ihaves = 1;
+}
+
+message Prune {}
+
+message Graft {
+	repeated bytes ids = 2;
+}

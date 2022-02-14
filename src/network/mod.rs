@@ -1,8 +1,11 @@
+mod episub;
+
 use {
   crate::{
     consensus::{Block, BlockData, Genesis, Produced, Vote},
     primitives::{Keypair, Pubkey},
   },
+  episub::{Config, Episub, EpisubEvent, PeerAuthorizer},
   futures::StreamExt,
   libp2p::{
     core::{muxing::StreamMuxerBox, transport::Boxed, upgrade::Version},
@@ -17,7 +20,6 @@ use {
     Swarm,
     Transport,
   },
-  libp2p_episub::{Config, Episub, EpisubEvent, PeerAuthorizer},
   std::collections::HashSet,
   tokio::sync::mpsc::{
     error::SendError,
