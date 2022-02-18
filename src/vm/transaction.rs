@@ -19,7 +19,7 @@ pub struct AccountRef {
 }
 
 impl AccountRef {
-  pub fn readonly(
+  pub fn _readonly(
     address: impl TryInto<Pubkey>,
     signer: bool,
   ) -> Result<AccountRef, StdError> {

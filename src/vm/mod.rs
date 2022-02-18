@@ -9,14 +9,6 @@ mod unit;
 pub use {
   executed::Executed,
   machine::{Executable, Machine, MachineError},
-  state::{
-    Finalized,
-    FinalizedState,
-    IsolatedState,
-    Overlayed,
-    State,
-    StateDiff,
-    StateError,
-  },
+  state::{Finalized, FinalizedState, Overlayed, State, StateDiff, StateError},
   transaction::{AccountRef, Transaction},
 };

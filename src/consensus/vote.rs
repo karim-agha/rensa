@@ -1,18 +1,3 @@
-use {
-  crate::primitives::{Keypair, Pubkey, ToBase58String},
-  ed25519_dalek::{PublicKey, Signature, Signer, Verifier},
-  multihash::{
-    Code as MultihashCode,
-    Hasher,
-    Multihash,
-    MultihashDigest,
-    Sha3_256,
-  },
-  serde::{Deserialize, Serialize},
-  std::io::ErrorKind,
-  tracing::warn,
-};
-
 // finalized checkpoint when two we have two
 // justified (2/3 majority votes) checkpoints in a row
 
@@ -25,6 +10,19 @@ use {
 //      +----------> [h(s1) = 3] ----> [h(t1) = 4] --->
 //  [J] +
 //      +---> [h(s2) = 2]--------------------------> [h(t2) = 5] ---->
+use {
+  crate::primitives::{Keypair, Pubkey, ToBase58String},
+  ed25519_dalek::{PublicKey, Signature, SignatureError, Signer, Verifier},
+  multihash::{
+    Code as MultihashCode,
+    Hasher,
+    Multihash,
+    MultihashDigest,
+    Sha3_256,
+  },
+  serde::{Deserialize, Serialize},
+  std::io::ErrorKind,
+};
 
 /// A message of this type means that a validator with the
 /// public key [`validator`] is voting on the validity and
@@ -69,26 +67,11 @@ impl std::fmt::Debug for Vote {
 
 impl Vote {
   /// Verifies the signature of the vote.
-  pub fn verify_signature(&self) -> bool {
+  pub fn verify_signature(&self) -> Result<(), SignatureError> {
     let mut msg = Vec::new();
     msg.append(&mut self.target.to_bytes());
     msg.append(&mut self.justification.to_bytes());
-    match PublicKey::from_bytes(&self.validator) {
-      Ok(p) => match p.verify(&msg, &self.signature) {
-        Ok(_) => true,
-        Err(e) => {
-          warn!(
-            "signature verification for vote from {} failed {e}",
-            self.validator
-          );
-          false
-        }
-      },
-      Err(e) => {
-        warn!("invalid public key {}: {e}", self.validator);
-        false
-      }
-    }
+    PublicKey::from_bytes(&self.validator)?.verify(&msg, &self.signature)
   }
 
   /// Creates new vote for a target block using validator's secret key.

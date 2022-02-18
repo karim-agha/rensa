@@ -1,11 +1,11 @@
 mod cli;
-pub mod consensus;
-pub mod network;
-pub mod primitives;
-pub mod producer;
-pub mod rpc;
-pub mod storage;
-pub mod vm;
+mod consensus;
+mod network;
+mod primitives;
+mod producer;
+mod rpc;
+mod storage;
+mod vm;
 
 use {
   crate::{network::NetworkEvent, primitives::ToBase58String, vm::State},

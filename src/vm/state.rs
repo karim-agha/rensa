@@ -13,23 +13,14 @@ use {
   },
   once_cell::sync::OnceCell,
   serde::{Deserialize, Serialize},
-  std::{
-    collections::{BTreeMap, HashMap},
-    ops::Deref,
-  },
+  std::{collections::BTreeMap, ops::Deref},
   thiserror::Error,
 };
 
 #[derive(Debug, Error)]
 pub enum StateError {
-  #[error("Unknown state error")]
-  Unknown,
-
   #[error("Writes are not supported on this type of state")]
   WritesNotSupported,
-
-  #[error("Cannot apply state: parent hash mismatch")]
-  ParentMismatch,
 }
 
 type Result<T> = std::result::Result<T, StateError>;
@@ -210,34 +201,6 @@ impl State for StateDiff {
       }
       MultihashCode::Sha3_256.wrap(hasher.finalize()).unwrap()
     })
-  }
-}
-
-pub struct IsolatedState {
-  data: HashMap<Pubkey, Account>,
-}
-
-impl IsolatedState {
-  pub fn new(_base: &impl State, _accounts: &[Pubkey]) -> Result<Self> {
-    todo!();
-  }
-}
-
-impl State for IsolatedState {
-  fn get(&self, address: &Pubkey) -> Option<&Account> {
-    self.data.get(address)
-  }
-
-  fn set(
-    &mut self,
-    _address: Pubkey,
-    _account: Account,
-  ) -> Result<Option<Account>> {
-    Err(StateError::WritesNotSupported)
-  }
-
-  fn hash(&self) -> Multihash {
-    todo!()
   }
 }
 

@@ -167,7 +167,7 @@ impl<'g, D: BlockData> Chain<'g, D> {
   /// Returns the very first block of the blockchain
   /// that contains initial state setup and various
   /// chain configurations.
-  pub fn genesis(&self) -> &'g block::Genesis<D> {
+  fn _genesis(&self) -> &'g block::Genesis<D> {
     self.genesis
   }
 
@@ -182,7 +182,7 @@ impl<'g, D: BlockData> Chain<'g, D> {
   /// This value is used as the justification when voting for new
   /// blocks, also the last finalized block is the root of the
   /// current fork tree.
-  pub fn finalized(&self) -> &Finalized<D> {
+  fn _finalized(&self) -> &Finalized<D> {
     &self.finalized
   }
 
@@ -225,7 +225,7 @@ impl<'g, D: BlockData> Chain<'g, D> {
   ///
   /// In the next iteration validators will be able to
   /// join and leave the blockchain.
-  pub fn validators(&self) -> impl Iterator<Item = &Validator> {
+  fn _validators(&self) -> impl Iterator<Item = &Validator> {
     self
       .genesis
       .validators
@@ -283,6 +283,11 @@ impl<'g, 'f, D: BlockData> Chain<'g, D> {
           "Rejecting vote from {} because it has not enough stake",
           vote.validator
         );
+        return;
+      }
+
+      if let Err(err) = vote.verify_signature() {
+        warn!("Signature verification failed for vote {vote:?}: {err:?}");
         return;
       }
 

@@ -39,10 +39,6 @@ impl<D: BlockData> Executed<D> {
   pub fn state(&self) -> &impl State {
     &self.state_diff
   }
-
-  pub fn take(self) -> Produced<D> {
-    self.underlying
-  }
 }
 
 impl<D: BlockData> Deref for Executed<D> {
