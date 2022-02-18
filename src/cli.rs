@@ -40,6 +40,9 @@ pub struct CliOpts {
 
   #[clap(long, parse(from_os_str), help = "path to the chain genesis file")]
   pub genesis: PathBuf,
+
+  #[clap(long, help = "port on which RPC API service is exposed")]
+  pub rpc: Option<u16>,
 }
 
 impl CliOpts {
@@ -106,5 +109,19 @@ impl CliOpts {
     // and validators but only differing in the order of their appearance.
     genesis.validators.sort();
     Ok(genesis)
+  }
+
+  /// If an RPC port is provided provided, returns all socketaddrs on which
+  /// the RPC API service will be listening on incoming JSON-RPC calls from
+  /// external clients.
+  pub fn rpc_endpoints(&self) -> Option<Vec<SocketAddr>> {
+    self.rpc.map(|port| {
+      self
+        .addr
+        .iter()
+        .cloned()
+        .map(|addr| SocketAddr::new(addr, port))
+        .collect()
+    })
   }
 }
