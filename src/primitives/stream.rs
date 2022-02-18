@@ -15,14 +15,14 @@ use {
 /// Similar to StreamExt Stream.next(), except it works with an
 /// option that may contain a stream. In case the option is none
 /// then the stream is considered terminated and will always be
-/// pending, otherwise it will behave just like the reguler 
+/// pending, otherwise it will behave just like the reguler
 /// StreamExt::next() trait method.
-/// 
+///
 /// This is used in the main() function of the codebase as a more
-/// ergonomic way of dealing with optional services that may or 
+/// ergonomic way of dealing with optional services that may or
 /// may not be turned on, such as the RPC service, the external
-/// state sync service, and others. 
-/// 
+/// state sync service, and others.
+///
 /// This way the surface level apis for core and optional services
 /// is unified.
 #[derive(Debug)]
@@ -65,15 +65,12 @@ impl<S: Stream + Unpin> Future for OptionNext<'_, Option<S>> {
 }
 
 pub trait OptionalStreamExt {
-  type Item;
   fn next(&mut self) -> OptionNext<'_, Self>
   where
     Self: Unpin + Sized;
 }
 
 impl<S: Stream + Unpin> OptionalStreamExt for Option<S> {
-  type Item = S::Item;
-
   fn next(&mut self) -> OptionNext<'_, Self>
   where
     Self: Unpin + Sized,
