@@ -36,6 +36,7 @@ fn print_essentials(opts: &CliOpts) -> anyhow::Result<()> {
   info!("Version: {}", env!("CARGO_PKG_VERSION"));
   info!("Listen addresses: {:?}", opts.listen_multiaddrs());
   info!("Chain identity: {}", opts.keypair);
+  info!("Data directory: {}", opts.data_dir()?.display());
   info!(
     "P2P identity: {}",
     opts.p2p_identity().public().to_peer_id()

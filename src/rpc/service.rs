@@ -1,6 +1,12 @@
 use {
   super::ApiEvent,
+  axum::{
+    routing::{get, post},
+    Json,
+    Router,
+  },
   futures::Stream,
+  serde_json::json,
   std::{
     collections::VecDeque,
     net::SocketAddr,
@@ -15,6 +21,37 @@ pub struct ApiService {
 
 impl ApiService {
   pub fn new(addrs: Vec<SocketAddr>) -> Self {
+    let svc = Router::new()
+      .route(
+        "/about",
+        get(|| async {
+          Json(json! ({
+            "system": {
+              "name": "Rensa",
+              "version": env!("CARGO_PKG_VERSION")
+            }
+          }))
+        }),
+      )
+      .route(
+        "/send_transaction",
+        post(|| async {
+          Json(json! ({
+            "status": "accepted"
+          }))
+        }),
+      );
+
+    addrs.iter().cloned().for_each(|addr| {
+      let svc = svc.clone();
+      tokio::spawn(async move {
+        axum::Server::bind(&addr)
+          .serve(svc.into_make_service())
+          .await
+          .unwrap();
+      });
+    });
+
     Self {
       out_events: addrs
         .into_iter()

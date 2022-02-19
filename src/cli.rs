@@ -43,6 +43,14 @@ pub struct CliOpts {
 
   #[clap(long, help = "port on which RPC API service is exposed")]
   pub rpc: Option<u16>,
+
+  #[clap(
+    long,
+    parse(from_os_str),
+    help = "path to the data directory",
+    default_value = "~/.rensa/"
+  )]
+  pub data_dir: PathBuf,
 }
 
 impl CliOpts {
@@ -123,5 +131,18 @@ impl CliOpts {
         .map(|addr| SocketAddr::new(addr, port))
         .collect()
     })
+  }
+
+  /// Gets the data directory for the this chain.
+  /// The chain directory id is <top-level-data-dir>/<chain-id>/*
+  pub fn data_dir(&self) -> Result<PathBuf, std::io::Error> {
+    let chain_id = self.genesis()?.chain_id;
+    let mut dir: PathBuf = shellexpand::full(self.data_dir.to_str().unwrap())
+      .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidInput, e))?
+      .to_string()
+      .into();
+    dir.push(chain_id);
+    std::fs::create_dir_all(dir.clone())?;
+    Ok(dir)
   }
 }
