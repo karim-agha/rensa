@@ -88,7 +88,7 @@ pub struct Chain<'g, D: BlockData> {
   /// at the last finalized block. Archiving historical blocks
   /// can be delegated to an external interface for explorers
   /// and other use cases if an archiver is specified.
-  finalized: Finalized<D>,
+  finalized: Finalized<'g, D>,
 
   /// This forrest represents all chains (forks) that were created
   /// since the last finalized block. None of those blocks are
@@ -144,7 +144,7 @@ impl<'g, D: BlockData> Chain<'g, D> {
   pub fn new(
     genesis: &'g block::Genesis<D>,
     machine: &'g vm::Machine,
-    finalized: Finalized<D>,
+    finalized: Finalized<'g, D>,
   ) -> Self {
     Self {
       genesis,
@@ -776,6 +776,7 @@ mod test {
         validator::Validator,
       },
       primitives::Keypair,
+      storage::PersitentState,
       vm::{self, Executable, Finalized, State, Transaction},
     },
     chrono::Utc,
@@ -813,7 +814,10 @@ mod test {
       _marker: PhantomData,
     };
 
-    let finalized = Finalized::new(&genesis);
+    let mut randomdir = std::env::temp_dir();
+    randomdir.push("append_block_smoke");
+    let storage = PersitentState::new(&genesis, randomdir.clone()).unwrap();
+    let finalized = Finalized::new(&genesis, &storage);
     let vm = vm::Machine::new(&genesis).unwrap();
     let mut chain = Chain::new(&genesis, &vm, finalized);
 
@@ -856,6 +860,10 @@ mod test {
     let hash2 = block2.hash().unwrap();
     chain.include(block2);
     assert_eq!(hash2, chain.head().1.hash().unwrap());
+
+    drop(storage);
+
+    std::fs::remove_dir_all(randomdir).unwrap();
   }
 
   #[test]
@@ -888,7 +896,10 @@ mod test {
       _marker: PhantomData,
     };
 
-    let finalized = Finalized::new(&genesis);
+    let mut randomdir = std::env::temp_dir();
+    randomdir.push("append_blocks_out_of_order");
+    let storage = PersitentState::new(&genesis, randomdir.clone()).unwrap();
+    let finalized = Finalized::new(&genesis, &storage);
 
     let vm = vm::Machine::new(&genesis).unwrap();
     let mut chain = Chain::new(&genesis, &vm, finalized);
@@ -952,5 +963,9 @@ mod test {
     // it with the orphan and block3 shold be the new head
     chain.include(block2);
     assert_eq!(hash3, chain.head().1.hash().unwrap());
+
+    drop(storage);
+
+    std::fs::remove_dir_all(randomdir).unwrap();
   }
 }

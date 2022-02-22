@@ -288,7 +288,7 @@ pub struct CascadingState<'c, D: BlockData> {
 }
 
 impl<'c, D: BlockData> State for CascadingState<'c, D> {
-  fn get(&self, address: &Pubkey) -> Option<&Account> {
+  fn get(&self, address: &Pubkey) -> Option<Account> {
     for current in self.iterator.clone() {
       if let Some(value) = current.value.block.state().get(address) {
         return Some(value);

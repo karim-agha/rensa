@@ -1,10 +1,3 @@
-use {
-  crate::consumer::Commitment,
-  consumer::BlockConsumers,
-  dbsync::DatabaseSync,
-  storage::PersitentStorage,
-};
-
 mod cli;
 mod consensus;
 mod consumer;
@@ -18,6 +11,7 @@ mod vm;
 
 use {
   crate::{
+    consumer::Commitment,
     network::NetworkEvent,
     primitives::{OptionalStreamExt, ToBase58String},
     vm::State,
@@ -32,10 +26,13 @@ use {
     ValidatorScheduleStream,
     Vote,
   },
+  consumer::BlockConsumers,
+  dbsync::DatabaseSync,
   futures::StreamExt,
   network::Network,
   producer::BlockProducer,
   rpc::ApiService,
+  storage::PersitentState,
   tracing::{debug, info, Level},
   vm::Finalized,
 };
@@ -97,10 +94,11 @@ async fn main() -> anyhow::Result<()> {
   let me = opts.keypair.public();
   let seed = genesis.hash()?.digest().try_into()?;
 
-  // the blockchain state.
-  // Persistance is not implemented yet, so using
-  // the gensis block as the last finalized block
-  let finalized = Finalized::new(&genesis);
+  // The blockchain state storage. This survives crashes, and
+  // anything that gets here has went thorugh the complete consensus
+  // process.
+  let storage = PersitentState::new(&genesis, opts.data_dir()?)?;
+  let finalized = Finalized::new(&genesis, &storage);
 
   // the transaction processing runtime
   let vm = vm::Machine::new(&genesis)?;
@@ -117,8 +115,7 @@ async fn main() -> anyhow::Result<()> {
   // those are components that ingest newly included,
   // confirmed and finalized blocks
   let consumers = BlockConsumers::new(vec![
-    Box::new(DatabaseSync::new()),
-    Box::new(PersitentStorage::new(opts.data_dir()?)?),
+    Box::new(DatabaseSync::new()), // also add block store later
   ]);
 
   // external client JSON API

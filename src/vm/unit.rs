@@ -109,7 +109,7 @@ impl<'s, 't> ExecutionUnit<'s, 't> {
             //
             // if it does not exist, it may be created by the
             // invoked contract, so it stays writable.
-            else if let Some(existing) = account_data {
+            else if let Some(ref existing) = account_data {
               // executable accounts are never writable
               if existing.executable {
                 writable = false;
@@ -131,9 +131,12 @@ impl<'s, 't> ExecutionUnit<'s, 't> {
           let account_view = AccountView {
             signer: a.signer,
             writable,
-            executable: account_data.map(|a| a.executable).unwrap_or(false),
-            owner: account_data.and_then(|d| d.owner),
-            data: account_data.and_then(|a| a.data.clone()),
+            executable: account_data
+              .as_ref()
+              .map(|a| a.executable)
+              .unwrap_or(false),
+            owner: account_data.as_ref().and_then(|d| d.owner),
+            data: account_data.as_ref().and_then(|a| a.data.clone()),
           };
           (a.address, account_view)
         })
@@ -174,10 +177,7 @@ impl<'s, 't> ExecutionUnit<'s, 't> {
     data: Option<Vec<u8>>,
   ) -> Result<StateDiff, ContractError> {
     if let Some(acc) = self.state.get(&address) {
-      self.set_account(address, Account {
-        data,
-        ..acc.clone()
-      })
+      self.set_account(address, Account { data, ..acc })
     } else {
       Err(ContractError::AccountDoesNotExist)
     }

@@ -83,6 +83,12 @@ impl Pubkey {
   }
 }
 
+impl AsRef<[u8]> for Pubkey {
+  fn as_ref(&self) -> &[u8] {
+    &self.0
+  }
+}
+
 impl Deref for Pubkey {
   type Target = [u8];
 
