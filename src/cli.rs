@@ -134,7 +134,7 @@ impl CliOpts {
   }
 
   /// Gets the data directory for the this chain.
-  /// The chain directory id is <top-level-data-dir>/<chain-id>/*
+  /// The chain directory is <top-level-data-dir>/<chain-id>/*
   pub fn data_dir(&self) -> Result<PathBuf, std::io::Error> {
     let chain_id = self.genesis()?.chain_id;
     let mut dir: PathBuf = shellexpand::full(self.data_dir.to_str().unwrap())

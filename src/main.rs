@@ -1,5 +1,14 @@
+use {
+  crate::consumer::Commitment,
+  consumer::BlockConsumers,
+  dbsync::DatabaseSync,
+  storage::PersitentStorage,
+};
+
 mod cli;
 mod consensus;
+mod consumer;
+mod dbsync;
 mod network;
 mod primitives;
 mod producer;
@@ -96,7 +105,7 @@ async fn main() -> anyhow::Result<()> {
   // the transaction processing runtime
   let vm = vm::Machine::new(&genesis)?;
 
-  // componsents of the consensus
+  // components of the consensus
   let mut chain = Chain::new(&genesis, &vm, finalized);
   let mut producer = BlockProducer::new(&genesis, &vm, opts.keypair.clone());
   let mut schedule = ValidatorScheduleStream::new(
@@ -104,6 +113,11 @@ async fn main() -> anyhow::Result<()> {
     genesis.genesis_time,
     genesis.slot_interval,
   );
+
+  let consumers = BlockConsumers::new(vec![
+    Box::new(DatabaseSync::new()),
+    Box::new(PersitentStorage::new()),
+  ]);
 
   // external client JSON API
   let mut apisvc = opts.rpc_endpoints().map(ApiService::new);
@@ -138,6 +152,7 @@ async fn main() -> anyhow::Result<()> {
           },
         }
       },
+
       // Block producer, builds new block when
       // it is current validators turn to produce
       // a new block
@@ -164,6 +179,7 @@ async fn main() -> anyhow::Result<()> {
             // don't duplicate votes if they were
             // already included be an accepted block.
             producer.exclude_votes(&block);
+            consumers.consume(block, Commitment::Included)?;
           }
           ChainEvent::BlockConfirmed { block, votes } => {
             info!(
@@ -173,6 +189,7 @@ async fn main() -> anyhow::Result<()> {
               block.slot() / genesis.epoch_slots,
               block.state().hash().to_bytes().to_b58()
             );
+            consumers.consume(block, Commitment::Confirmed)?;
           }
           ChainEvent::BlockFinalized { block, votes } => {
             info!(
@@ -182,6 +199,7 @@ async fn main() -> anyhow::Result<()> {
               block.slot() / genesis.epoch_slots,
               block.state().hash().to_bytes().to_b58()
             );
+            consumers.consume(block, Commitment::Finalized)?;
           }
         }
       }
