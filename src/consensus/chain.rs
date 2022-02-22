@@ -375,7 +375,7 @@ impl<'g, 'f, D: BlockData> Chain<'g, D> {
     let mut emit_event = |block: &Executed<D>| {
       self
         .events
-        .push_back(ChainEvent::BlockIncluded(block.clone()));
+        .push_front(ChainEvent::BlockIncluded(block.clone()));
     };
 
     if block.parent == self.finalized.hash().unwrap() {
@@ -588,7 +588,7 @@ impl<'g, 'f, D: BlockData> Chain<'g, D> {
           .ownvotes
           .insert(epoch, (justification_hash, target_hash));
 
-        self.events.push_back(ChainEvent::Vote {
+        self.events.push_front(ChainEvent::Vote {
           target: target_hash,
           justification: justification_hash,
         });
@@ -699,7 +699,7 @@ impl<'g, 'f, D: BlockData> Chain<'g, D> {
       // signal to external listeners that a block was finalized
       self
         .events
-        .push_back(ChainEvent::BlockFinalized { block, votes });
+        .push_front(ChainEvent::BlockFinalized { block, votes });
       return true;
     }
     false

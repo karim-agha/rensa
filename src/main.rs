@@ -114,9 +114,11 @@ async fn main() -> anyhow::Result<()> {
     genesis.slot_interval,
   );
 
+  // those are components that ingest newly included,
+  // confirmed and finalized blocks
   let consumers = BlockConsumers::new(vec![
     Box::new(DatabaseSync::new()),
-    Box::new(PersitentStorage::new()),
+    Box::new(PersitentStorage::new(opts.data_dir()?)?),
   ]);
 
   // external client JSON API

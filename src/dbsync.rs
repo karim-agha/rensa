@@ -3,7 +3,7 @@ use {
     consumer::{BlockConsumer, Commitment},
     vm::{Executed, Transaction},
   },
-  tracing::info,
+  tracing::debug,
 };
 
 /// This type is used to sync updates to the blockchain with an
@@ -24,6 +24,6 @@ impl BlockConsumer<Vec<Transaction>> for DatabaseSync {
     block: &Executed<Vec<Transaction>>,
     commitment: Commitment,
   ) {
-    info!("dbsync consuming {} at {commitment:?}", block.underlying);
+    debug!("dbsync consuming {} at {commitment:?}", block.underlying);
   }
 }

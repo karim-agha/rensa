@@ -13,7 +13,10 @@ use {
   },
   once_cell::sync::OnceCell,
   serde::{Deserialize, Serialize},
-  std::{collections::BTreeMap, ops::Deref},
+  std::{
+    collections::{btree_map::IntoIter, BTreeMap},
+    ops::Deref,
+  },
   thiserror::Error,
 };
 
@@ -201,6 +204,15 @@ impl State for StateDiff {
       }
       MultihashCode::Sha3_256.wrap(hasher.finalize()).unwrap()
     })
+  }
+}
+
+impl IntoIterator for StateDiff {
+  type IntoIter = IntoIter<Pubkey, Account>;
+  type Item = (Pubkey, Account);
+
+  fn into_iter(self) -> Self::IntoIter {
+    self.data.into_iter()
   }
 }
 
