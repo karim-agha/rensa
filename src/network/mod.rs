@@ -131,8 +131,7 @@ impl<D: BlockData> Network<D> {
           * (genesis.epoch_slots as u32 * 2),
         // keep informing all peers about all messages received for the last
         // epoch
-        lazy_push_interval: genesis.slot_interval * genesis.epoch_slots as u32,
-        network_size: genesis.validators.len(),
+        network_size: genesis.validators.len() * 2,
         ..Config::default()
       }),
       id.public().to_peer_id(),

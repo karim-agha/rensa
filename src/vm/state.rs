@@ -3,7 +3,7 @@ use {
   crate::{
     consensus::{Block, BlockData, Genesis},
     primitives::{Account, Pubkey},
-    storage::PersitentState,
+    storage::PersistentState,
   },
   multihash::{
     Code as MultihashCode,
@@ -94,11 +94,11 @@ impl<'s1, 's2> State for Overlayed<'s1, 's2> {
 #[derive(Debug)]
 pub struct Finalized<'f, D: BlockData> {
   underlying: Box<dyn Block<D>>,
-  state: &'f PersitentState,
+  state: &'f PersistentState,
 }
 
 impl<'f, D: BlockData> Finalized<'f, D> {
-  pub fn new(genesis: &Genesis<D>, storage: &'f PersitentState) -> Self {
+  pub fn new(genesis: &Genesis<D>, storage: &'f PersistentState) -> Self {
     Self {
       underlying: Box::new(genesis.clone()),
       state: storage,

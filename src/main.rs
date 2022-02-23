@@ -32,7 +32,7 @@ use {
   network::Network,
   producer::BlockProducer,
   rpc::ApiService,
-  storage::PersitentState,
+  storage::PersistentState,
   tracing::{debug, info, Level},
   vm::Finalized,
 };
@@ -97,7 +97,7 @@ async fn main() -> anyhow::Result<()> {
   // The blockchain state storage. This survives crashes, and
   // anything that gets here has went thorugh the complete consensus
   // process.
-  let storage = PersitentState::new(&genesis, opts.data_dir()?)?;
+  let storage = PersistentState::new(&genesis, opts.data_dir()?)?;
   let finalized = Finalized::new(&genesis, &storage);
 
   // the transaction processing runtime
@@ -119,7 +119,9 @@ async fn main() -> anyhow::Result<()> {
   ]);
 
   // external client JSON API
-  let mut apisvc = opts.rpc_endpoints().map(ApiService::new);
+  let mut apisvc = opts
+    .rpc_endpoints()
+    .map(|addrs| ApiService::new(addrs, &storage));
 
   // validator runloop
   loop {

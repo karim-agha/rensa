@@ -107,11 +107,11 @@ impl Default for Config {
   /// with 10 000 nodes participating in it.
   fn default() -> Self {
     Self {
-      network_size: 10000,
+      network_size: 1000,
       active_view_factor: 1,
       passive_view_factor: 6,
       max_transmit_size: 1_024_000, // 1 MB
-      shuffle_interval: Duration::from_secs(30),
+      shuffle_interval: Duration::from_secs(60),
       lazy_push_interval: Duration::from_secs(2),
       history_window: Duration::from_secs(30),
       tick_frequency: Duration::from_millis(200),

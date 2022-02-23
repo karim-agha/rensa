@@ -2,8 +2,8 @@
   "chainId": "rensa-t1",
   "genesisTime": "2022-01-18T13:40:00Z",
   "slotInterval": "1s",
-  "epochSlots": 32,
-  "maxJustificationAge": 3,
+  "epochSlots": 8,
+  "maxJustificationAge": 8,
   "maxBlockSize": 5000000,
   "minimumStake": 1000,
   "maxInputAccounts": 32,
@@ -24,43 +24,43 @@
   "validators": [
     {
       "pubkey": "4AKRabNsRm6fgum4zmj5KH5qXGVLAKkxwr3U2Pt5ZXwF",
-      "stake": 2000000000
+      "stake": 11000
     },
     {
       "pubkey": "7jo1WoniBtewH7PuNhb8Lr58VuiGVEWPfaYiKffu9rYM",
-      "stake": 2400000000
+      "stake": 12000
     },
     {
       "pubkey": "6PfpWE27XzE2BRwXsPQWiTv2jRqZ6u9ybuetyACnAUC3",
-      "stake": 1800000000
+      "stake": 7000
     },
     {
       "pubkey": "BymTBKbFYtMbMif4jwZ6BXehd5Yo5VsYptzyUkR3dnqt",
-      "stake": 1200500000
+      "stake": 11000
     },
     {
       "pubkey": "2RkHq8C31BeX8jxv4ecc4KwXeGUgGkauDGFX2WMcEAbG",
-      "stake": 4100000000
+      "stake": 12000
     },
     {
       "pubkey": "8aVenhcQg1TEHr6afoLJVdr2XziwuKygvJxWgenLTNqc",
-      "stake": 1000000000
+      "stake": 7000
     },
     {
       "pubkey": "FrxG1Ch9hnkw6QeuHwsBFCMruCrTiWjgJpH8kJ13wCmi",
-      "stake": 3400000000
+      "stake": 11000
     },
     {
       "pubkey": "Ewubs8czjmgvbAdcsBbHaHJD82Mghjsm5duYE2jaB3mD",
-      "stake": 1000000000
+      "stake": 12000
     },
     {
       "pubkey": "CrPhwoyRt3FobHtf4Hypss4R7tGLWaxgLbWdTMdpxZXv",
-      "stake": 2100000000
+      "stake": 7000
     },
     {
       "pubkey": "2FKYTBGSSm9QqhaR2tKWjRpBA88nX34DpgZ8VzkwFKoL",
-      "stake": 2800000000
+      "stake": 10000
     }
   ]
 }

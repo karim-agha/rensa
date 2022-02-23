@@ -34,11 +34,11 @@ pub enum Error {
 /// such as the contents of recent blocks, etc, but the default
 /// Column Family is used for the accounts store.
 #[derive(Debug)]
-pub struct PersitentState {
+pub struct PersistentState {
   db: DB,
 }
 
-impl PersitentState {
+impl PersistentState {
   pub fn new<D: BlockData>(
     genesis: &Genesis<D>,
     directory: PathBuf,
@@ -71,7 +71,7 @@ impl PersitentState {
   }
 }
 
-impl State for PersitentState {
+impl State for PersistentState {
   fn get(&self, address: &Pubkey) -> Option<Account> {
     match self.db.get(address) {
       Ok(Some(value)) => Some(bincode::deserialize(&value).unwrap()),

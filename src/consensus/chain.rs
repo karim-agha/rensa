@@ -296,7 +296,10 @@ impl<'g, 'f, D: BlockData> Chain<'g, D> {
           let target = unsafe { &mut *target as &mut TreeNode<D> };
 
           // verify that the justification is a known finalized block
-          if !self.in_finalized_history(&vote.justification) {
+          // or an ancestor of the voted on block
+          if !self.in_finalized_history(&vote.justification)
+            && !target.is_descendant_of(&vote.justification)
+          {
             warn!(
               "Vote justification not found: {}",
               vote.justification.to_b58()
@@ -776,7 +779,7 @@ mod test {
         validator::Validator,
       },
       primitives::Keypair,
-      storage::PersitentState,
+      storage::PersistentState,
       vm::{self, Executable, Finalized, State, Transaction},
     },
     chrono::Utc,
@@ -816,7 +819,7 @@ mod test {
 
     let mut randomdir = std::env::temp_dir();
     randomdir.push("append_block_smoke");
-    let storage = PersitentState::new(&genesis, randomdir.clone()).unwrap();
+    let storage = PersistentState::new(&genesis, randomdir.clone()).unwrap();
     let finalized = Finalized::new(&genesis, &storage);
     let vm = vm::Machine::new(&genesis).unwrap();
     let mut chain = Chain::new(&genesis, &vm, finalized);
@@ -898,7 +901,7 @@ mod test {
 
     let mut randomdir = std::env::temp_dir();
     randomdir.push("append_blocks_out_of_order");
-    let storage = PersitentState::new(&genesis, randomdir.clone()).unwrap();
+    let storage = PersistentState::new(&genesis, randomdir.clone()).unwrap();
     let finalized = Finalized::new(&genesis, &storage);
 
     let vm = vm::Machine::new(&genesis).unwrap();

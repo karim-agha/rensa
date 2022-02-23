@@ -1,5 +1,6 @@
 use {
   super::ApiEvent,
+  crate::storage::PersistentState,
   axum::{
     routing::{get, post},
     Json,
@@ -15,12 +16,13 @@ use {
   },
 };
 
-pub struct ApiService {
+pub struct ApiService<'s> {
+  _storage: &'s PersistentState,
   out_events: VecDeque<ApiEvent>,
 }
 
-impl ApiService {
-  pub fn new(addrs: Vec<SocketAddr>) -> Self {
+impl<'s> ApiService<'s> {
+  pub fn new(addrs: Vec<SocketAddr>, storage: &'s PersistentState) -> Self {
     let svc = Router::new()
       .route(
         "/about",
@@ -53,6 +55,7 @@ impl ApiService {
     });
 
     Self {
+      _storage: storage,
       out_events: addrs
         .into_iter()
         .map(ApiEvent::ServiceInitialized)
@@ -61,7 +64,7 @@ impl ApiService {
   }
 }
 
-impl Stream for ApiService {
+impl Stream for ApiService<'_> {
   type Item = ApiEvent;
 
   fn poll_next(
