@@ -820,7 +820,7 @@ mod test {
     let mut randomdir = std::env::temp_dir();
     randomdir.push("append_block_smoke");
     let storage = PersistentState::new(&genesis, randomdir.clone()).unwrap();
-    let finalized = Finalized::new(&genesis, &storage);
+    let finalized = Finalized::new(Box::new(genesis.clone()), &storage);
     let vm = vm::Machine::new(&genesis).unwrap();
     let mut chain = Chain::new(&genesis, &vm, finalized);
 
@@ -902,7 +902,7 @@ mod test {
     let mut randomdir = std::env::temp_dir();
     randomdir.push("append_blocks_out_of_order");
     let storage = PersistentState::new(&genesis, randomdir.clone()).unwrap();
-    let finalized = Finalized::new(&genesis, &storage);
+    let finalized = Finalized::new(Box::new(genesis.clone()), &storage);
 
     let vm = vm::Machine::new(&genesis).unwrap();
     let mut chain = Chain::new(&genesis, &vm, finalized);

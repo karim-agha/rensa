@@ -1,7 +1,7 @@
 use {
   super::Executed,
   crate::{
-    consensus::{Block, BlockData, Genesis},
+    consensus::{Block, BlockData},
     primitives::{Account, Pubkey},
     storage::PersistentState,
   },
@@ -98,9 +98,9 @@ pub struct Finalized<'f, D: BlockData> {
 }
 
 impl<'f, D: BlockData> Finalized<'f, D> {
-  pub fn new(genesis: &Genesis<D>, storage: &'f PersistentState) -> Self {
+  pub fn new(block: Box<dyn Block<D>>, storage: &'f PersistentState) -> Self {
     Self {
-      underlying: Box::new(genesis.clone()),
+      underlying: block,
       state: storage,
     }
   }

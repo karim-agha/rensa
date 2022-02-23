@@ -32,7 +32,7 @@ use {
   network::Network,
   producer::BlockProducer,
   rpc::ApiService,
-  storage::PersistentState,
+  storage::{BlockStore, PersistentState},
   tracing::{debug, info, Level},
   vm::Finalized,
 };
@@ -98,7 +98,17 @@ async fn main() -> anyhow::Result<()> {
   // anything that gets here has went thorugh the complete consensus
   // process.
   let storage = PersistentState::new(&genesis, opts.data_dir()?)?;
-  let finalized = Finalized::new(&genesis, &storage);
+  let blocks_store = BlockStore::new(opts.data_dir()?)?;
+
+  // get the latest finalized block that this validator is aware of
+  // so far. It is is the first run of a validator, then it is going
+  // to be the genesis block.
+  let latest_block: Box<dyn Block<_>> = match blocks_store.latest() {
+    Some(b) => Box::new(b),
+    None => Box::new(genesis.clone()),
+  };
+
+  let finalized = Finalized::new(latest_block, &storage);
 
   // the transaction processing runtime
   let vm = vm::Machine::new(&genesis)?;
@@ -115,7 +125,8 @@ async fn main() -> anyhow::Result<()> {
   // those are components that ingest newly included,
   // confirmed and finalized blocks
   let consumers = BlockConsumers::new(vec![
-    Box::new(DatabaseSync::new()), // also add block store later
+    Box::new(DatabaseSync::new()), // exports data changes to external DBs
+    Box::new(blocks_store),        // persists blocks that have been finalized
   ]);
 
   // external client JSON API

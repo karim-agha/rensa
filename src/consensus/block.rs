@@ -39,6 +39,7 @@ pub trait BlockData:
   + Executable
   + Serialize
   + Send
+  + Sync
   + 'static
   + for<'a> Deserialize<'a>
 {
@@ -54,6 +55,7 @@ where
     + Executable
     + Serialize
     + Send
+    + Sync
     + 'static
     + for<'a> Deserialize<'a>,
 {

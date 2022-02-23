@@ -1,4 +1,5 @@
 use {
+  super::Error,
   crate::{
     consensus::{BlockData, Genesis},
     primitives::{Account, Pubkey},
@@ -6,17 +7,7 @@ use {
   },
   rocksdb::{Options, WriteBatch, WriteOptions, DB},
   std::path::PathBuf,
-  thiserror::Error,
 };
-
-#[derive(Debug, Error)]
-pub enum Error {
-  #[error("Serialization Error: {0}")]
-  SerializationError(#[from] bincode::Error),
-
-  #[error("Storage Engine Error: {0}")]
-  StorageEngineError(#[from] rocksdb::Error),
-}
 
 /// This type represents a storage that is persisted on disk and survives node
 /// crashes and restarts. It is used for state that is finelized and is
@@ -43,6 +34,10 @@ impl PersistentState {
     genesis: &Genesis<D>,
     directory: PathBuf,
   ) -> Result<Self, Error> {
+    let mut directory = directory;
+    directory.push("state");
+    std::fs::create_dir_all(directory.clone())?;
+
     let mut db_opts = Options::default();
     db_opts.create_if_missing(true);
 
@@ -67,7 +62,7 @@ impl PersistentState {
     self
       .db
       .write_opt(batch, &write_opts)
-      .map_err(Error::StorageEngineError)
+      .map_err(Error::StorageEngine)
   }
 }
 

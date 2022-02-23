@@ -51,6 +51,13 @@ pub struct CliOpts {
     default_value = "~/.rensa/"
   )]
   pub data_dir: PathBuf,
+
+  #[clap(
+    long,
+    help = "if set this node will store and provide blockchain blocks and \
+            state history through IPFS"
+  )]
+  pub archive: bool,
 }
 
 impl CliOpts {
