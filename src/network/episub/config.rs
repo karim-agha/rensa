@@ -47,7 +47,7 @@ pub struct Config {
   /// with a random active peer
   pub shuffle_interval: Duration,
 
-  /// How the time range of IHAVE messages
+  /// How long to keep pushing the IHAVE messages
   /// to lazy push peers in the plumtree.
   pub lazy_push_interval: Duration,
 

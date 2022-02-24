@@ -1,3 +1,5 @@
+use tracing_subscriber::EnvFilter;
+
 mod cli;
 mod consensus;
 mod consumer;
@@ -56,11 +58,12 @@ fn print_essentials(opts: &CliOpts) -> anyhow::Result<()> {
   Ok(())
 }
 
-#[tokio::main]
+#[tokio::main(flavor = "multi_thread")]
 async fn main() -> anyhow::Result<()> {
   let opts = CliOpts::parse();
 
   tracing_subscriber::fmt()
+    .with_env_filter(EnvFilter::from_default_env())
     .with_max_level(match opts.verbose {
       1 => Level::DEBUG,
       2 => Level::TRACE,
