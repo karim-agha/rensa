@@ -1,11 +1,16 @@
 use {
   super::ApiEvent,
-  crate::storage::PersistentState,
+  crate::{
+    consensus::{BlockData, Genesis},
+    consumer::{BlockConsumer, Commitment},
+    storage::{BlockStore, PersistentState},
+    vm::Executed,
+  },
   axum::{
     routing::{get, post},
-    Json,
     Router,
   },
+  axum_extra::response::ErasedJson,
   futures::Stream,
   serde_json::json,
   std::{
@@ -16,30 +21,46 @@ use {
   },
 };
 
-pub struct ApiService<'s> {
-  _storage: &'s PersistentState,
+pub struct ApiService<D: BlockData> {
+  _state: PersistentState,
+  _blocks: BlockStore<D>,
   out_events: VecDeque<ApiEvent>,
 }
 
-impl<'s> ApiService<'s> {
-  pub fn new(addrs: Vec<SocketAddr>, storage: &'s PersistentState) -> Self {
+impl<D: BlockData> ApiService<D> {
+  pub fn new(
+    addrs: Vec<SocketAddr>,
+    state: PersistentState,
+    blocks: BlockStore<D>,
+    genesis: Genesis<D>,
+  ) -> Self {
+    let blocksc = blocks.clone();
     let svc = Router::new()
       .route(
         "/about",
-        get(|| async {
-          Json(json! ({
+        get(|| async move {
+          let height = blocksc
+            .latest(Commitment::Finalized)
+            .map(|b| b.height)
+            .unwrap_or(0);
+
+          ErasedJson::pretty(json! ({
             "system": {
               "name": "Rensa",
               "version": env!("CARGO_PKG_VERSION")
-            }
+            },
+            "finalized": {
+              "height": height,
+            },
+            "genesis": genesis,
           }))
         }),
       )
       .route(
         "/send_transaction",
         post(|| async {
-          Json(json! ({
-            "status": "accepted"
+          ErasedJson::pretty(json! ({
+            "status": "not_implemented"
           }))
         }),
       );
@@ -55,7 +76,8 @@ impl<'s> ApiService<'s> {
     });
 
     Self {
-      _storage: storage,
+      _blocks: blocks,
+      _state: state,
       out_events: addrs
         .into_iter()
         .map(ApiEvent::ServiceInitialized)
@@ -64,7 +86,14 @@ impl<'s> ApiService<'s> {
   }
 }
 
-impl Stream for ApiService<'_> {
+impl<D: BlockData> BlockConsumer<D> for ApiService<D> {
+  fn consume(&self, _block: &Executed<D>, _commitment: Commitment) {
+    // todo: ingest confirmed but not finalized blocks
+  }
+}
+
+impl<D: BlockData> Unpin for ApiService<D> {}
+impl<D: BlockData> Stream for ApiService<D> {
   type Item = ApiEvent;
 
   fn poll_next(

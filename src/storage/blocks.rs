@@ -5,13 +5,13 @@ use {
     consumer::{BlockConsumer, Commitment},
     vm::Executed,
   },
-  rocksdb::{Options, DB},
-  std::{marker::PhantomData, path::PathBuf},
+  rocksdb::{FlushOptions, Options, DB},
+  std::{marker::PhantomData, path::PathBuf, sync::Arc},
 };
 
 #[derive(Debug)]
 pub struct BlockStore<D: BlockData> {
-  db: DB,
+  db: Arc<DB>,
   _marker: PhantomData<D>,
 }
 
@@ -23,19 +23,35 @@ impl<D: BlockData> BlockStore<D> {
 
     let mut db_opts = Options::default();
     db_opts.create_if_missing(true);
+    db_opts.set_use_fsync(true);
+    db_opts.set_use_direct_reads(true);
+    db_opts.set_use_direct_io_for_flush_and_compaction(true);
 
     Ok(Self {
-      db: DB::open(&db_opts, directory)?,
+      db: Arc::new(DB::open(&db_opts, directory)?),
       _marker: PhantomData,
     })
   }
 
-  pub fn latest(&self) -> Option<Produced<D>> {
-    let mut iter = self.db.raw_iterator();
-    iter.seek_to_last();
-    iter
-      .value()
-      .and_then(|bytes| bincode::deserialize(bytes).ok())
+  pub fn latest(&self, commitment: Commitment) -> Option<Produced<D>> {
+    if let Commitment::Finalized = commitment {
+      let mut iter = self.db.raw_iterator();
+      iter.seek_to_last();
+      iter
+        .value()
+        .and_then(|bytes| bincode::deserialize(bytes).ok())
+    } else {
+      None // todo
+    }
+  }
+}
+
+impl<D: BlockData> Clone for BlockStore<D> {
+  fn clone(&self) -> Self {
+    Self {
+      db: Arc::clone(&self.db),
+      _marker: PhantomData,
+    }
   }
 }
 
@@ -45,10 +61,15 @@ impl<D: BlockData> BlockConsumer<D> for BlockStore<D> {
       self
         .db
         .put(
-          block.height.to_le_bytes(),
+          block.height.to_ne_bytes(),
           bincode::serialize(&block.underlying).unwrap(),
         )
         .unwrap();
+
+      let mut flushopts = FlushOptions::new();
+      flushopts.set_wait(true);
+      self.db.flush_opt(&flushopts).unwrap();
+      self.db.flush_wal(true).unwrap();
     }
   }
 }

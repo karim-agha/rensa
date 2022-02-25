@@ -106,10 +106,11 @@ async fn main() -> anyhow::Result<()> {
   // get the latest finalized block that this validator is aware of
   // so far. It is is the first run of a validator, then it is going
   // to be the genesis block.
-  let latest_block: Box<dyn Block<_>> = match blocks_store.latest() {
-    Some(b) => Box::new(b),
-    None => Box::new(genesis.clone()),
-  };
+  let latest_block: Box<dyn Block<_>> =
+    match blocks_store.latest(Commitment::Finalized) {
+      Some(b) => Box::new(b),
+      None => Box::new(genesis.clone()),
+    };
 
   let finalized = Finalized::new(latest_block, &storage);
 
@@ -125,17 +126,22 @@ async fn main() -> anyhow::Result<()> {
     genesis.slot_interval,
   );
 
+  // external client JSON API
+  let mut apisvc = opts.rpc_endpoints().map(|addrs| {
+    Box::new(ApiService::new(
+      addrs,
+      storage.clone(),
+      blocks_store.clone(),
+      genesis.clone(),
+    ))
+  });
+
   // those are components that ingest newly included,
   // confirmed and finalized blocks
   let consumers = BlockConsumers::new(vec![
     Box::new(DatabaseSync::new()), // exports data changes to external DBs
-    Box::new(blocks_store),        // persists blocks that have been finalized
+    Box::new(blocks_store.clone()), // persists blocks that have been finalized
   ]);
-
-  // external client JSON API
-  let mut apisvc = opts
-    .rpc_endpoints()
-    .map(|addrs| ApiService::new(addrs, &storage));
 
   // validator runloop
   loop {

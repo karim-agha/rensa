@@ -6,7 +6,7 @@ use {
     vm::{State, StateDiff, StateError},
   },
   rocksdb::{Options, WriteBatch, WriteOptions, DB},
-  std::path::PathBuf,
+  std::{path::PathBuf, sync::Arc},
 };
 
 /// This type represents a storage that is persisted on disk and survives node
@@ -26,7 +26,7 @@ use {
 /// Column Family is used for the accounts store.
 #[derive(Debug)]
 pub struct PersistentState {
-  db: DB,
+  db: Arc<DB>,
 }
 
 impl PersistentState {
@@ -48,14 +48,14 @@ impl PersistentState {
       }
     }
 
-    Ok(Self { db })
+    Ok(Self { db: Arc::new(db) })
   }
 
   /// Applies a state diff from a finalized block
   pub fn apply(&self, diff: StateDiff) -> Result<(), Error> {
     let mut batch = WriteBatch::default();
     for (addr, account) in diff.into_iter() {
-      batch.put(addr.to_vec(), bincode::serialize(&account)?);
+      batch.put(addr, bincode::serialize(&account)?);
     }
     let mut write_opts = WriteOptions::default();
     write_opts.set_sync(true);
@@ -91,5 +91,13 @@ impl State for PersistentState {
                      // is too expensive for global state and doesn't fit this
                      // blockchain design. State hashes are only calculated on
                      // state diffs between blocks.
+  }
+}
+
+impl Clone for PersistentState {
+  fn clone(&self) -> Self {
+    Self {
+      db: Arc::clone(&self.db),
+    }
   }
 }

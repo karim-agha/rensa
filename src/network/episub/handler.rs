@@ -5,8 +5,8 @@ use asynchronous_codec::Framed;
 use futures::{Sink, StreamExt};
 use libp2p::core::{InboundUpgrade, OutboundUpgrade};
 use libp2p::swarm::{
-  KeepAlive, NegotiatedSubstream, ProtocolsHandler, ProtocolsHandlerEvent,
-  ProtocolsHandlerUpgrErr, SubstreamProtocol,
+  KeepAlive, NegotiatedSubstream, ConnectionHandler, ConnectionHandlerEvent,
+  ConnectionHandlerUpgrErr, SubstreamProtocol,
 };
 use std::{
   collections::VecDeque,
@@ -57,11 +57,11 @@ pub struct EpisubHandler {
   outbound_queue: VecDeque<rpc::Rpc>,
 }
 
-type EpisubHandlerEvent = ProtocolsHandlerEvent<
-  <EpisubHandler as ProtocolsHandler>::OutboundProtocol,
-  <EpisubHandler as ProtocolsHandler>::OutboundOpenInfo,
-  <EpisubHandler as ProtocolsHandler>::OutEvent,
-  <EpisubHandler as ProtocolsHandler>::Error,
+type EpisubHandlerEvent = ConnectionHandlerEvent<
+  <EpisubHandler as ConnectionHandler>::OutboundProtocol,
+  <EpisubHandler as ConnectionHandler>::OutboundOpenInfo,
+  <EpisubHandler as ConnectionHandler>::OutEvent,
+  <EpisubHandler as ConnectionHandler>::Error,
 >;
 
 impl EpisubHandler {
@@ -83,7 +83,7 @@ impl EpisubHandler {
   }
 }
 
-impl ProtocolsHandler for EpisubHandler {
+impl ConnectionHandler for EpisubHandler {
   type InEvent = rpc::Rpc;
   type OutEvent = rpc::Rpc;
   type Error = EpisubHandlerError;
@@ -139,7 +139,7 @@ impl ProtocolsHandler for EpisubHandler {
   fn inject_dial_upgrade_error(
     &mut self,
     _: Self::OutboundOpenInfo,
-    error: ProtocolsHandlerUpgrErr<
+    error: ConnectionHandlerUpgrErr<
       <Self::OutboundProtocol as OutboundUpgrade<NegotiatedSubstream>>::Error,
     >,
   ) {
@@ -181,7 +181,7 @@ impl EpisubHandler {
             Poll::Ready(Some(Ok(message))) => {
               self.inbound_substream =
                 Some(InboundSubstreamState::WaitingInput(substream));
-              return Poll::Ready(ProtocolsHandlerEvent::Custom(message));
+              return Poll::Ready(ConnectionHandlerEvent::Custom(message));
             }
             Poll::Ready(Some(Err(error))) => {
               warn!("inbound stream error: {:?}", error);
@@ -267,13 +267,13 @@ impl EpisubHandler {
                 }
                 Err(e) => {
                   error!("Error sending message: {}", e);
-                  return Poll::Ready(ProtocolsHandlerEvent::Close(e));
+                  return Poll::Ready(ConnectionHandlerEvent::Close(e));
                 }
               }
             }
             Poll::Ready(Err(e)) => {
               error!("outbound substream error while sending message: {:?}", e);
-              return Poll::Ready(ProtocolsHandlerEvent::Close(e));
+              return Poll::Ready(ConnectionHandlerEvent::Close(e));
             }
             Poll::Pending => {
               self.keep_alive = KeepAlive::Yes;
@@ -290,7 +290,7 @@ impl EpisubHandler {
                 Some(OutboundSubstreamState::WaitingOutput(substream));
             }
             Poll::Ready(Err(e)) => {
-              return Poll::Ready(ProtocolsHandlerEvent::Close(e))
+              return Poll::Ready(ConnectionHandlerEvent::Close(e))
             }
             Poll::Pending => {
               self.keep_alive = KeepAlive::Yes;
@@ -311,7 +311,7 @@ impl EpisubHandler {
             }
             Poll::Ready(Err(e)) => {
               warn!("Outbound substream error while closing: {:?}", e);
-              return Poll::Ready(ProtocolsHandlerEvent::Close(
+              return Poll::Ready(ConnectionHandlerEvent::Close(
                 io::Error::new(
                   io::ErrorKind::BrokenPipe,
                   "Failed to close outbound substream",
@@ -339,7 +339,7 @@ impl EpisubHandler {
           self.outbound_substream =
             Some(OutboundSubstreamState::SubstreamRequested);
           return Poll::Ready(
-            ProtocolsHandlerEvent::OutboundSubstreamRequest {
+            ConnectionHandlerEvent::OutboundSubstreamRequest {
               protocol: self.listen_protocol.clone(),
             },
           );
