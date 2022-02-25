@@ -5,7 +5,7 @@ use {
     consumer::{BlockConsumer, Commitment},
     vm::Executed,
   },
-  rocksdb::{FlushOptions, Options, DB},
+  rocksdb::DB,
   std::{marker::PhantomData, path::PathBuf, sync::Arc},
 };
 
@@ -21,14 +21,8 @@ impl<D: BlockData> BlockStore<D> {
     directory.push("blocks");
     std::fs::create_dir_all(directory.clone())?;
 
-    let mut db_opts = Options::default();
-    db_opts.create_if_missing(true);
-    db_opts.set_use_fsync(true);
-    db_opts.set_use_direct_reads(true);
-    db_opts.set_use_direct_io_for_flush_and_compaction(true);
-
     Ok(Self {
-      db: Arc::new(DB::open(&db_opts, directory)?),
+      db: Arc::new(DB::open_default(directory)?),
       _marker: PhantomData,
     })
   }
@@ -61,15 +55,10 @@ impl<D: BlockData> BlockConsumer<D> for BlockStore<D> {
       self
         .db
         .put(
-          block.height.to_ne_bytes(),
+          block.height.to_be_bytes(), // big endian for lexographic byte order
           bincode::serialize(&block.underlying).unwrap(),
         )
         .unwrap();
-
-      let mut flushopts = FlushOptions::new();
-      flushopts.set_wait(true);
-      self.db.flush_opt(&flushopts).unwrap();
-      self.db.flush_wal(true).unwrap();
     }
   }
 }
