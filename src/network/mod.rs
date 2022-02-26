@@ -154,7 +154,7 @@ impl<D: BlockData> Network<D> {
       .subscribe(format!("/{}/block", &chainid));
     swarm
       .behaviour_mut()
-      .subscribe(format!("/{}/missing", &chainid));
+      .subscribe(format!("/{}/reply", &chainid));
     swarm.behaviour_mut().subscribe(format!("/{}/tx", &chainid));
 
     listenaddrs.for_each(|addr| {
