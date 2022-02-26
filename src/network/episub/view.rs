@@ -581,7 +581,7 @@ impl Future for HyParView {
       // This is a way for mitigating a phenomenon where all peers
       // have identical shuffle itervals and they all start shuffling
       // at once, this leads to unnessesary network churn with no additional
-      // benefit as, each shuffle populates the passive views of all peers
+      // benefit as each shuffle populates the passive views of all peers
       // within few hops of it.
       let sampler = Uniform::new(0.0, 1.0);
       let sample = rand::thread_rng().sample(sampler);

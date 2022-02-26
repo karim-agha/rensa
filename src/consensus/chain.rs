@@ -48,6 +48,7 @@ use {
     collections::{hash_map::Entry, HashMap, HashSet, VecDeque},
     pin::Pin,
     task::{Context, Poll},
+    time::Instant,
   },
   tracing::{debug, warn},
 };
@@ -58,6 +59,8 @@ pub enum ChainEvent<D: BlockData> {
     target: Multihash,
     justification: Multihash,
   },
+  BlockMissing(Multihash),
+  BlockReplayed(Produced<D>),
   BlockIncluded(Executed<D>),
   BlockConfirmed {
     block: Executed<D>,
@@ -112,7 +115,15 @@ pub struct Chain<'g, D: BlockData> {
   ///
   /// Otherwise, incoming blocks that have a parent inside
   /// the orphans collection are attached to the orphan tree.
-  orphans: HashMap<Multihash, Vec<Produced<D>>>,
+  ///
+  /// The value stored by this collection is the list of blocks
+  /// that are waiting for the parent to arrive, and the time when
+  /// this parent appeared on the list of missing parents.
+  ///
+  /// This time is used to trigger a block repley in case the p2p
+  /// protocol didn't succeed in recovering a lost gossip through
+  /// its mechanisms.
+  orphans: HashMap<Multihash, (Instant, Vec<Produced<D>>)>,
 
   /// Votes that have not matched any target land in here.
   /// Once the target arrives, then those votes are counted.
@@ -162,28 +173,6 @@ impl<'g, D: BlockData> Chain<'g, D> {
         .collect(),
       virtual_machine: machine,
     }
-  }
-
-  /// Returns the very first block of the blockchain
-  /// that contains initial state setup and various
-  /// chain configurations.
-  fn _genesis(&self) -> &'g block::Genesis<D> {
-    self.genesis
-  }
-
-  /// Returns the last finalized block in the chain.
-  ///
-  /// Blocks that reached finality will never be reverted under
-  /// any circumstances.
-  ///
-  /// If no block has been finalized yet, then the genesis block
-  /// hash is used as the last finalized block.
-  ///
-  /// This value is used as the justification when voting for new
-  /// blocks, also the last finalized block is the root of the
-  /// current fork tree.
-  fn _finalized(&self) -> &Finalized<D> {
-    &self.finalized
   }
 
   /// Returns the block that is currently considered the
@@ -427,7 +416,7 @@ impl<'g, 'f, D: BlockData> Chain<'g, D> {
   /// orphan blocks that found its parent and if so, inserts
   /// them recursively into the forktree.
   fn match_orphans(&mut self, parent_hash: Multihash) {
-    if let Some(orphans) = self.orphans.remove(&parent_hash) {
+    if let Some((_, orphans)) = self.orphans.remove(&parent_hash) {
       debug!(
         "found {} orphan(s) of block {}",
         orphans.len(),
@@ -475,10 +464,10 @@ impl<'g, 'f, D: BlockData> Chain<'g, D> {
     );
     match self.orphans.entry(parent) {
       Entry::Occupied(mut orphans) => {
-        orphans.get_mut().push(block);
+        orphans.get_mut().1.push(block);
       }
       Entry::Vacant(v) => {
-        v.insert(vec![block]);
+        v.insert((Instant::now(), vec![block]));
       }
     };
   }
@@ -707,6 +696,27 @@ impl<'g, 'f, D: BlockData> Chain<'g, D> {
     }
     false
   }
+
+  /// If a block is lost for too long and orphans are waiting for
+  /// too long for their parent, explicitly ask all peers to replay
+  /// that specific block, otherwise consensus will be halted forever.
+  ///
+  /// When a replay request is issued for a given block, the timer is reset
+  /// and re-requested after that interval.
+  /// 
+  /// At the moment blocks are considered missing if the were not received
+  /// for longer then half an epoch since its first reported.
+  fn request_lost_blocks(&mut self) {
+    let epoch_duration =
+        self.genesis.slot_interval * self.genesis.epoch_slots as u32;
+      let missing_threshold = epoch_duration / 2;
+    for (missing, (since, _)) in self.orphans.iter_mut() {
+      if Instant::now().duration_since(*since) > missing_threshold {
+        *since = Instant::now(); // reset clock on the missing timer
+        self.events.push_front(ChainEvent::BlockMissing(*missing));
+      }
+    }
+  }
 }
 
 impl<'g, D: BlockData> Chain<'g, D> {
@@ -720,6 +730,10 @@ impl<'g, D: BlockData> Chain<'g, D> {
       }
     }
     while self.try_finalize_roots() {}
+
+    // unstuck the consensus of it is missing blocks
+    // for too long.
+    self.request_lost_blocks();
   }
 
   /// Invoked whenever a block reaches finality
@@ -742,6 +756,19 @@ impl<'g, D: BlockData> Chain<'g, D> {
     self
       .finalized_history
       .retain(|e, _| e >= &epoch.saturating_sub(window));
+  }
+}
+
+impl<'g, D: BlockData> Chain<'g, D> {
+  pub fn try_replay_block(&mut self, hash: Multihash) {
+    for root in &self.forktrees {
+      if let Some(block) = root.get(&hash) {
+        self.events.push_front(ChainEvent::BlockReplayed(
+          block.value.block.underlying.clone(),
+        ));
+        return;
+      }
+    }
   }
 }
 

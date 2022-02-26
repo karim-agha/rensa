@@ -50,7 +50,7 @@ impl ApiService {
 
     let svc = Router::new()
       .route("/info", get(serve_info::<D>))
-      .route("/send_transaction", post(serve_send_transaction))
+      .route("/transaction", post(serve_send_transaction))
       .layer(AddExtensionLayer::new(shared_state));
 
     addrs.iter().cloned().for_each(|addr| {

@@ -1,3 +1,5 @@
+use {crate::primitives::ToBase58String, multihash::Multihash};
+
 mod episub;
 
 use {
@@ -69,6 +71,7 @@ async fn create_transport(
 #[allow(clippy::large_enum_variant)]
 #[derive(Debug, Clone)]
 pub enum NetworkEvent<D: BlockData> {
+  MissingBlock(Multihash),
   BlockReceived(Produced<D>),
   VoteReceived(Vote),
 }
@@ -79,6 +82,7 @@ pub enum NetworkEvent<D: BlockData> {
 #[derive(Debug, Clone)]
 pub enum NetworkCommand<D: BlockData> {
   Connect(Multiaddr),
+  GossipMissing(Multihash),
   GossipBlock(Produced<D>),
   GossipVote(Vote),
 }
@@ -148,6 +152,9 @@ impl<D: BlockData> Network<D> {
     swarm
       .behaviour_mut()
       .subscribe(format!("/{}/block", &chainid));
+    swarm
+      .behaviour_mut()
+      .subscribe(format!("/{}/missing", &chainid));
     swarm.behaviour_mut().subscribe(format!("/{}/tx", &chainid));
 
     listenaddrs.for_each(|addr| {
@@ -182,6 +189,16 @@ impl<D: BlockData> Network<D> {
                   }
                   Err(e) => error!("Failed to deserialize block: {e}"),
                 }
+              } else if topic == format!("/{}/replay", chainid) {
+                match Multihash::from_bytes(&payload) {
+                  Ok(block_hash) => {
+                    debug!(
+                      "received request for a missiong block replay {} through gossip",
+                      payload.to_b58());
+                    netin_tx.send(NetworkEvent::MissingBlock(block_hash)).unwrap();
+                  }
+                  Err(e) => error!("Failed to deserialize missing block hash: {e}"),
+                }
               } else {
                 warn!("Received a message on an unexpected topic {topic}");
               }
@@ -193,6 +210,14 @@ impl<D: BlockData> Network<D> {
                 if let Err(e) = swarm.dial(addr.clone()) {
                   error!("Dialing peer {addr} failed: {e}");
                 }
+              }
+              NetworkCommand::GossipMissing(block_hash) => {
+                swarm
+                .behaviour_mut()
+                .publish(
+                  &format!("/{}/replay", chainid),
+                  block_hash.to_bytes())
+                .unwrap();
               }
               NetworkCommand::GossipBlock(block) => {
                 swarm
@@ -241,6 +266,13 @@ impl<D: BlockData> Network<D> {
     block: Produced<D>,
   ) -> Result<(), SendError<NetworkCommand<D>>> {
     self.netout.send(NetworkCommand::GossipBlock(block))
+  }
+
+  pub fn gossip_missing(
+    &mut self,
+    hash: Multihash,
+  ) -> Result<(), SendError<NetworkCommand<D>>> {
+    self.netout.send(NetworkCommand::GossipMissing(hash))
   }
 
   pub async fn poll(&mut self) -> Option<NetworkEvent<D>> {

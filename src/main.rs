@@ -171,6 +171,9 @@ async fn main() -> anyhow::Result<()> {
           NetworkEvent::VoteReceived(vote) => {
             producer.record_vote(vote);
           },
+          NetworkEvent::MissingBlock(block_hash) => {
+            chain.try_replay_block(block_hash);
+          }
         }
       },
 
@@ -191,6 +194,17 @@ async fn main() -> anyhow::Result<()> {
               target,
               justification))?;
           },
+          ChainEvent::BlockMissing(hash) => {
+            info!(
+              "Block {} is missing, requesting replay.",
+              hash.to_bytes().to_b58()
+            );
+            network.gossip_missing(hash)?
+          }
+          ChainEvent::BlockReplayed(block) => {
+            info!("Replaying block {block}");
+            network.gossip_block(block)?
+          }
           ChainEvent::BlockIncluded(block) => {
             info!(
               "included block {} [epoch {}] [state hash: {}]",
