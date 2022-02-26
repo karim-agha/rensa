@@ -720,11 +720,25 @@ impl<'g, 'f, D: BlockData> Chain<'g, D> {
     let epoch_duration =
       self.genesis.slot_interval * self.genesis.epoch_slots as u32;
     let missing_threshold = epoch_duration / 2;
-    for (missing, (since, _)) in self.orphans.iter_mut() {
-      if Instant::now().duration_since(*since) > missing_threshold {
+
+    let mut expired = vec![];
+    for (missing, (since, orphans)) in self.orphans.iter_mut() {
+      // if the orphans of a missing block belong to a height that is
+      // older than the finalized state, most likely the block will never
+      // be replayed because it got discarded as not part of the canonical
+      // chain. in that case, forget about those orphans forever.
+      if orphans.iter().all(|o| o.height < self.finalized.height()) {
+        expired.push(*missing);
+      } else if Instant::now().duration_since(*since) > missing_threshold {
         *since = Instant::now(); // reset clock on the missing timer
         self.events.push_front(ChainEvent::BlockMissing(*missing));
       }
+    }
+
+    // delete old irrelevant orphans of discarded branches that
+    // did not make it to the canonical chain.
+    for old in expired {
+      self.orphans.remove(&old);
     }
   }
 }
@@ -773,12 +787,18 @@ impl<'g, D: BlockData> Chain<'g, D> {
   pub fn try_replay_block(&mut self, hash: Multihash) {
     for root in &self.forktrees {
       if let Some(block) = root.get(&hash) {
-        self.events.push_front(ChainEvent::BlockReplayed(
+        // high-priority event, put it in front of the queue
+        self.events.push_back(ChainEvent::BlockReplayed(
           block.value.block.underlying.clone(),
         ));
         return;
       }
     }
+
+    warn!(
+      "Cannot fulfil replay request for {}, block not found in forktree.",
+      hash.to_bytes().to_b58()
+    );
   }
 }
 
