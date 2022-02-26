@@ -1,5 +1,5 @@
 use super::{
-  codec::EpisubCodec, error::EpisubHandlerError, protocol::EpisubProtocol, rpc,
+  codec::EpisubCodec, error::EpisubHandlerError, connection::EpisubConnection, rpc,
 };
 use asynchronous_codec::Framed;
 use futures::{Sink, StreamExt};
@@ -45,7 +45,7 @@ enum OutboundSubstreamState {
 /// Protocol handler that manages a single long-lived substream with a peer
 pub struct EpisubHandler {
   /// Upgrade configuration for the episub protocol.
-  listen_protocol: SubstreamProtocol<EpisubProtocol, ()>,
+  listen_protocol: SubstreamProtocol<EpisubConnection, ()>,
   /// The single long-lived outbound substream.
   outbound_substream: Option<OutboundSubstreamState>,
   /// The single long-lived inbound substream.
@@ -69,7 +69,7 @@ impl EpisubHandler {
   pub fn new(max_transmit_size: usize, temporary: bool) -> Self {
     Self {
       listen_protocol: SubstreamProtocol::new(
-        EpisubProtocol::new(max_transmit_size),
+        EpisubConnection::new(max_transmit_size),
         (),
       ),
       keep_alive: match temporary {
@@ -88,9 +88,9 @@ impl ConnectionHandler for EpisubHandler {
   type OutEvent = rpc::Rpc;
   type Error = EpisubHandlerError;
   type InboundOpenInfo = ();
-  type InboundProtocol = EpisubProtocol;
+  type InboundProtocol = EpisubConnection;
   type OutboundOpenInfo = ();
-  type OutboundProtocol = EpisubProtocol;
+  type OutboundProtocol = EpisubConnection;
 
   fn listen_protocol(
     &self,

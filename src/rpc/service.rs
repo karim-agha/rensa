@@ -1,13 +1,16 @@
 use {
   super::ApiEvent,
   crate::{
-    consensus::{BlockData, Genesis},
-    consumer::{BlockConsumer, Commitment},
+    consensus::{Block, BlockData, Genesis},
+    consumer::Commitment,
+    primitives::ToBase58String,
     storage::{BlockStore, PersistentState},
-    vm::Executed,
   },
   axum::{
+    extract::Extension,
+    response::IntoResponse,
     routing::{get, post},
+    AddExtensionLayer,
     Router,
   },
   axum_extra::response::ErasedJson,
@@ -17,53 +20,38 @@ use {
     collections::VecDeque,
     net::SocketAddr,
     pin::Pin,
+    sync::Arc,
     task::{Context, Poll},
   },
 };
 
-pub struct ApiService<D: BlockData> {
+struct ServiceSharedState<D: BlockData> {
   _state: PersistentState,
-  _blocks: BlockStore<D>,
+  blocks: BlockStore<D>,
+  genesis: Genesis<D>,
+}
+
+pub struct ApiService {
   out_events: VecDeque<ApiEvent>,
 }
 
-impl<D: BlockData> ApiService<D> {
-  pub fn new(
+impl ApiService {
+  pub fn new<D: BlockData>(
     addrs: Vec<SocketAddr>,
     state: PersistentState,
     blocks: BlockStore<D>,
     genesis: Genesis<D>,
   ) -> Self {
-    let blocksc = blocks.clone();
-    let svc = Router::new()
-      .route(
-        "/about",
-        get(|| async move {
-          let height = blocksc
-            .latest(Commitment::Finalized)
-            .map(|b| b.height)
-            .unwrap_or(0);
+    let shared_state = Arc::new(ServiceSharedState {
+      _state: state,
+      blocks,
+      genesis,
+    });
 
-          ErasedJson::pretty(json! ({
-            "system": {
-              "name": "Rensa",
-              "version": env!("CARGO_PKG_VERSION")
-            },
-            "finalized": {
-              "height": height,
-            },
-            "genesis": genesis,
-          }))
-        }),
-      )
-      .route(
-        "/send_transaction",
-        post(|| async {
-          ErasedJson::pretty(json! ({
-            "status": "not_implemented"
-          }))
-        }),
-      );
+    let svc = Router::new()
+      .route("/info", get(serve_info::<D>))
+      .route("/send_transaction", post(serve_send_transaction))
+      .layer(AddExtensionLayer::new(shared_state));
 
     addrs.iter().cloned().for_each(|addr| {
       let svc = svc.clone();
@@ -76,8 +64,6 @@ impl<D: BlockData> ApiService<D> {
     });
 
     Self {
-      _blocks: blocks,
-      _state: state,
       out_events: addrs
         .into_iter()
         .map(ApiEvent::ServiceInitialized)
@@ -86,14 +72,8 @@ impl<D: BlockData> ApiService<D> {
   }
 }
 
-impl<D: BlockData> BlockConsumer<D> for ApiService<D> {
-  fn consume(&self, _block: &Executed<D>, _commitment: Commitment) {
-    // todo: ingest confirmed but not finalized blocks
-  }
-}
-
-impl<D: BlockData> Unpin for ApiService<D> {}
-impl<D: BlockData> Stream for ApiService<D> {
+impl Unpin for ApiService {}
+impl Stream for ApiService {
   type Item = ApiEvent;
 
   fn poll_next(
@@ -105,4 +85,42 @@ impl<D: BlockData> Stream for ApiService<D> {
     }
     Poll::Pending
   }
+}
+
+async fn serve_info<D: BlockData>(
+  Extension(state): Extension<Arc<ServiceSharedState<D>>>,
+) -> impl IntoResponse {
+  let (fheight, fhash) = state
+    .blocks
+    .latest(Commitment::Finalized)
+    .map(|b| (b.height, b.hash().unwrap()))
+    .unwrap_or((0, state.genesis.hash().unwrap()));
+
+  let (cheight, chash) = state
+    .blocks
+    .latest(Commitment::Confirmed)
+    .map(|b| (b.height, b.hash().unwrap()))
+    .unwrap_or((0, state.genesis.hash().unwrap()));
+
+  ErasedJson::pretty(json! ({
+    "system": {
+      "name": "Rensa",
+      "version": env!("CARGO_PKG_VERSION")
+    },
+    "finalized": {
+      "height": fheight,
+      "block": fhash.to_bytes().to_b58()
+    },
+    "confirmed": {
+      "height": cheight,
+      "block": chash.to_bytes().to_b58(),
+    },
+    "genesis": state.genesis,
+  }))
+}
+
+async fn serve_send_transaction() -> impl IntoResponse {
+  ErasedJson::pretty(json! ({
+    "status": "not_implemented"
+  }))
 }

@@ -121,19 +121,17 @@ impl<D: BlockData> Network<D> {
       vset.contains(&pubkey)
     });
 
+    let epoch_duration = genesis.slot_interval * genesis.epoch_slots as u32;
+
     let mut swarm = Swarm::new(
       create_transport(&keypair).await?,
       Episub::new(Config {
         authorizer,
         active_view_factor: 4,
         max_transmit_size: genesis.max_block_size,
-        // 2 epochs are needed until block finalization
-        history_window: genesis.slot_interval
-          * (genesis.epoch_slots as u32 * 2),
-        // keep informing all peers about all messages received for the last
-        // epoch
+        history_window: genesis.max_justification_age as u32 * epoch_duration,
         network_size: genesis.validators.len(),
-        lazy_push_interval: genesis.slot_interval * genesis.epoch_slots as u32,
+        lazy_push_interval: 2 * epoch_duration,
         ..Config::default()
       }),
       id.public().to_peer_id(),

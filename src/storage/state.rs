@@ -71,7 +71,7 @@ impl State for PersistentState {
     match self.db.get(address) {
       Ok(Some(value)) => Some(bincode::deserialize(&value).unwrap()),
       Ok(None) => None,
-      Err(_) => panic!("unrecoverable error while accessing datastore."),
+      Err(e) => panic!("unrecoverable error while accessing datastore: {e:?}"),
     }
   }
 
