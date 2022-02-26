@@ -20,7 +20,7 @@ use {
       NotifyHandler,
     },
   },
-  rand::prelude::IteratorRandom,
+  rand::{distributions::Uniform, prelude::IteratorRandom, Rng},
   std::{
     collections::{HashSet, VecDeque},
     pin::Pin,
@@ -578,12 +578,21 @@ impl Future for HyParView {
     if Instant::now().duration_since(self.last_shuffle)
       > self.config.shuffle_interval
     {
-      if let Some(random) =
-        self.active().choose(&mut rand::thread_rng()).cloned()
-      {
-        self.send_shuffle(random.peer_id);
-        self.last_shuffle = Instant::now();
+      // This is a way for mitigating a phenomenon where all peers
+      // have identical shuffle itervals and they all start shuffling
+      // at once, this leads to unnessesary network churn with no additional
+      // benefit as, each shuffle populates the passive views of all peers
+      // within few hops of it.
+      let sampler = Uniform::new(0.0, 1.0);
+      let sample = rand::thread_rng().sample(sampler);
+      if self.config.shuffle_probability >= (1.0 - sample) {
+        if let Some(random) =
+          self.active().choose(&mut rand::thread_rng()).cloned()
+        {
+          self.send_shuffle(random.peer_id);
+        }
       }
+      self.last_shuffle = Instant::now();
     }
 
     // Periodically check if the active view is starved and

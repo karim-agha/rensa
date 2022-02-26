@@ -132,7 +132,9 @@ impl<D: BlockData> Network<D> {
         history_window: genesis.max_justification_age as u32 * epoch_duration,
         network_size: genesis.validators.len(),
         lazy_push_interval: 2 * epoch_duration,
-        shuffle_interval: epoch_duration * 100,
+        shuffle_interval: epoch_duration * 50,
+        // don't initiate shuffle on more than 25% of peers at once
+        shuffle_probability: 0.25,
         ..Config::default()
       }),
       id.public().to_peer_id(),

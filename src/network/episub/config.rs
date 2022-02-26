@@ -47,6 +47,18 @@ pub struct Config {
   /// with a random active peer
   pub shuffle_interval: Duration,
 
+  /// If it has come time to perform shuffle, this
+  /// specifies the probability that a shuffle will
+  /// actually ocurr. Valid values are 0.0 - 1.0.
+  ///
+  /// This parameter is used in cases when a network
+  /// peers don't all shuffle at the same time if they
+  /// have the same [`shuffle_interval`] specified.
+  ///
+  /// Shuffle from other peers will populate the passive
+  /// view anyway.
+  pub shuffle_probability: f32,
+
   /// How long to keep pushing the IHAVE messages
   /// to lazy push peers in the plumtree.
   pub lazy_push_interval: Duration,
@@ -110,6 +122,7 @@ impl Default for Config {
       network_size: 1000,
       active_view_factor: 1,
       passive_view_factor: 6,
+      shuffle_probability: 1.0,     // always shuffle
       max_transmit_size: 1_024_000, // 1 MB
       shuffle_interval: Duration::from_secs(60),
       lazy_push_interval: Duration::from_secs(2),
