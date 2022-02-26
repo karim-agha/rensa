@@ -148,13 +148,13 @@ impl<D: BlockData> TreeNode<D> {
   }
 
   /// Adds an immediate child to this forktree node.
-  pub fn add_child(&mut self, block: VolatileBlock<D>) {
+  pub fn add_child(&mut self, block: VolatileBlock<D>) -> bool {
     assert!(block.block.parent().unwrap() == self.value.block.hash().unwrap());
 
     let blockhash = block.block.hash().unwrap();
     for child in &self.children {
       if child.value.block.hash().unwrap() == blockhash {
-        return;
+        return false; // already there, maybe replayed for someone else
       }
     }
 
@@ -167,6 +167,7 @@ impl<D: BlockData> TreeNode<D> {
 
     // insert the block into this fork subtree as a leaf
     self.children.push(block);
+    true // added successfully
   }
 
   /// Applies votes to a block, and all its ancestors until the

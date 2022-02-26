@@ -398,12 +398,13 @@ impl<'g, 'f, D: BlockData> Chain<'g, D> {
           // that the VM receives for executing this block is a union of
           // all parent blocks state and the finalized state with priority
           // given to most recent blocks.
-          parent.add_child(VolatileBlock::new(Executed::new(
+          if parent.add_child(VolatileBlock::new(Executed::new(
             &Overlayed::new(self.finalized.state(), &parent.state()),
             block,
             self.virtual_machine,
-          )?));
-          emit_event(&parent.children.last().unwrap().value.block);
+          )?)) {
+            emit_event(&parent.children.last().unwrap().value.block);
+          }
           return Ok(None);
         }
       }
@@ -697,19 +698,19 @@ impl<'g, 'f, D: BlockData> Chain<'g, D> {
     false
   }
 
-  /// If a block is lost for too long and orphans are waiting for
+  /// If a block is missing for too long and orphans are waiting for
   /// too long for their parent, explicitly ask all peers to replay
   /// that specific block, otherwise consensus will be halted forever.
   ///
   /// When a replay request is issued for a given block, the timer is reset
   /// and re-requested after that interval.
-  /// 
+  ///
   /// At the moment blocks are considered missing if the were not received
   /// for longer then half an epoch since its first reported.
   fn request_lost_blocks(&mut self) {
     let epoch_duration =
-        self.genesis.slot_interval * self.genesis.epoch_slots as u32;
-      let missing_threshold = epoch_duration / 2;
+      self.genesis.slot_interval * self.genesis.epoch_slots as u32;
+    let missing_threshold = epoch_duration / 2;
     for (missing, (since, _)) in self.orphans.iter_mut() {
       if Instant::now().duration_since(*since) > missing_threshold {
         *since = Instant::now(); // reset clock on the missing timer
