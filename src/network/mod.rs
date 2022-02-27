@@ -132,10 +132,10 @@ impl<D: BlockData> Network<D> {
       Episub::new(Config {
         authorizer,
         active_view_factor: 4,
-        max_transmit_size: genesis.max_block_size,
-        history_window: genesis.max_justification_age as u32 * epoch_duration,
         network_size: genesis.validators.len(),
-        lazy_push_interval: 2 * epoch_duration,
+        max_transmit_size: genesis.max_block_size,
+        history_window: 2 * epoch_duration,
+        lazy_push_interval: epoch_duration,
         shuffle_interval: epoch_duration * 50,
         // don't initiate shuffle on more than 25% of peers at once
         shuffle_probability: 0.25,

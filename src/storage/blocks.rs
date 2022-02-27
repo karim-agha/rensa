@@ -1,10 +1,11 @@
 use {
   super::Error,
   crate::{
-    consensus::{BlockData, Produced},
+    consensus::{Block, BlockData, Produced},
     consumer::{BlockConsumer, Commitment},
     vm::Executed,
   },
+  multihash::Multihash,
   rocksdb::{Options, DB},
   std::{marker::PhantomData, path::PathBuf, sync::Arc},
 };
@@ -29,11 +30,13 @@ impl<D: BlockData> BlockStore<D> {
       db: Arc::new(DB::open_cf(&dbopts, directory, [
         "confirmed",
         "finalized",
+        "hashes",
       ])?),
       _marker: PhantomData,
     })
   }
 
+  /// Returns a block with the highest height at a given commitment.
   pub fn latest(&self, commitment: Commitment) -> Option<Produced<D>> {
     let column_family = match commitment {
       Commitment::Included => {
@@ -51,6 +54,39 @@ impl<D: BlockData> BlockStore<D> {
     iter
       .value()
       .and_then(|bytes| bincode::deserialize(bytes).ok())
+  }
+
+  /// Tries to get a block with a specific hash
+  pub fn get(
+    &self,
+    hash: &Multihash,
+  ) -> Option<(Produced<D>, Commitment)> {
+    if let Ok(Some(height)) = self
+      .db
+      .get_cf(&self.db.cf_handle("hashes").unwrap(), hash.to_bytes())
+    {
+      if let Ok(Some(block)) = self
+        .db
+        .get_cf(&self.db.cf_handle("confirmed").unwrap(), &height)
+      {
+        return Some((
+          bincode::deserialize(&block).unwrap(),
+          Commitment::Confirmed,
+        ));
+      }
+
+      if let Ok(Some(block)) = self
+        .db
+        .get_cf(&self.db.cf_handle("finalized").unwrap(), &height)
+      {
+        return Some((
+          bincode::deserialize(&block).unwrap(),
+          Commitment::Finalized,
+        ));
+      }
+    }
+
+    None
   }
 }
 
@@ -102,6 +138,17 @@ impl<D: BlockData> BlockConsumer<D> for BlockStore<D> {
         &column_family,
         block.height.to_be_bytes(), // big endian for lexographic byte order
         bincode::serialize(&block.underlying).unwrap(),
+      )
+      .unwrap();
+
+    // store a mapping of block_hash -> height for
+    // fast lookup by blockid
+    self
+      .db
+      .put_cf(
+        &self.db.cf_handle("hashes").unwrap(),
+        block.hash().unwrap().to_bytes(),
+        block.height.to_be_bytes(),
       )
       .unwrap();
   }

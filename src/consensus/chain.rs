@@ -60,7 +60,6 @@ pub enum ChainEvent<D: BlockData> {
     justification: Multihash,
   },
   BlockMissing(Multihash),
-  BlockReplayed(Produced<D>),
   BlockIncluded(Executed<D>),
   BlockConfirmed {
     block: Executed<D>,
@@ -241,22 +240,6 @@ impl<'g, D: BlockData> Chain<'g, D> {
   /// the epoch number it belongs to
   fn epoch(&self, slot: u64) -> u64 {
     slot / self.genesis.epoch_slots
-  }
-
-  /// The highest confirmed block that received 2/3rds of vote
-  fn confirmed_height(&self) -> u64 {
-    let (_, block) = self.head();
-    for root in &self.forktrees {
-      if let Some(node) = root.get(&block.hash().unwrap()) {
-        let path = node.path();
-        for ancestor in path {
-          if self.confirmed(&ancestor.value) {
-            return ancestor.value.height();
-          }
-        }
-      }
-    }
-    self.finalized.height()
   }
 }
 
@@ -528,11 +511,6 @@ impl<'g, 'f, D: BlockData> Chain<'g, D> {
       return;
     }
 
-    if !block.verify_signature() {
-      warn!("signature verification failed for block {block}.");
-      return;
-    }
-
     if block.hash().is_err() || block.parent().is_err() {
       warn!("rejecting block {block}. Unreadable hashes");
       return;
@@ -542,6 +520,22 @@ impl<'g, 'f, D: BlockData> Chain<'g, D> {
       // duplicate block, most likely replied for some other
       // validator after an explicit replay request.
       debug!("Ignoring duplicate block {block}.");
+      return;
+    }
+
+    let finalized_height = self.finalized.height();
+    if block.height() <= finalized_height {
+      // block irrelevant, most likely coming from a replay
+      // request that is not interesting for this validator
+      debug!(
+        "Block {block} is too old. Current finalized height is {}",
+        finalized_height
+      );
+      return;
+    }
+
+    if !block.verify_signature() {
+      warn!("signature verification failed for block {block}.");
       return;
     }
 
@@ -758,12 +752,11 @@ impl<'g, 'f, D: BlockData> Chain<'g, D> {
     let missing_threshold = epoch_duration / 2;
 
     let mut expired = vec![];
-    let relevant_height = self.confirmed_height();
+    let relevant_height = self.finalized.height();
     for (missing, (since, orphans)) in self.orphans.iter_mut() {
       // if the orphans of a missing block belong to a height that is
-      // older than the confirmed state, most likely the block will never
-      // be replayed because it got discarded as not part of the canonical
-      // chain. in that case, forget about those orphans forever.
+      // older than the finalized state, prune them, as the are irrelevant
+      // to consensus anymore.
       if orphans.iter().all(|o| o.height < relevant_height) {
         expired.push(*missing);
       } else if Instant::now().duration_since(*since) > missing_threshold {
@@ -821,21 +814,15 @@ impl<'g, D: BlockData> Chain<'g, D> {
 }
 
 impl<'g, D: BlockData> Chain<'g, D> {
-  pub fn try_replay_block(&mut self, hash: Multihash) {
+  /// Attempts to retreive a non-finalized block that is still
+  /// going through the consensus algorithm.
+  pub fn get(&self, hash: &Multihash) -> Option<Produced<D>> {
     for root in &self.forktrees {
-      if let Some(block) = root.get(&hash) {
-        // high-priority event, put it in front of the queue
-        self.events.push_back(ChainEvent::BlockReplayed(
-          block.value.block.underlying.clone(),
-        ));
-        return;
+      if let Some(node) = root.get(hash) {
+        return Some(node.value.block.underlying.clone());
       }
     }
-
-    debug!(
-      "Cannot fulfil replay request for {}, block not found in forktree.",
-      hash.to_bytes().to_b58()
-    );
+    None
   }
 }
 

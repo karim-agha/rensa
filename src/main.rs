@@ -139,8 +139,10 @@ async fn main() -> anyhow::Result<()> {
   // those are components that ingest newly included,
   // confirmed and finalized blocks
   let consumers = BlockConsumers::new(vec![
-    Box::new(DatabaseSync::new()), // exports data changes to external DBs
-    Box::new(blocks_store.clone()), // persists blocks that have been finalized
+    // exports data changes to external DBs
+    Box::new(DatabaseSync::new()),
+    // persists blocks that have been confirmed or finalized
+    Box::new(blocks_store.clone()),
   ]);
 
   // validator runloop
@@ -172,7 +174,13 @@ async fn main() -> anyhow::Result<()> {
             producer.record_vote(vote);
           },
           NetworkEvent::MissingBlock(block_hash) => {
-            chain.try_replay_block(block_hash);
+            if let Some(block) = chain
+              .get(&block_hash)
+              .or_else(|| blocks_store.get(&block_hash).map(|(b, _)| b))
+            {
+              info!("Replaying block {block}");
+              network.gossip_block(block)?
+            }
           }
         }
       },
@@ -200,10 +208,6 @@ async fn main() -> anyhow::Result<()> {
               hash.to_bytes().to_b58()
             );
             network.gossip_missing(hash)?
-          }
-          ChainEvent::BlockReplayed(block) => {
-            info!("Replaying block {block}");
-            network.gossip_block(block)?
           }
           ChainEvent::BlockIncluded(block) => {
             info!(
