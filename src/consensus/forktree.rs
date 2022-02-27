@@ -69,10 +69,6 @@ impl<D: BlockData> TreeNode<D> {
 
   /// Returns a reference to a block with a given hash
   /// in the current subtree, or None if no such block is found.
-  ///
-  /// SAFETY: This struct and its methods are internal to this module
-  /// and the node pointed to by the returned poineter is never reclaimed
-  /// while reading the value retuned.
   pub fn get(&self, hash: &Multihash) -> Option<&Self> {
     if self.value.block.hash().expect("previously verified") == *hash {
       Some(self)

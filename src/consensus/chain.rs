@@ -122,7 +122,7 @@ pub struct Chain<'g, D: BlockData> {
   /// This time is used to trigger a block repley in case the p2p
   /// protocol didn't succeed in recovering a lost gossip through
   /// its mechanisms.
-  orphans: HashMap<Multihash, (Instant, Vec<Produced<D>>)>,
+  orphans: HashMap<Multihash, (Instant, HashMap<Multihash, Produced<D>>)>,
 
   /// Votes that have not matched any target land in here.
   /// Once the target arrives, then those votes are counted.
@@ -378,6 +378,13 @@ impl<'g, 'f, D: BlockData> Chain<'g, D> {
     &mut self,
     block: Produced<D>,
   ) -> Result<Option<Produced<D>>, MachineError> {
+    if self.get_block_node(&block.hash().unwrap()).is_some() {
+      // duplicate block, most likely replied for some other
+      // validator after an explicit replay request.
+      debug!("Ignoring duplicate block {block}.");
+      return Ok(None);
+    }
+
     let mut emit_event = |block: &Executed<D>| {
       self
         .events
@@ -439,7 +446,7 @@ impl<'g, 'f, D: BlockData> Chain<'g, D> {
         parent_hash.to_b58()
       );
 
-      for orphan in orphans {
+      for (_, orphan) in orphans {
         let ohash = orphan.hash().unwrap();
 
         // must succeed because the parent
@@ -480,10 +487,10 @@ impl<'g, 'f, D: BlockData> Chain<'g, D> {
     );
     match self.orphans.entry(parent) {
       Entry::Occupied(mut orphans) => {
-        orphans.get_mut().1.push(block);
+        orphans.get_mut().1.insert(block.hash().unwrap(), block);
       }
       Entry::Vacant(v) => {
-        v.insert((Instant::now(), vec![block]));
+        v.insert((Instant::now(), [(block.hash().unwrap(), block)].into()));
       }
     };
   }
@@ -513,13 +520,6 @@ impl<'g, 'f, D: BlockData> Chain<'g, D> {
 
     if block.hash().is_err() || block.parent().is_err() {
       warn!("rejecting block {block}. Unreadable hashes");
-      return;
-    }
-
-    if self.get_block_node(&block.hash().unwrap()).is_some() {
-      // duplicate block, most likely replied for some other
-      // validator after an explicit replay request.
-      debug!("Ignoring duplicate block {block}.");
       return;
     }
 
@@ -757,7 +757,7 @@ impl<'g, 'f, D: BlockData> Chain<'g, D> {
       // if the orphans of a missing block belong to a height that is
       // older than the finalized state, prune them, as the are irrelevant
       // to consensus anymore.
-      if orphans.iter().all(|o| o.height < relevant_height) {
+      if orphans.iter().all(|(_, o)| o.height < relevant_height) {
         expired.push(*missing);
       } else if Instant::now().duration_since(*since) > missing_threshold {
         *since = Instant::now(); // reset clock on the missing timer
