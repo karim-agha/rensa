@@ -379,6 +379,19 @@ impl<D: BlockData> Debug for Produced<D> {
   }
 }
 
+impl<D: BlockData> std::hash::Hash for Produced<D> {
+  fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+    <Produced<D> as Block<D>>::hash(self).unwrap().hash(state);
+  }
+}
+
+impl<D: BlockData> PartialEq for Produced<D> {
+  fn eq(&self, other: &Self) -> bool {
+    self.hash().unwrap().eq(&other.hash().unwrap())
+  }
+}
+impl<D: BlockData> Eq for Produced<D> {}
+
 impl<D: BlockData> Block<D> for Produced<D> {
   /// Hashes of the current block.
   ///

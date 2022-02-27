@@ -122,7 +122,7 @@ pub struct Chain<'g, D: BlockData> {
   /// This time is used to trigger a block repley in case the p2p
   /// protocol didn't succeed in recovering a lost gossip through
   /// its mechanisms.
-  orphans: HashMap<Multihash, (Instant, HashMap<Multihash, Produced<D>>)>,
+  orphans: HashMap<Multihash, (Instant, HashSet<Produced<D>>)>,
 
   /// Votes that have not matched any target land in here.
   /// Once the target arrives, then those votes are counted.
@@ -446,7 +446,7 @@ impl<'g, 'f, D: BlockData> Chain<'g, D> {
         parent_hash.to_b58()
       );
 
-      for (_, orphan) in orphans {
+      for orphan in orphans {
         let ohash = orphan.hash().unwrap();
 
         // must succeed because the parent
@@ -487,10 +487,10 @@ impl<'g, 'f, D: BlockData> Chain<'g, D> {
     );
     match self.orphans.entry(parent) {
       Entry::Occupied(mut orphans) => {
-        orphans.get_mut().1.insert(block.hash().unwrap(), block);
+        orphans.get_mut().1.insert(block);
       }
       Entry::Vacant(v) => {
-        v.insert((Instant::now(), [(block.hash().unwrap(), block)].into()));
+        v.insert((Instant::now(), [block].into()));
       }
     };
   }
@@ -757,7 +757,7 @@ impl<'g, 'f, D: BlockData> Chain<'g, D> {
       // if the orphans of a missing block belong to a height that is
       // older than the finalized state, prune them, as the are irrelevant
       // to consensus anymore.
-      if orphans.iter().all(|(_, o)| o.height < relevant_height) {
+      if orphans.iter().all(|o| o.height < relevant_height) {
         expired.push(*missing);
       } else if Instant::now().duration_since(*since) > missing_threshold {
         *since = Instant::now(); // reset clock on the missing timer
