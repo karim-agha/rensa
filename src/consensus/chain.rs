@@ -480,19 +480,22 @@ impl<'g, 'f, D: BlockData> Chain<'g, D> {
   /// could be its children and append them to the chain.
   fn add_orphan(&mut self, block: Produced<D>) {
     let parent = block.parent;
-    warn!(
-      "parent block {} for {} not found (or has not arrived yet)",
-      parent.to_b58(),
-      block
-    );
-    match self.orphans.entry(parent) {
-      Entry::Occupied(mut orphans) => {
-        orphans.get_mut().1.insert(block);
-      }
+    let block_string = format!("{block}");
+    let inserted = match self.orphans.entry(parent) {
+      Entry::Occupied(mut orphans) => orphans.get_mut().1.insert(block),
       Entry::Vacant(v) => {
         v.insert((Instant::now(), [block].into()));
+        true
       }
     };
+
+    if inserted {
+      warn!(
+        "parent block {} for {} not found (or has not arrived yet)",
+        parent.to_b58(),
+        block_string
+      );
+    }
   }
 
   /// Called whenever a new block is received on the p2p layer.
