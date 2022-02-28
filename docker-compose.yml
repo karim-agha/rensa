@@ -11,10 +11,6 @@ services:
     networks:
       rensa_test_net:
         ipv4_address: 172.29.1.2
-    deploy:
-      resources:
-        limits:
-          memory: 2048m
 
   validator_1:
     build:
@@ -28,10 +24,6 @@ services:
         condition: service_started
     networks:
       rensa_test_net:
-    deploy:
-      resources:
-        limits:
-          memory: 2048m
 
   validator_2:
     build:
@@ -45,10 +37,6 @@ services:
         condition: service_started
     networks:
       rensa_test_net:
-    deploy:
-      resources:
-        limits:
-          memory: 2048m
 
   validator_3:
     build:
@@ -62,10 +50,6 @@ services:
         condition: service_started
     networks:
       rensa_test_net:
-    deploy:
-      resources:
-        limits:
-          memory: 2048m
 
   validator_4:
     build:
@@ -81,10 +65,6 @@ services:
       rensa_test_net:
     ports:
       - "8080:8080"
-    deploy:
-      resources:
-        limits:
-          memory: 2048m
 
   validator_5:
     build:
@@ -98,10 +78,6 @@ services:
         condition: service_started
     networks:
       rensa_test_net:
-    deploy:
-      resources:
-        limits:
-          memory: 2048m
 
   validator_6:
     build:
@@ -115,10 +91,6 @@ services:
         condition: service_started
     networks:
       rensa_test_net:
-    deploy:
-      resources:
-        limits:
-          memory: 2048m
 
   validator_7:
     build:
@@ -132,10 +104,6 @@ services:
         condition: service_started
     networks:
       rensa_test_net:
-    deploy:
-      resources:
-        limits:
-          memory: 2048m
 
   validator_8:
     build:
@@ -149,10 +117,6 @@ services:
         condition: service_started
     networks:
       rensa_test_net:
-    deploy:
-      resources:
-        limits:
-          memory: 2048m
 
   validator_9:
     build:
@@ -166,10 +130,6 @@ services:
         condition: service_started
     networks:
       rensa_test_net:
-    deploy:
-      resources:
-        limits:
-          memory: 2048m
 
 networks:
   rensa_test_net:

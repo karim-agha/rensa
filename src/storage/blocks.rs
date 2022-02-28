@@ -57,10 +57,7 @@ impl<D: BlockData> BlockStore<D> {
   }
 
   /// Tries to get a block with a specific hash
-  pub fn get(
-    &self,
-    hash: &Multihash,
-  ) -> Option<(Produced<D>, Commitment)> {
+  pub fn get(&self, hash: &Multihash) -> Option<(Produced<D>, Commitment)> {
     if let Ok(Some(height)) = self
       .db
       .get_cf(&self.db.cf_handle("hashes").unwrap(), hash.to_bytes())
@@ -109,8 +106,6 @@ impl<D: BlockData> BlockConsumer<D> for BlockStore<D> {
       Commitment::Finalized => self.db.cf_handle("finalized").unwrap(),
     };
 
-    // if the block being added is finalized, then it was most likely previously
-    // inserted as a commited. Remove it from the commited history.
     if let Commitment::Finalized = commitment {
       // the finalized state must never have gaps and crash immediately
       // if the inserted block is not an immediate successor to the
@@ -125,6 +120,10 @@ impl<D: BlockData> BlockConsumer<D> for BlockStore<D> {
           block.height
         );
       }
+
+      // if the block being added is finalized, then it was most likely
+      // previously inserted as confirmed. Remove it from the confirmed
+      // history.
       let confirmed_cf = self.db.cf_handle("confirmed").unwrap();
       self
         .db
@@ -151,5 +150,8 @@ impl<D: BlockData> BlockConsumer<D> for BlockStore<D> {
         block.height.to_be_bytes(),
       )
       .unwrap();
+
+    self.db.flush().unwrap();
+    self.db.flush_wal(false).unwrap();
   }
 }
