@@ -5,7 +5,7 @@ use {
     primitives::{Account, Pubkey},
     vm::{State, StateDiff, StateError},
   },
-  rocksdb::{Options, WriteBatch, WriteOptions, DB},
+  sled::{Batch, Db},
   std::{path::PathBuf, sync::Arc},
 };
 
@@ -26,7 +26,7 @@ use {
 /// Column Family is used for the accounts store.
 #[derive(Debug)]
 pub struct PersistentState {
-  db: Arc<DB>,
+  db: Arc<Db>,
 }
 
 impl PersistentState {
@@ -38,13 +38,10 @@ impl PersistentState {
     directory.push("state");
     std::fs::create_dir_all(directory.clone())?;
 
-    let mut db_opts = Options::default();
-    db_opts.create_if_missing(true);
-
-    let db = DB::open(&db_opts, directory)?;
+    let db = sled::open(directory)?;
     for (addr, account) in &genesis.state {
       if db.get(addr).unwrap().is_none() {
-        db.put(addr, bincode::serialize(account)?)?
+        db.insert(addr, bincode::serialize(account)?)?;
       }
     }
 
@@ -53,16 +50,11 @@ impl PersistentState {
 
   /// Applies a state diff from a finalized block
   pub fn apply(&self, diff: StateDiff) -> Result<(), Error> {
-    let mut batch = WriteBatch::default();
+    let mut batch = Batch::default();
     for (addr, account) in diff.into_iter() {
-      batch.put(addr, bincode::serialize(&account)?);
+      batch.insert(addr.as_ref(), bincode::serialize(&account)?);
     }
-    let mut write_opts = WriteOptions::default();
-    write_opts.set_sync(true);
-    self
-      .db
-      .write_opt(batch, &write_opts)
-      .map_err(Error::StorageEngine)
+    self.db.apply_batch(batch).map_err(Error::StorageEngine)
   }
 }
 

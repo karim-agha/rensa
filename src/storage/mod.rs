@@ -9,7 +9,7 @@ pub enum Error {
   Serialization(#[from] bincode::Error),
 
   #[error("Storage Engine Error: {0}")]
-  StorageEngine(#[from] rocksdb::Error),
+  StorageEngine(#[from] sled::Error),
 
   #[error("System IO Error: {0}")]
   SystemIO(#[from] std::io::Error),

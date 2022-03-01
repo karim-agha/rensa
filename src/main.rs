@@ -1,4 +1,4 @@
-use tracing_subscriber::EnvFilter;
+use {network::responder::SwarmResponder, tracing_subscriber::EnvFilter};
 
 mod cli;
 mod consensus;
@@ -145,6 +145,13 @@ async fn main() -> anyhow::Result<()> {
     Box::new(blocks_store.clone()),
   ]);
 
+  // responsible for deciding if the current node should
+  // respond to  block reply requests.
+  let mut block_reply_responder = SwarmResponder::new(
+    genesis.slot_interval,
+    genesis.slot_interval * genesis.epoch_slots as u32,
+  );
+
   // validator runloop
   loop {
     tokio::select! {
@@ -163,24 +170,33 @@ async fn main() -> anyhow::Result<()> {
         }
       }
 
+      // this node should respond with a block reply for
+      // a requested hash. This is the rate limiter component.
+      Some(block_hash) = block_reply_responder.next() => {
+        if let Some(block) = chain
+          .get(&block_hash)
+          .or_else(|| blocks_store.get(&block_hash).map(|(b, _)| b))
+        {
+          info!("Replaying block {block}");
+          network.gossip_block(block)?
+        }
+      }
+
       // Networking worker, receives
       // data from p2p gossip between validators
       Some(event) = network.poll() => {
         match event {
           NetworkEvent::BlockReceived(block) => {
+            if let Ok(hash) = block.hash() {
+              block_reply_responder.cancel(&hash);
+            }
             chain.include(block);
           },
           NetworkEvent::VoteReceived(vote) => {
             producer.record_vote(vote);
           },
           NetworkEvent::MissingBlock(block_hash) => {
-            if let Some(block) = chain
-              .get(&block_hash)
-              .or_else(|| blocks_store.get(&block_hash).map(|(b, _)| b))
-            {
-              info!("Replaying block {block}");
-              network.gossip_block(block)?
-            }
+           block_reply_responder.request(block_hash);
           }
         }
       },

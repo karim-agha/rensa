@@ -6,13 +6,13 @@ use {
     vm::Executed,
   },
   multihash::Multihash,
-  rocksdb::{Options, DB},
+  sled::Db,
   std::{marker::PhantomData, path::PathBuf, sync::Arc},
 };
 
 #[derive(Debug)]
 pub struct BlockStore<D: BlockData> {
-  db: Arc<DB>,
+  db: Arc<Db>,
   _marker: PhantomData<D>,
 }
 
@@ -22,67 +22,50 @@ impl<D: BlockData> BlockStore<D> {
     directory.push("blocks");
     std::fs::create_dir_all(directory.clone())?;
 
-    let mut dbopts = Options::default();
-    dbopts.create_if_missing(true);
-    dbopts.create_missing_column_families(true);
-
     Ok(Self {
-      db: Arc::new(DB::open_cf(&dbopts, directory, [
-        "confirmed",
-        "finalized",
-        "hashes",
-      ])?),
+      db: Arc::new(sled::open(directory)?),
       _marker: PhantomData,
     })
   }
 
   /// Returns a block with the highest height at a given commitment.
   pub fn latest(&self, commitment: Commitment) -> Option<Produced<D>> {
-    let column_family = match commitment {
+    let tree = match commitment {
       Commitment::Included => {
         // persistance is only implemented for confirmed+ blocks, that have no
         // forks. In the included stage, there could be many blocks at the same
         // height.
         return None;
       }
-      Commitment::Confirmed => self.db.cf_handle("confirmed").unwrap(),
-      Commitment::Finalized => self.db.cf_handle("finalized").unwrap(),
+      Commitment::Confirmed => self.db.open_tree(b"confirmed").unwrap(),
+      Commitment::Finalized => self.db.open_tree(b"finalized").unwrap(),
     };
 
-    let mut iter = self.db.raw_iterator_cf(&column_family);
-    iter.seek_to_last();
-    iter
-      .value()
-      .and_then(|bytes| bincode::deserialize(bytes).ok())
+    tree
+      .last()
+      .unwrap()
+      .and_then(|(_, block)| bincode::deserialize(block.as_ref()).ok())
   }
 
   /// Tries to get a block with a specific hash
   pub fn get(&self, hash: &Multihash) -> Option<(Produced<D>, Commitment)> {
-    if let Ok(Some(height)) = self
-      .db
-      .get_cf(&self.db.cf_handle("hashes").unwrap(), hash.to_bytes())
-    {
-      if let Ok(Some(block)) = self
-        .db
-        .get_cf(&self.db.cf_handle("confirmed").unwrap(), &height)
-      {
+    let hashes = self.db.open_tree(b"hashes").unwrap();
+    if let Some(height) = hashes.get(hash.to_bytes()).unwrap() {
+      let confirmed = self.db.open_tree(b"confirmed").unwrap();
+      if let Ok(Some(block)) = confirmed.get(&height) {
         return Some((
           bincode::deserialize(&block).unwrap(),
           Commitment::Confirmed,
         ));
       }
-
-      if let Ok(Some(block)) = self
-        .db
-        .get_cf(&self.db.cf_handle("finalized").unwrap(), &height)
-      {
+      let finalized = self.db.open_tree(b"finalized").unwrap();
+      if let Ok(Some(block)) = finalized.get(&height) {
         return Some((
           bincode::deserialize(&block).unwrap(),
           Commitment::Finalized,
         ));
       }
     }
-
     None
   }
 }
@@ -100,10 +83,10 @@ impl<D: BlockData> BlockConsumer<D> for BlockStore<D> {
   /// The block consumer guarantees that we will get all blocks in order
   /// and without gaps, their height should be monotonically increasing.
   fn consume(&self, block: &Executed<D>, commitment: Commitment) {
-    let column_family = match commitment {
+    let tree = match commitment {
       Commitment::Included => return, // unconfirmed blocks are not persisted
-      Commitment::Confirmed => self.db.cf_handle("confirmed").unwrap(),
-      Commitment::Finalized => self.db.cf_handle("finalized").unwrap(),
+      Commitment::Confirmed => self.db.open_tree(b"confirmed").unwrap(),
+      Commitment::Finalized => self.db.open_tree(b"finalized").unwrap(),
     };
 
     if let Commitment::Finalized = commitment {
@@ -124,17 +107,12 @@ impl<D: BlockData> BlockConsumer<D> for BlockStore<D> {
       // if the block being added is finalized, then it was most likely
       // previously inserted as confirmed. Remove it from the confirmed
       // history.
-      let confirmed_cf = self.db.cf_handle("confirmed").unwrap();
-      self
-        .db
-        .delete_cf(&confirmed_cf, block.height.to_be_bytes())
-        .unwrap();
+      let confirmed_tree = self.db.open_tree(b"confirmed").unwrap();
+      confirmed_tree.remove(block.height.to_be_bytes()).unwrap();
     }
 
-    self
-      .db
-      .put_cf(
-        &column_family,
+    tree
+      .insert(
         block.height.to_be_bytes(), // big endian for lexographic byte order
         bincode::serialize(&block.underlying).unwrap(),
       )
@@ -142,16 +120,12 @@ impl<D: BlockData> BlockConsumer<D> for BlockStore<D> {
 
     // store a mapping of block_hash -> height for
     // fast lookup by blockid
-    self
-      .db
-      .put_cf(
-        &self.db.cf_handle("hashes").unwrap(),
+    let hashes = self.db.open_tree(b"hashes").unwrap();
+    hashes
+      .insert(
         block.hash().unwrap().to_bytes(),
-        block.height.to_be_bytes(),
+        block.height.to_be_bytes().as_ref(),
       )
       .unwrap();
-
-    self.db.flush().unwrap();
-    self.db.flush_wal(false).unwrap();
   }
 }

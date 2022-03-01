@@ -1,11 +1,10 @@
-use {crate::primitives::ToBase58String, multihash::Multihash};
-
 mod episub;
+pub mod responder;
 
 use {
   crate::{
     consensus::{Block, BlockData, Genesis, Produced, Vote},
-    primitives::{Keypair, Pubkey},
+    primitives::{Keypair, Pubkey, ToBase58String},
   },
   episub::{Config, Episub, EpisubEvent, PeerAuthorizer},
   futures::StreamExt,
@@ -22,6 +21,7 @@ use {
     Swarm,
     Transport,
   },
+  multihash::Multihash,
   std::collections::HashSet,
   tokio::sync::mpsc::{
     error::SendError,
@@ -134,11 +134,11 @@ impl<D: BlockData> Network<D> {
         active_view_factor: 4,
         network_size: genesis.validators.len(),
         max_transmit_size: genesis.max_block_size,
-        history_window: 2 * epoch_duration,
+        history_window: epoch_duration,
         lazy_push_interval: epoch_duration,
         shuffle_interval: epoch_duration * 50,
-        // don't initiate shuffle on more than 25% of peers at once
-        shuffle_probability: 0.25,
+        // don't initiate shuffle on more than 50% of peers at once
+        shuffle_probability: 0.5,
         ..Config::default()
       }),
       id.public().to_peer_id(),
