@@ -5,6 +5,7 @@ use {
   std::{
     net::{IpAddr, SocketAddr},
     path::PathBuf,
+    time::Duration,
   },
 };
 
@@ -13,16 +14,6 @@ use {
 pub struct CliOpts {
   #[clap(short, long, help = "secret key of the validator account")]
   pub keypair: Keypair,
-
-  #[clap(
-    long,
-    help = "listen address of the validator",
-    default_value = "0.0.0.0"
-  )]
-  pub addr: Vec<IpAddr>,
-
-  #[clap(long, help = "listen port of the validator", default_value = "44668")]
-  pub port: u16,
 
   #[clap(
     short,
@@ -36,13 +27,23 @@ pub struct CliOpts {
     long,
     help = "address of a known peer to bootstrap p2p networking from"
   )]
-  pub peer: Vec<SocketAddr>,
+  peer: Vec<SocketAddr>,
+
+  #[clap(
+    long,
+    help = "listen address of the validator",
+    default_value = "0.0.0.0"
+  )]
+  addr: Vec<IpAddr>,
+
+  #[clap(long, help = "listen port of the validator", default_value = "44668")]
+  port: u16,
 
   #[clap(long, parse(from_os_str), help = "path to the chain genesis file")]
-  pub genesis: PathBuf,
+  genesis: PathBuf,
 
   #[clap(long, help = "port on which RPC API service is exposed")]
-  pub rpc: Option<u16>,
+  rpc: Option<u16>,
 
   #[clap(
     long,
@@ -50,14 +51,13 @@ pub struct CliOpts {
     help = "path to the data directory",
     default_value = "~/.rensa/"
   )]
-  pub data_dir: PathBuf,
+  data_dir: PathBuf,
 
   #[clap(
     long,
-    help = "if set this node will store and provide blockchain blocks and \
-            state history through IPFS"
+    help = "The number of N most recent block to store for block replays"
   )]
-  pub archive: bool,
+  replay_blocks_len: Option<u64>,
 }
 
 impl CliOpts {
@@ -151,5 +151,22 @@ impl CliOpts {
     dir.push(chain_id);
     std::fs::create_dir_all(dir.clone())?;
     Ok(dir)
+  }
+
+  /// Specifies how many blocks need to be persisted by a node to respond
+  /// to block reply requests for other nodes. If the command line value
+  /// is not provided, then the default is calculated to make sure that
+  /// the node can replay any block within the last 30 minutes of confirmation.
+  ///
+  /// Peers that are at a point where they need replies older than that, will
+  /// never catch up with the chain by replaying those blocks, instead they
+  /// should trigger state sync to a more recent height and then replay the
+  /// last few blocks.
+  pub fn replay_blocks_len(&self) -> u64 {
+    self.replay_blocks_len.unwrap_or_else(|| {
+      let slot = self.genesis().unwrap().slot_interval.as_millis() as u64;
+      let oldest = Duration::from_secs(30 * 60).as_millis() as u64; // 30 minutes
+      oldest / slot
+    })
   }
 }

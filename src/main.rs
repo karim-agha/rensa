@@ -104,7 +104,10 @@ async fn main() -> anyhow::Result<()> {
   // anything that gets here has went thorugh the complete consensus
   // process.
   let storage = PersistentState::new(&genesis, opts.data_dir()?)?;
-  let blocks_store = BlockStore::new(opts.data_dir()?)?;
+  let blocks_store = BlockStore::new(
+    opts.data_dir()?, // storage dir root
+    opts.replay_blocks_len(),
+  )?;
 
   // get the latest finalized block that this validator is aware of
   // so far. It is is the first run of a validator, then it is going
@@ -115,6 +118,9 @@ async fn main() -> anyhow::Result<()> {
       None => Arc::new(genesis.clone()),
     };
 
+  // The finalized state and block that graduated from consensus
+  // and is guaranteed to never be overriten on any validator beyond
+  // this point by any forkchoice rules.
   let finalized = Finalized::new(latest_block, &storage);
 
   // the transaction processing runtime
@@ -151,9 +157,9 @@ async fn main() -> anyhow::Result<()> {
   // responsible for deciding if the current node should
   // respond to  block reply requests.
   let mut block_reply_responder = SwarmResponder::new(
-    genesis.slot_interval,
-    genesis.slot_interval * genesis.epoch_slots as u32,
-  );
+    genesis.slot_interval, // minimum delay
+    genesis.validators.len(),
+  ); // max delay = log2(network) * min
 
   // validator runloop
   loop {

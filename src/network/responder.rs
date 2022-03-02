@@ -30,16 +30,17 @@ use {
 /// If the same request arrives from multiple peers while the responder is
 /// waiting the random interval, its coalesced and merged into one request.
 pub struct SwarmResponder<R: Eq + Hash + Copy> {
-  slot: Duration,
-  epoch: Duration,
+  low: Duration,
+  high: Duration,
   requests: HashMap<R, Instant>,
 }
 
 impl<R: Eq + Hash + Copy> SwarmResponder<R> {
-  pub fn new(slot: Duration, epoch: Duration) -> Self {
+  pub fn new(slot: Duration, network_size: usize) -> Self {
     Self {
-      slot,
-      epoch,
+      low: slot, // wait for at least 1 slot time, to minimize duplicates
+      // spread the delay propotionally to network size
+      high: slot * (network_size as f64).log2().round() as u32,
       requests: HashMap::new(),
     }
   }
@@ -51,11 +52,9 @@ impl<R: Eq + Hash + Copy> SwarmResponder<R> {
   /// request.
   pub fn request(&mut self, req: R) {
     if let Entry::Vacant(e) = self.requests.entry(req) {
-      let low = self.slot.as_millis();
-      let high = self.epoch.as_millis();
-      let distribution = Uniform::new_inclusive(low, high);
-      let delay = thread_rng().sample(distribution) as u64;
-      let response_at = Instant::now() + Duration::from_millis(delay);
+      let distribution = Uniform::new(self.low, self.high);
+      let delay = thread_rng().sample(distribution);
+      let response_at = Instant::now() + delay;
       e.insert(response_at);
     }
   }

@@ -13,11 +13,12 @@ use {
 #[derive(Debug)]
 pub struct BlockStore<D: BlockData> {
   db: Arc<Db>,
+  history_len: u64,
   _marker: PhantomData<D>,
 }
 
 impl<D: BlockData> BlockStore<D> {
-  pub fn new(directory: PathBuf) -> Result<Self, Error> {
+  pub fn new(directory: PathBuf, history_len: u64) -> Result<Self, Error> {
     let mut directory = directory;
     directory.push("blocks");
     std::fs::create_dir_all(directory.clone())?;
@@ -33,6 +34,7 @@ impl<D: BlockData> BlockStore<D> {
           .path(directory)
           .open()?,
       ),
+      history_len,
       _marker: PhantomData,
     })
   }
@@ -83,6 +85,7 @@ impl<D: BlockData> Clone for BlockStore<D> {
   fn clone(&self) -> Self {
     Self {
       db: Arc::clone(&self.db),
+      history_len: self.history_len,
       _marker: PhantomData,
     }
   }
@@ -136,5 +139,19 @@ impl<D: BlockData> BlockConsumer<D> for BlockStore<D> {
         block.height.to_be_bytes().as_ref(),
       )
       .unwrap();
+    
+
+    // remove old blocks that are older than the history limit.
+    let cutoff = block.height.saturating_sub(self.history_len);
+    if cutoff > 0 {
+      let cutoff = cutoff.to_be_bytes();
+      let zero = 0u64.to_be_bytes();
+      let mut drain = tree.range(zero..cutoff);
+      while let Some(Ok((h, b))) = drain.next() {
+        tree.remove(h).unwrap();
+        let deserialized: Produced<D> = bincode::deserialize(&b).unwrap();
+        hashes.remove(deserialized.hash().unwrap().to_bytes()).unwrap();
+      }
+    }
   }
 }
