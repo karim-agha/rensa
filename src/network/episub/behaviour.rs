@@ -7,6 +7,7 @@ use {
     topic::TopicMesh,
     view::AddressablePeer,
   },
+  asynchronous_codec::Bytes,
   futures::FutureExt,
   libp2p::{
     core::{
@@ -40,8 +41,8 @@ use {
 pub enum EpisubEvent {
   Message {
     topic: String,
-    id: u128,
-    payload: Vec<u8>,
+    id: u64,
+    payload: Bytes,
   },
   Subscribed(String),
   PeerAdded(PeerId),
@@ -214,10 +215,10 @@ impl Episub {
     &mut self,
     topic: &str,
     message: Vec<u8>,
-  ) -> Result<u128, PublishError> {
+  ) -> Result<u64, PublishError> {
     if let Some(topic) = self.topics.get_mut(topic) {
-      let id = rand::thread_rng().gen();
-      topic.publish(id, message);
+      let id: u64 = rand::thread_rng().gen();
+      topic.publish(id, message.into());
       Ok(id)
     } else {
       Err(PublishError::TopicNotSubscribed)

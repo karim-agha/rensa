@@ -28,9 +28,6 @@ pub enum RpcError {
 
   #[error("Peer {0} is impersonating {1}")]
   ImpersonatedPeer(PeerId, PeerId),
-
-  #[error("Expected a 16-byte u128")]
-  InvalidMessageId,
 }
 
 /// Errors associated with converting values from

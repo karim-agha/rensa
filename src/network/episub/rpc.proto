@@ -63,7 +63,7 @@ message Disconnect {
 }
 
 message Message {
-	required bytes id = 1;
+	required uint64 id = 1;
 	required uint32 hop = 2;
 	required bytes payload = 3;
 }
@@ -71,7 +71,7 @@ message Message {
 message IHave {
 	message MessageRecord {
 		required uint32 hop = 1;
-		required bytes id = 2;
+		required uint64 id = 2;
 	}
 
 	repeated MessageRecord ihaves = 1;
@@ -80,5 +80,5 @@ message IHave {
 message Prune {}
 
 message Graft {
-	repeated bytes ids = 2;
+	repeated uint64 ids = 2;
 }

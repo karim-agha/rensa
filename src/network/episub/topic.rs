@@ -8,6 +8,7 @@ use {
     view::{AddressablePeer, HyParView},
     EpisubEvent,
   },
+  asynchronous_codec::Bytes,
   futures::FutureExt,
   libp2p::{core::PeerId, swarm::NetworkBehaviourAction},
   std::{
@@ -62,7 +63,7 @@ impl TopicMesh {
     self.nodes.initiate_join(peer);
   }
 
-  pub fn publish(&mut self, id: u128, payload: Vec<u8>) {
+  pub fn publish(&mut self, id: u64, payload: Bytes) {
     debug!(
       "publishing message id {} with payload len {}",
       id,
@@ -133,23 +134,12 @@ impl TopicMesh {
         self.nodes.inject_shuffle_reply(params);
       }
       Action::Message(rpc::Message { id, hop, payload }) => {
-        if let Ok(id) = id[0..16].try_into() {
-          self.tree.inject_message(
-            peer_id,
-            u128::from_le_bytes(id),
-            hop,
-            payload,
-          );
-        } else {
-          return Err(RpcError::InvalidMessageId);
-        }
+        self.tree.inject_message(peer_id, id, hop, payload);
       }
       Action::Ihave(rpc::IHave { ihaves }) => {
         ihaves
           .iter()
-          .map(|ih| (ih.id[0..16].try_into().ok(), ih.hop))
-          .filter(|(id, _)| id.is_some())
-          .map(|(id, hop)| (u128::from_le_bytes(id.unwrap()), hop))
+          .map(|ih| (ih.id, ih.hop))
           .for_each(|(id, hop)| self.tree.inject_ihave(peer_id, id, hop));
       }
       Action::Prune(rpc::Prune { .. }) => {
@@ -157,14 +147,7 @@ impl TopicMesh {
       }
 
       Action::Graft(rpc::Graft { ids }) => {
-        self.tree.inject_graft(
-          peer_id,
-          ids
-            .iter()
-            .filter_map(|id| id[0..16].try_into().ok())
-            .map(u128::from_le_bytes)
-            .collect(),
-        );
+        self.tree.inject_graft(peer_id, ids);
       }
     };
 

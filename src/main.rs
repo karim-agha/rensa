@@ -1,9 +1,3 @@
-use {
-  network::responder::SwarmResponder,
-  std::sync::Arc,
-  tracing_subscriber::EnvFilter,
-};
-
 mod cli;
 mod consensus;
 mod consumer;
@@ -35,13 +29,18 @@ use {
   consumer::BlockConsumers,
   dbsync::DatabaseSync,
   futures::StreamExt,
-  network::Network,
+  network::{responder::SwarmResponder, Network},
   producer::BlockProducer,
   rpc::ApiService,
+  std::sync::Arc,
   storage::{BlockStore, PersistentState},
   tracing::{debug, info, Level},
+  tracing_subscriber::EnvFilter,
   vm::Finalized,
 };
+
+#[global_allocator]
+static ALLOC: jemallocator::Jemalloc = jemallocator::Jemalloc;
 
 fn print_essentials(opts: &CliOpts) -> anyhow::Result<()> {
   info!("Starting Rensa validator node");

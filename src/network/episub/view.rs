@@ -642,12 +642,12 @@ impl TryFrom<rpc::AddressablePeer> for AddressablePeer {
 
   fn try_from(value: rpc::AddressablePeer) -> Result<Self, Self::Error> {
     Ok(Self {
-      peer_id: PeerId::from_bytes(value.peer_id.as_slice())
+      peer_id: PeerId::from_bytes(&value.peer_id)
         .map_err(|_| FormatError::Multihash)?,
       addresses: value
         .addresses
         .into_iter()
-        .filter_map(|a| Multiaddr::try_from(a).ok())
+        .filter_map(|a| Multiaddr::try_from(a.to_vec()).ok())
         .collect(),
     })
   }
@@ -656,8 +656,12 @@ impl TryFrom<rpc::AddressablePeer> for AddressablePeer {
 impl From<AddressablePeer> for rpc::AddressablePeer {
   fn from(val: AddressablePeer) -> Self {
     rpc::AddressablePeer {
-      peer_id: val.peer_id.to_bytes(),
-      addresses: val.addresses.into_iter().map(|a| a.to_vec()).collect(),
+      peer_id: val.peer_id.to_bytes().into(),
+      addresses: val
+        .addresses
+        .into_iter()
+        .map(|a| a.to_vec().into())
+        .collect(),
     }
   }
 }

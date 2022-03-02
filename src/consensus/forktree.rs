@@ -237,7 +237,7 @@ impl<D: BlockData> TreeNode<D> {
   }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 struct PathIter<'c, D: BlockData> {
   current: Option<&'c TreeNode<D>>,
 }
@@ -246,6 +246,14 @@ impl<'c, D: BlockData> PathIter<'c, D> {
   pub fn new(current: &'c TreeNode<D>) -> Self {
     Self {
       current: Some(current),
+    }
+  }
+}
+
+impl<'c, D: BlockData> Clone for PathIter<'c, D> {
+  fn clone(&self) -> Self {
+    Self {
+      current: self.current,
     }
   }
 }

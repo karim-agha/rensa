@@ -10,6 +10,7 @@ use {
     Config,
     EpisubEvent,
   },
+  asynchronous_codec::Bytes,
   libp2p::{core::PeerId, swarm::NotifyHandler},
   std::{
     collections::{hash_map::Entry, HashMap, HashSet, VecDeque},
@@ -59,11 +60,10 @@ impl PlumTree {
     self.lazy.remove(&peer);
   }
 
-  pub fn publish(&mut self, id: u128, payload: Vec<u8>) {
+  pub fn publish(&mut self, id: u64, payload: Bytes) {
     if let Some(msg) = self.received.get(&id) {
       error!(
-        "refusing to send a message with id {}, received previously from node \
-         {}",
+        "not publishing a message with id {}, received previously from node {}",
         id, msg.sender
       );
       return;
@@ -100,7 +100,7 @@ impl PlumTree {
 
     // mark this message as received, so if we get it
     // again from other nodes we know that there is a
-    // cycle in the broadcast tree. Also those messages are 
+    // cycle in the broadcast tree. Also those messages are
     // published as IHAVEs and replayed on demand when grafting
     // links with lazy nodes.
     self.received.insert(MessageRecord { hop: 0, ..message });
@@ -109,9 +109,9 @@ impl PlumTree {
   pub fn inject_message(
     &mut self,
     peer_id: PeerId,
-    id: u128,
+    id: u64,
     hop: u32,
-    payload: Vec<u8>,
+    payload: Bytes,
   ) {
     debug!(
       "received message from {} with id {} [hop {}]",
@@ -141,7 +141,7 @@ impl PlumTree {
         topic: self.topic.clone(),
         action: Some(rpc::rpc::Action::Message(rpc::Message {
           payload,
-          id: id.to_le_bytes().to_vec(),
+          id,
           hop: hop + 1,
         })),
       };
@@ -180,7 +180,7 @@ impl PlumTree {
     }
   }
 
-  pub fn inject_ihave(&mut self, peer_id: PeerId, id: u128, hop: u32) {
+  pub fn inject_ihave(&mut self, peer_id: PeerId, id: u64, hop: u32) {
     self.observed.insert(MessageInfo {
       id,
       hop,
@@ -193,7 +193,7 @@ impl PlumTree {
     self.lazy.insert(peer_id);
   }
 
-  pub fn inject_graft(&mut self, peer_id: PeerId, ids: Vec<u128>) {
+  pub fn inject_graft(&mut self, peer_id: PeerId, ids: Vec<u64>) {
     // updgrade to eager node after graft
     self.lazy.remove(&peer_id);
     self.eager.insert(peer_id);
@@ -226,7 +226,7 @@ impl PlumTree {
       .received
       .iter_range(time_range_begin..time_range_end)
       .map(|m| rpc::i_have::MessageRecord {
-        id: m.id.to_le_bytes().to_vec(),
+        id: m.id,
         hop: m.hop,
       })
       .collect();
@@ -275,7 +275,7 @@ impl PlumTree {
         .iter_range(time_range_begin..time_range_end)
         .collect();
 
-      let mut grafts = HashMap::<PeerId, Vec<u128>>::new();
+      let mut grafts = HashMap::<PeerId, Vec<u64>>::new();
       for observed in expected_ihaves {
         match self.received.get(&observed.key()) {
           Some(received) => {
@@ -335,12 +335,7 @@ impl PlumTree {
             handler: NotifyHandler::Any,
             event: rpc::Rpc {
               topic: self.topic.clone(),
-              action: Some(rpc::rpc::Action::Graft(rpc::Graft {
-                ids: ids
-                  .into_iter()
-                  .map(|id| id.to_le_bytes().to_vec())
-                  .collect(),
-              })),
+              action: Some(rpc::rpc::Action::Graft(rpc::Graft { ids })),
             },
           })
       });

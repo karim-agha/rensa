@@ -194,7 +194,7 @@ impl<D: BlockData> Network<D> {
                   Ok(block_hash) => {
                     debug!(
                       "received request for a missiong block replay {} through gossip",
-                      payload.to_b58());
+                      payload.as_ref().to_b58());
                     netin_tx.send(NetworkEvent::MissingBlock(block_hash)).unwrap();
                   }
                   Err(e) => error!("Failed to deserialize missing block hash: {e}"),

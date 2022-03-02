@@ -98,12 +98,17 @@ services:
       dockerfile: Dockerfile
     environment:
       - RUST_BACKTRACE=1
+      # Uncomment for attaching a memry profiler
+      # - LD_PRELOAD=/home/libbytehound.so
+    # command: bash -c "./rensa --keypair 6zUWXGnHLqZzKBEJERqrLiM4v3QLMDWJpDbjt9QtwJcg --genesis genesis.json --peer 172.29.1.2:44668 && ./bytehound server -i 0.0.0.0 memory-profiling_*.dat"
     command: ./rensa --keypair 6zUWXGnHLqZzKBEJERqrLiM4v3QLMDWJpDbjt9QtwJcg --genesis genesis.json --peer 172.29.1.2:44668
     depends_on:
       validator_0:
         condition: service_started
     networks:
       rensa_test_net:
+    ports:
+      - "9090:8080"
 
   validator_8:
     build:

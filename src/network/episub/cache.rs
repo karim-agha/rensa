@@ -1,5 +1,6 @@
 use {
   super::rpc,
+  asynchronous_codec::Bytes,
   libp2p::core::PeerId,
   std::{
     cmp::Ordering,
@@ -122,10 +123,10 @@ where
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct MessageRecord {
-  pub id: u128,
+  pub id: u64,
   pub hop: u32,
   pub sender: PeerId,
-  pub payload: Vec<u8>,
+  pub payload: Bytes,
 }
 
 impl PartialOrd for MessageRecord {
@@ -141,7 +142,7 @@ impl Ord for MessageRecord {
 
 #[derive(Debug, Clone)]
 pub struct MessageInfo {
-  pub id: u128,
+  pub id: u64,
   pub hop: u32,
   pub sender: PeerId,
 }
@@ -172,7 +173,7 @@ impl Hash for MessageInfo {
 }
 
 impl Keyed for MessageRecord {
-  type Key = u128;
+  type Key = u64;
 
   fn key(&self) -> Self::Key {
     self.id
@@ -180,7 +181,7 @@ impl Keyed for MessageRecord {
 }
 
 impl Keyed for MessageInfo {
-  type Key = u128;
+  type Key = u64;
 
   fn key(&self) -> Self::Key {
     self.id
@@ -190,7 +191,7 @@ impl Keyed for MessageInfo {
 impl From<MessageRecord> for rpc::Message {
   fn from(record: MessageRecord) -> Self {
     rpc::Message {
-      id: record.id.to_le_bytes().to_vec(),
+      id: record.id,
       hop: record.hop,
       payload: record.payload,
     }

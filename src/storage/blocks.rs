@@ -23,7 +23,16 @@ impl<D: BlockData> BlockStore<D> {
     std::fs::create_dir_all(directory.clone())?;
 
     Ok(Self {
-      db: Arc::new(sled::open(directory)?),
+      db: Arc::new(
+        sled::Config::default()
+          // 50 MB, this storage is used only for block replay, and it 
+          // is not read-intensive. Limit the cache to free up more space
+          // for the state cache which is orders of magnitude more read
+          // intensive.
+          .cache_capacity(1024 * 1024 * 50) 
+          .path(directory)
+          .open()?,
+      ),
       _marker: PhantomData,
     })
   }
