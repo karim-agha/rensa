@@ -196,24 +196,3 @@ impl From<MessageRecord> for rpc::Message {
     }
   }
 }
-
-impl From<&MessageRecord> for rpc::Message {
-  fn from(record: &MessageRecord) -> Self {
-    record.clone().into()
-  }
-}
-
-impl From<MessageRecord> for rpc::i_have::MessageRecord {
-  fn from(record: MessageRecord) -> Self {
-    rpc::i_have::MessageRecord {
-      id: record.id.to_le_bytes().to_vec(),
-      hop: record.hop,
-    }
-  }
-}
-
-impl From<&MessageRecord> for rpc::i_have::MessageRecord {
-  fn from(record: &MessageRecord) -> Self {
-    record.clone().into()
-  }
-}

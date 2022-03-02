@@ -5,22 +5,31 @@ use {
     Machine,
   },
   crate::consensus::{BlockData, Produced},
-  std::ops::Deref,
+  std::{ops::Deref, sync::Arc},
 };
 
 /// Represents a block that has been executed by the virtual
 /// machine along with the state changes that this execution
 /// caused.
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub struct Executed<D: BlockData> {
-  pub underlying: Produced<D>,
+  pub underlying: Arc<Produced<D>>,
   pub state_diff: StateDiff,
+}
+
+impl<D: BlockData> Clone for Executed<D> {
+  fn clone(&self) -> Self {
+    Self {
+      underlying: Arc::clone(&self.underlying),
+      state_diff: self.state_diff.clone(),
+    }
+  }
 }
 
 impl<D: BlockData> Executed<D> {
   pub fn new(
     state: &impl State,
-    block: Produced<D>,
+    block: Arc<Produced<D>>,
     machine: &Machine,
   ) -> Result<Self, MachineError> {
     let state_diff = machine.execute(state, &block)?;

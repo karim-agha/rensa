@@ -100,7 +100,9 @@ impl PlumTree {
 
     // mark this message as received, so if we get it
     // again from other nodes we know that there is a
-    // cycle in the broadcast tree.
+    // cycle in the broadcast tree. Also those messages are 
+    // published as IHAVEs and replayed on demand when grafting
+    // links with lazy nodes.
     self.received.insert(MessageRecord { hop: 0, ..message });
   }
 
@@ -208,7 +210,7 @@ impl PlumTree {
             handler: NotifyHandler::Any,
             event: rpc::Rpc {
               topic: self.topic.clone(),
-              action: Some(rpc::rpc::Action::Message(msg.into())),
+              action: Some(rpc::rpc::Action::Message(msg.clone().into())),
             },
           })
       });
@@ -223,7 +225,10 @@ impl PlumTree {
     let received: Vec<_> = self
       .received
       .iter_range(time_range_begin..time_range_end)
-      .map(|m| m.into())
+      .map(|m| rpc::i_have::MessageRecord {
+        id: m.id.to_le_bytes().to_vec(),
+        hop: m.hop,
+      })
       .collect();
 
     self.lazy.iter().for_each(|p| {

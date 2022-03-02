@@ -55,7 +55,7 @@ impl<D: BlockData> VolatileBlock<D> {
 pub struct TreeNode<D: BlockData> {
   pub value: VolatileBlock<D>,
   pub parent: Option<*const TreeNode<D>>,
-  pub children: Vec<Box<TreeNode<D>>>,
+  pub children: Vec<TreeNode<D>>,
 }
 
 impl<D: BlockData> TreeNode<D> {
@@ -148,11 +148,11 @@ impl<D: BlockData> TreeNode<D> {
     assert!(block.block.parent().unwrap() == self.value.block.hash().unwrap());
 
     // set parent link to ourself
-    let block = Box::new(TreeNode {
+    let block = TreeNode {
       value: block,
       parent: Some(self as *const Self),
       children: vec![],
-    });
+    };
 
     // insert the block into this fork subtree as a leaf
     self.children.push(block);
@@ -315,7 +315,12 @@ mod tests {
     chrono::Utc,
     ed25519_dalek::{PublicKey, SecretKey},
     multihash::Multihash,
-    std::{collections::BTreeMap, marker::PhantomData, time::Duration},
+    std::{
+      collections::BTreeMap,
+      marker::PhantomData,
+      sync::Arc,
+      time::Duration,
+    },
   };
 
   fn generate_child<D: BlockData>(
@@ -326,16 +331,18 @@ mod tests {
   ) -> Executed<D> {
     Executed::new(
       &StateDiff::default(),
-      Produced::new(
-        keypair,
-        parent.height + 1,
-        parent.height + 1,
-        parent.hash().unwrap(),
-        data,
-        vec![].execute(vm, &StateDiff::default()).unwrap().hash(),
-        vec![],
-      )
-      .unwrap(),
+      Arc::new(
+        Produced::new(
+          keypair,
+          parent.height + 1,
+          parent.height + 1,
+          parent.hash().unwrap(),
+          data,
+          vec![].execute(vm, &StateDiff::default()).unwrap().hash(),
+          vec![],
+        )
+        .unwrap(),
+      ),
       vm,
     )
     .unwrap()
@@ -377,16 +384,18 @@ mod tests {
     // gets rejected and not appended to the chain.
     let statehash = vec![].execute(&vm, &StateDiff::default()).unwrap().hash();
 
-    let produced = Produced::new(
-      &keypair,
-      1,
-      1,
-      Multihash::default(),
-      1u8,
-      statehash,
-      vec![],
-    )
-    .unwrap();
+    let produced = Arc::new(
+      Produced::new(
+        &keypair,
+        1,
+        1,
+        Multihash::default(),
+        1u8,
+        statehash,
+        vec![],
+      )
+      .unwrap(),
+    );
 
     let executed = Executed::new(&StateDiff::default(), produced, &vm).unwrap();
     let mut root = TreeNode::new(VolatileBlock::new(executed));

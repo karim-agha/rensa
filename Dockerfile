@@ -1,5 +1,4 @@
 FROM rust:1.58-slim-bullseye AS rust-build
-RUN apt-get update -y && apt-get install -y clang
 ADD . /code
 RUN cd /code && cargo build --release
 

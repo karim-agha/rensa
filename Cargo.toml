@@ -56,3 +56,6 @@ ed25519-dalek = { version = "1", features = [
 
 [build-dependencies]
 prost-build = "0.9"
+
+[profile.release]
+debug = true

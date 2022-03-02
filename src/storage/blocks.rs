@@ -114,7 +114,7 @@ impl<D: BlockData> BlockConsumer<D> for BlockStore<D> {
     tree
       .insert(
         block.height.to_be_bytes(), // big endian for lexographic byte order
-        bincode::serialize(&block.underlying).unwrap(),
+        bincode::serialize(block.underlying.as_ref()).unwrap(),
       )
       .unwrap();
 

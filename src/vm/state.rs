@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use {
   super::Executed,
   crate::{
@@ -93,12 +95,12 @@ impl<'s1, 's2> State for Overlayed<'s1, 's2> {
 /// to never be reverted. It contains the global blockchain state.
 #[derive(Debug)]
 pub struct Finalized<'f, D: BlockData> {
-  underlying: Box<dyn Block<D>>,
+  underlying: Arc<dyn Block<D>>,
   state: &'f PersistentState,
 }
 
 impl<'f, D: BlockData> Finalized<'f, D> {
-  pub fn new(block: Box<dyn Block<D>>, storage: &'f PersistentState) -> Self {
+  pub fn new(block: Arc<dyn Block<D>>, storage: &'f PersistentState) -> Self {
     Self {
       underlying: block,
       state: storage,
@@ -107,7 +109,7 @@ impl<'f, D: BlockData> Finalized<'f, D> {
 
   pub fn apply(&mut self, block: Executed<D>) {
     assert!(block.parent == self.underlying.hash().unwrap());
-    self.underlying = Box::new(block.underlying);
+    self.underlying = block.underlying;
     self
       .state
       .apply(block.state_diff)
@@ -120,7 +122,7 @@ impl<'f, D: BlockData> Finalized<'f, D> {
 }
 
 impl<D: BlockData> Deref for Finalized<'_, D> {
-  type Target = Box<dyn Block<D>>;
+  type Target = Arc<dyn Block<D>>;
 
   fn deref(&self) -> &Self::Target {
     &self.underlying
@@ -135,8 +137,12 @@ pub struct StateDiff {
 
 impl StateDiff {
   pub fn merge(self, newer: StateDiff) -> StateDiff {
+    let mut data = self.data;
+    for (addr, acc) in newer.data {
+      data.insert(addr, acc);
+    }
     StateDiff {
-      data: self.data.into_iter().chain(newer.data).collect(),
+      data,
       hashcache: OnceCell::new(),
     }
   }

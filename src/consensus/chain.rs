@@ -47,6 +47,7 @@ use {
     cmp::Ordering,
     collections::{hash_map::Entry, HashMap, HashSet, VecDeque},
     pin::Pin,
+    sync::Arc,
     task::{Context, Poll},
     time::Instant,
   },
@@ -100,7 +101,7 @@ pub struct Chain<'g, D: BlockData> {
   ///
   /// Those blocks are voted on by validators, once the finalization
   /// requirements are met, they get finalized.
-  forktrees: Vec<Box<TreeNode<D>>>,
+  forktrees: Vec<TreeNode<D>>,
 
   /// Blocks that were received but their parent
   /// block was not included in the forrest (yet).
@@ -253,7 +254,7 @@ impl<'g, 'f, D: BlockData> Chain<'g, D> {
   fn get_block_node(&self, hash: &Multihash) -> Option<&dyn Block<D>> {
     for root in &self.forktrees {
       if let Some(node) = root.get(hash) {
-        return Some(&node.value.block.underlying);
+        return Some(node.value.block.underlying.as_ref());
       }
     }
 
@@ -400,11 +401,11 @@ impl<'g, 'f, D: BlockData> Chain<'g, D> {
       // on the finalized state directly.
       let block = VolatileBlock::new(Executed::new(
         self.finalized.state(),
-        block,
+        Arc::new(block),
         self.virtual_machine,
       )?);
 
-      self.forktrees.push(Box::new(TreeNode::new(block)));
+      self.forktrees.push(TreeNode::new(block));
       emit_event(&self.forktrees.last().unwrap().value.block);
       return Ok(None);
     } else {
@@ -423,7 +424,7 @@ impl<'g, 'f, D: BlockData> Chain<'g, D> {
           // given to most recent blocks.
           parent.add_child(VolatileBlock::new(Executed::new(
             &Overlayed::new(self.finalized.state(), &parent.state()),
-            block,
+            Arc::new(block),
             self.virtual_machine,
           )?));
           emit_event(&parent.children.last().unwrap().value.block);
@@ -719,7 +720,7 @@ impl<'g, 'f, D: BlockData> Chain<'g, D> {
       let votes = subtree.value.votes;
       let block = subtree.value.block.clone();
 
-      self.finalize_root(*subtree);
+      self.finalize_root(subtree);
 
       // keep this collection size bounded,
       // finalized votes are irrelevant for new votes.
@@ -819,10 +820,10 @@ impl<'g, D: BlockData> Chain<'g, D> {
 impl<'g, D: BlockData> Chain<'g, D> {
   /// Attempts to retreive a non-finalized block that is still
   /// going through the consensus algorithm.
-  pub fn get(&self, hash: &Multihash) -> Option<Produced<D>> {
+  pub fn get(&self, hash: &Multihash) -> Option<&Produced<D>> {
     for root in &self.forktrees {
       if let Some(node) = root.get(hash) {
-        return Some(node.value.block.underlying.clone());
+        return Some(node.value.block.underlying.as_ref());
       }
     }
     None
@@ -868,7 +869,12 @@ mod test {
     },
     chrono::Utc,
     ed25519_dalek::{PublicKey, SecretKey},
-    std::{collections::BTreeMap, marker::PhantomData, time::Duration},
+    std::{
+      collections::BTreeMap,
+      marker::PhantomData,
+      sync::Arc,
+      time::Duration,
+    },
   };
 
   #[test]
@@ -904,7 +910,7 @@ mod test {
     let mut randomdir = std::env::temp_dir();
     randomdir.push("append_block_smoke");
     let storage = PersistentState::new(&genesis, randomdir.clone()).unwrap();
-    let finalized = Finalized::new(Box::new(genesis.clone()), &storage);
+    let finalized = Finalized::new(Arc::new(genesis.clone()), &storage);
     let vm = vm::Machine::new(&genesis).unwrap();
     let mut chain = Chain::new(&genesis, &vm, finalized);
 
@@ -986,7 +992,7 @@ mod test {
     let mut randomdir = std::env::temp_dir();
     randomdir.push("append_blocks_out_of_order");
     let storage = PersistentState::new(&genesis, randomdir.clone()).unwrap();
-    let finalized = Finalized::new(Box::new(genesis.clone()), &storage);
+    let finalized = Finalized::new(Arc::new(genesis.clone()), &storage);
 
     let vm = vm::Machine::new(&genesis).unwrap();
     let mut chain = Chain::new(&genesis, &vm, finalized);

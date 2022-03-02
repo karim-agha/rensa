@@ -1,4 +1,8 @@
-use {network::responder::SwarmResponder, tracing_subscriber::EnvFilter};
+use {
+  network::responder::SwarmResponder,
+  std::sync::Arc,
+  tracing_subscriber::EnvFilter,
+};
 
 mod cli;
 mod consensus;
@@ -106,10 +110,10 @@ async fn main() -> anyhow::Result<()> {
   // get the latest finalized block that this validator is aware of
   // so far. It is is the first run of a validator, then it is going
   // to be the genesis block.
-  let latest_block: Box<dyn Block<_>> =
+  let latest_block: Arc<dyn Block<_>> =
     match blocks_store.latest(Commitment::Finalized) {
-      Some(b) => Box::new(b),
-      None => Box::new(genesis.clone()),
+      Some(b) => Arc::new(b),
+      None => Arc::new(genesis.clone()),
     };
 
   let finalized = Finalized::new(latest_block, &storage);
@@ -175,6 +179,7 @@ async fn main() -> anyhow::Result<()> {
       Some(block_hash) = block_reply_responder.next() => {
         if let Some(block) = chain
           .get(&block_hash)
+          .cloned()
           .or_else(|| blocks_store.get(&block_hash).map(|(b, _)| b))
         {
           info!("Replaying block {block}");
