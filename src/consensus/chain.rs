@@ -33,6 +33,7 @@ use {
   super::{
     block::{self, Block, BlockData},
     forktree::{TreeNode, VolatileBlock},
+    orphans::Orphans,
     validator::Validator,
     vote::Vote,
     Produced,
@@ -49,7 +50,6 @@ use {
     pin::Pin,
     sync::Arc,
     task::{Context, Poll},
-    time::Instant,
   },
   tracing::{debug, warn},
 };
@@ -123,11 +123,7 @@ pub struct Chain<'g, D: BlockData> {
   /// This time is used to trigger a block repley in case the p2p
   /// protocol didn't succeed in recovering a lost gossip through
   /// its mechanisms.
-  orphans: HashMap<Multihash, (Instant, HashSet<Produced<D>>)>,
-
-  /// Votes that have not matched any target land in here.
-  /// Once the target arrives, then those votes are counted.
-  orphan_votes: HashMap<Multihash, Vec<Vote>>,
+  orphans: Orphans<D>,
 
   /// Votes casted by this node.
   /// This collection is used to track the voting history
@@ -157,12 +153,12 @@ impl<'g, D: BlockData> Chain<'g, D> {
     machine: &'g vm::Machine,
     finalized: Finalized<'g, D>,
   ) -> Self {
+    let epoch_duration = genesis.slot_interval * genesis.epoch_slots as u32;
     Self {
       genesis,
       finalized,
       forktrees: vec![],
-      orphans: HashMap::new(),
-      orphan_votes: HashMap::new(),
+      orphans: Orphans::new(epoch_duration),
       ownvotes: HashMap::new(),
       events: VecDeque::new(),
       finalized_history: HashMap::new(),
@@ -346,14 +342,7 @@ impl<'g, 'f, D: BlockData> Chain<'g, D> {
         "Vote {:?} target not available yet, storing for later.",
         vote
       );
-      match self.orphan_votes.entry(vote.target) {
-        Entry::Occupied(mut v) => {
-          v.get_mut().push(vote.clone());
-        }
-        Entry::Vacant(v) => {
-          v.insert(vec![vote.clone()]);
-        }
-      }
+      self.orphans.add_vote(vote.clone());
     } else {
       warn!("Ignoring vote from unknown validator {}", vote.validator);
     }
@@ -378,12 +367,12 @@ impl<'g, 'f, D: BlockData> Chain<'g, D> {
   fn try_include(
     &mut self,
     block: Produced<D>,
-  ) -> Result<Option<Produced<D>>, MachineError> {
+  ) -> Result<Result<(), Produced<D>>, MachineError> {
     if self.get_block_node(&block.hash().unwrap()).is_some() {
       // duplicate block, most likely replied for some other
       // validator after an explicit replay request.
       debug!("Ignoring duplicate block {block}.");
-      return Ok(None);
+      return Ok(Ok(()));
     }
 
     let mut emit_event = |block: &Executed<D>| {
@@ -407,7 +396,7 @@ impl<'g, 'f, D: BlockData> Chain<'g, D> {
 
       self.forktrees.push(TreeNode::new(block));
       emit_event(&self.forktrees.last().unwrap().value.block);
-      return Ok(None);
+      return Ok(Ok(()));
     } else {
       for tree in self.forktrees.iter_mut() {
         if let Some(parent) = tree.get_mut(&block.parent) {
@@ -428,75 +417,12 @@ impl<'g, 'f, D: BlockData> Chain<'g, D> {
             self.virtual_machine,
           )?));
           emit_event(&parent.children.last().unwrap().value.block);
-          return Ok(None);
+          return Ok(Ok(()));
         }
       }
     }
 
-    Ok(Some(block))
-  }
-
-  /// For a given block hash, checks if we are aware of any
-  /// orphan blocks that found its parent and if so, inserts
-  /// them recursively into the forktree.
-  fn match_orphans(&mut self, parent_hash: Multihash) {
-    if let Some((_, orphans)) = self.orphans.remove(&parent_hash) {
-      debug!(
-        "found {} orphan(s) of block {}",
-        orphans.len(),
-        parent_hash.to_b58()
-      );
-
-      for orphan in orphans {
-        let ohash = orphan.hash().unwrap();
-
-        // must succeed because the parent
-        // was just inserted into the tree
-        // before this round of orphan matching.
-        match self.try_include(orphan) {
-          Ok(output) => assert!(output.is_none()),
-          Err(vmerr) => {
-            warn!("Block {} rejected: {:?}", ohash.to_b58(), vmerr);
-          }
-        }
-
-        // recursively for every newly included block
-        // check if there are any orphans that found
-        // its parent, and include them in the chain.
-        self.match_orphans(ohash);
-      }
-    }
-  }
-
-  /// Orphan blocks are blocks that were received by the network
-  /// gossip but we don't have their parent block, so we can't
-  /// attach them to any current block in the volatile state.
-  ///
-  /// This happens more often with shorter block times (under 2 sec)
-  /// as later blocks might arrive before earlier blocks.
-  ///
-  /// We store those blocks in a special collection, indexed
-  /// by their parent block. Whenever a block is correctly
-  /// appended to the chain, we also look for any orphans that
-  /// could be its children and append them to the chain.
-  fn add_orphan(&mut self, block: Produced<D>) {
-    let parent = block.parent;
-    let block_string = format!("{block}");
-    let inserted = match self.orphans.entry(parent) {
-      Entry::Occupied(mut orphans) => orphans.get_mut().1.insert(block),
-      Entry::Vacant(v) => {
-        v.insert((Instant::now(), [block].into()));
-        true
-      }
-    };
-
-    if inserted {
-      warn!(
-        "parent block {} for {} not found (or has not arrived yet)",
-        parent.to_b58(),
-        block_string
-      );
-    }
+    Ok(Err(block))
   }
 
   /// Called whenever a new block is received on the p2p layer.
@@ -552,12 +478,18 @@ impl<'g, 'f, D: BlockData> Chain<'g, D> {
     // try inserting the new block into the chain by looking
     // for its parent block and adding it as a child.
     match self.try_include(block) {
-      Ok(block) => match block {
+      Ok(result) => match result {
         // the block was included and consumed
-        None => {
+        Ok(()) => {
           // check if any of the previously orphaned blocks
           // is a child of the newly inserted block
-          self.match_orphans(bhash);
+          if let Some(orphans) = self.orphans.consume_blocks(&bhash) {
+            // now consume the entire orphan tree that was pending
+            // on the block just inserted.
+            for orphan in orphans { 
+              self.include(orphan);
+            }
+          }
 
           // if the newly inserted block have successfully
           // replaced our head of the chain, then vote for it.
@@ -567,11 +499,11 @@ impl<'g, 'f, D: BlockData> Chain<'g, D> {
         }
         // the block was not matched with a parent and returned
         // to the caller, store it as an orphan.
-        Some(block) => {
+        Err(block) => {
           // no known block is a valid parent of this block.
           // store it in the orphans collection and try matching
           // it later with its parent as new blocks arrive.
-          self.add_orphan(block)
+          self.orphans.add_block(block)
         }
       },
       Err(vmerror) => {
@@ -734,54 +666,13 @@ impl<'g, 'f, D: BlockData> Chain<'g, D> {
     }
     false
   }
-
-  /// If a block is missing for too long and orphans are waiting for
-  /// too long for their parent, explicitly ask all peers to replay
-  /// that specific block, otherwise consensus will be halted forever
-  /// and loses its ability to confirm blocks because all new blocks
-  /// end up being orphans.
-  ///
-  /// This is a method to mitigate that, of the orphans are more recent
-  /// than the highest confirmed block, then request them to be replayed,
-  /// otherwise, if they are older, then they are irrelevant anyway, discard.
-  ///
-  /// When a replay request is issued for a given block, the timer is reset
-  /// and re-requested after that interval.
-  ///
-  /// At the moment blocks are considered missing if the were not received
-  /// for longer then half an epoch since its first reported.
-  fn request_lost_blocks(&mut self) {
-    let epoch_duration =
-      self.genesis.slot_interval * self.genesis.epoch_slots as u32;
-    let missing_threshold = epoch_duration / 2;
-
-    let mut expired = vec![];
-    let relevant_height = self.finalized.height();
-    for (missing, (since, orphans)) in self.orphans.iter_mut() {
-      // if the orphans of a missing block belong to a height that is
-      // older than the finalized state, prune them, as the are irrelevant
-      // to consensus anymore.
-      if orphans.iter().all(|o| o.height < relevant_height) {
-        expired.push(*missing);
-      } else if Instant::now().duration_since(*since) > missing_threshold {
-        *since = Instant::now(); // reset clock on the missing timer
-        self.events.push_front(ChainEvent::BlockMissing(*missing));
-      }
-    }
-
-    // delete old irrelevant orphans of discarded branches that
-    // did not make it to the canonical chain.
-    for old in expired {
-      self.orphans.remove(&old);
-    }
-  }
 }
 
 impl<'g, D: BlockData> Chain<'g, D> {
   /// Invoked whenever a block is successfully included in the forktree
   fn post_block_included(&mut self, block: &Produced<D>) {
     self.count_votes(block.votes());
-    if let Some(votes) = self.orphan_votes.remove(&block.hash().unwrap()) {
+    if let Some(votes) = self.orphans.consume_votes(&block.hash().unwrap()) {
       for vote in votes {
         debug!("counting late vote {:?}", vote);
         self.injest_vote(&vote);
@@ -791,7 +682,9 @@ impl<'g, D: BlockData> Chain<'g, D> {
 
     // unstuck the consensus of it is missing blocks
     // for too long.
-    self.request_lost_blocks();
+    for missing in self.orphans.missing_blocks(self.finalized.height()) {
+      self.events.push_front(ChainEvent::BlockMissing(missing));
+    }
   }
 
   /// Invoked whenever a block reaches finality

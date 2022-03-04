@@ -8,6 +8,7 @@ mod forktree;
 mod schedule;
 mod validator;
 mod vote;
+mod orphans;
 
 pub use {
   block::{Block, BlockData, Genesis, Produced},
