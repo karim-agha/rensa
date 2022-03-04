@@ -220,7 +220,7 @@ impl PlumTree {
 impl PlumTree {
   /// send IHAVEs to all lazy push nodes
   fn publish_ihaves(&mut self) {
-    let time_range_begin = Instant::now() - self.config.lazy_push_interval;
+    let time_range_begin = Instant::now() - self.config.lazy_push_window;
     let time_range_end = Instant::now();
     let received: Vec<_> = self
       .received
@@ -268,7 +268,7 @@ impl PlumTree {
       // message. Also we replace the eager push link if the hop count
       // in the observed messages is significantly lower than what we
       // received from the eager push nodes.
-      let time_range_begin = Instant::now() - self.config.lazy_push_interval;
+      let time_range_begin = Instant::now() - self.config.lazy_push_window;
       let time_range_end = Instant::now() - 2 * self.config.tick_frequency;
       let expected_ihaves: HashSet<_> = self
         .observed

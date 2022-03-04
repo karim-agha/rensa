@@ -169,15 +169,17 @@ impl<D: BlockData> Orphans<D> {
     // didn't fit into any, create
     // new orphan tree rooted at this block
     let block = block.unwrap();
-    let parent = block.parent;
-    let block_string = format!("{block}");
-    self.blocks.insert(block.parent, Node::new(block));
-
-    warn!(
-      "parent block {} for {} not found (or has not arrived yet)",
-      parent.to_b58(),
-      block_string
-    );
+    if let Entry::Vacant(v) = self.blocks.entry(block.parent) {
+      let parent = block.parent;
+      let block_string = format!("{block}");
+      v.insert(Node::new(block));
+      
+      warn!(
+        "parent block {} for {} not found (or has not arrived yet)",
+        parent.to_b58(),
+        block_string
+      );
+    };
   }
 
   pub fn consume_votes(&mut self, block: &Multihash) -> Option<Vec<Vote>> {

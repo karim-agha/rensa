@@ -61,7 +61,7 @@ pub struct Config {
 
   /// How long to keep pushing the IHAVE messages
   /// to lazy push peers in the plumtree.
-  pub lazy_push_interval: Duration,
+  pub lazy_push_window: Duration,
 
   /// How long IHAVE message ids are kept in history
   /// for identifying duplicate and missing messages.
@@ -125,7 +125,7 @@ impl Default for Config {
       shuffle_probability: 1.0,     // always shuffle
       max_transmit_size: 1_024_000, // 1 MB
       shuffle_interval: Duration::from_secs(60),
-      lazy_push_interval: Duration::from_secs(2),
+      lazy_push_window: Duration::from_secs(2),
       history_window: Duration::from_secs(30),
       tick_frequency: Duration::from_millis(200),
       hop_optimization_factor: 4,

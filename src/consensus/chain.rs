@@ -481,20 +481,20 @@ impl<'g, 'f, D: BlockData> Chain<'g, D> {
       Ok(result) => match result {
         // the block was included and consumed
         Ok(()) => {
+          // if the newly inserted block have successfully
+          // replaced our head of the chain, then vote for it.
+          if self.head().1.hash().unwrap() == bhash {
+            self.commit_and_vote(bhash);
+          }
+
           // check if any of the previously orphaned blocks
           // is a child of the newly inserted block
           if let Some(orphans) = self.orphans.consume_blocks(&bhash) {
             // now consume the entire orphan tree that was pending
             // on the block just inserted.
-            for orphan in orphans { 
+            for orphan in orphans {
               self.include(orphan);
             }
-          }
-
-          // if the newly inserted block have successfully
-          // replaced our head of the chain, then vote for it.
-          if self.head().1.hash().unwrap() == bhash {
-            self.commit_and_vote(bhash);
           }
         }
         // the block was not matched with a parent and returned
@@ -680,7 +680,7 @@ impl<'g, D: BlockData> Chain<'g, D> {
     }
     while self.try_finalize_roots() {}
 
-    // unstuck the consensus of it is missing blocks
+    // unstuck the consensus if it is missing blocks
     // for too long.
     for missing in self.orphans.missing_blocks(self.finalized.height()) {
       self.events.push_front(ChainEvent::BlockMissing(missing));
