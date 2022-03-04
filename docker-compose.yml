@@ -136,6 +136,136 @@ services:
     networks:
       rensa_test_net:
 
+  validator_10:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    environment:
+      - RUST_BACKTRACE=1
+    command: ./rensa --keypair 6y7wHcUD1j1AQymapHkKaQ6fEMEFakBXY9xhdxh2AiCN --genesis genesis.json --peer 172.29.1.2:44668
+    depends_on:
+      validator_0:
+        condition: service_started
+    networks:
+      rensa_test_net:
+  
+  validator_11:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    environment:
+      - RUST_BACKTRACE=1
+    command: ./rensa --keypair Bc51y46xTKtpA7WSCX4EnGDhmCRqxwp59xUPEZJtNw4e --genesis genesis.json --peer 172.29.1.2:44668
+    depends_on:
+      validator_0:
+        condition: service_started
+    networks:
+      rensa_test_net:
+
+  validator_12:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    environment:
+      - RUST_BACKTRACE=1
+    command: ./rensa --keypair CoGUcA3tWjGXuYjpDR211qFiTd4vAsXyXm1sL1yEYjzi --genesis genesis.json --peer 172.29.1.2:44668
+    depends_on:
+      validator_0:
+        condition: service_started
+    networks:
+      rensa_test_net:
+
+  validator_13:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    environment:
+      - RUST_BACKTRACE=1
+    command: ./rensa --keypair EDqLRR1denHBhZCabkdazD3dBmjxLM5iNN5Nq3axEw9z --genesis genesis.json --peer 172.29.1.2:44668
+    depends_on:
+      validator_0:
+        condition: service_started
+    networks:
+      rensa_test_net:
+
+  validator_14:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    environment:
+      - RUST_BACKTRACE=1
+    command: ./rensa --keypair H7xfZqfFpAvQsWTcqcL7h9VJbRAqAGsP85NukeyP1QBV --genesis genesis.json --peer 172.29.1.2:44668
+    depends_on:
+      validator_0:
+        condition: service_started
+    networks:
+      rensa_test_net:
+
+  validator_15:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    environment:
+      - RUST_BACKTRACE=1
+    command: ./rensa --keypair 4ZLA2dHg4b1V5ZJMthBx8CDYGCRkubbFh6mvLJYPaCzM --genesis genesis.json --peer 172.29.1.2:44668
+    depends_on:
+      validator_0:
+        condition: service_started
+    networks:
+      rensa_test_net:
+
+  validator_16:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    environment:
+      - RUST_BACKTRACE=1
+    command: ./rensa --keypair DpYhazJ6QRLQVcX3XwmZ9RGY2QCNCocWegXVxpvTXSw3 --genesis genesis.json --peer 172.29.1.2:44668
+    depends_on:
+      validator_0:
+        condition: service_started
+    networks:
+      rensa_test_net:
+
+  validator_17:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    environment:
+      - RUST_BACKTRACE=1
+    command: ./rensa --keypair 6uZYQhcF8bTuzaRG3y1T38AGeGcV9Ukm1C7rLU3qAvFX --genesis genesis.json --peer 172.29.1.2:44668
+    depends_on:
+      validator_0:
+        condition: service_started
+    networks:
+      rensa_test_net:
+
+  validator_18:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    environment:
+      - RUST_BACKTRACE=1
+    command: ./rensa --keypair 4qLfXAPn2zjiJ2jWNxYrz62fuMZkozSbkjfe7G6t8kr1 --genesis genesis.json --peer 172.29.1.2:44668
+    depends_on:
+      validator_0:
+        condition: service_started
+    networks:
+      rensa_test_net:
+
+  validator_19:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    environment:
+      - RUST_BACKTRACE=1
+    command: ./rensa --keypair 3zHk7yZdN3d62irDYCLUCRqW5pQxsTd8krwDwJtDbEbY --genesis genesis.json --peer 172.29.1.2:44668
+    depends_on:
+      validator_0:
+        condition: service_started
+    networks:
+      rensa_test_net:
+
 networks:
   rensa_test_net:
     ipam:

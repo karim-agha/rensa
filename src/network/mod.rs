@@ -136,9 +136,7 @@ impl<D: BlockData> Network<D> {
         max_transmit_size: genesis.max_block_size,
         history_window: epoch_duration,
         lazy_push_window: epoch_duration,
-        shuffle_interval: epoch_duration * 50,
-        // don't initiate shuffle on more than 50% of peers at once
-        shuffle_probability: 0.5,
+        shuffle_probability: 0.3, // shuffle only 30% of peers at once
         ..Config::default()
       }),
       id.public().to_peer_id(),

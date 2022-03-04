@@ -61,6 +61,46 @@
     {
       "pubkey": "2FKYTBGSSm9QqhaR2tKWjRpBA88nX34DpgZ8VzkwFKoL",
       "stake": 10000
+    },
+    {
+      "pubkey": "26zkoKz34my2fBF6f4rg8RmNCm2Bk3VbeoTYRTegznJ3",
+      "stake": 11000
+    },
+    {
+      "pubkey": "5sC4Xmn2BDi73N96RrQnNpAVaWssds83ny8HPtxMci2T",
+      "stake": 12000
+    },
+    {
+      "pubkey": "2Zx9jCpihzMzLy3LmZYTrpioDurHgqShYwcTbapioprt",
+      "stake": 7000
+    },
+    {
+      "pubkey": "HhMbNc8qeh1tq1w9WKNJVk8TwZqn3WQ2whj7vLrZ79pL",
+      "stake": 11000
+    },
+    {
+      "pubkey": "D21nqg47n4AQiPwPpSsLN2FWWNkMMhgHo3QWcBFqC3i7",
+      "stake": 12000
+    },
+    {
+      "pubkey": "2K1x4ym2JYHRSY9N1w6Q8NKZXMvkTRZQBo4d3V1ZP1Sh",
+      "stake": 7000
+    },
+    {
+      "pubkey": "5YcxBH1PEFKpHEkcMdETWSzrkDNVcX7Mqy13GqWPwcCv",
+      "stake": 11000
+    },
+    {
+      "pubkey": "ZgLvPAxuuNFkczf5taVPDZVzJ2dz6WjuuruxFfYw3vm",
+      "stake": 12000
+    },
+    {
+      "pubkey": "8aAAB3YDrH9wDkTTa3VScZCGsHmFtuBrWMz45Uzv9gns",
+      "stake": 7000
+    },
+    {
+      "pubkey": "AUwmGMdi6WGb5i2Wnz7qBeqp5vooXA8Q2EYE4RcvZTF9",
+      "stake": 10000
     }
   ]
 }
