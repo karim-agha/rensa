@@ -205,10 +205,10 @@ impl<D: BlockData> Orphans<D> {
   /// and re-requested after that interval.
   ///
   /// At the moment blocks are considered missing if the were not received
-  /// for longer then half an epoch since its first reported.
+  /// for longer then slots since its first reported.
   pub fn missing_blocks(
     &mut self,
-    max_relevant_height: u64,
+    min_relevant_height: u64,
   ) -> impl Iterator<Item = Multihash> {
     let missing_threshold = self.slot * 2;
 
@@ -218,7 +218,7 @@ impl<D: BlockData> Orphans<D> {
       // if the orphans of a missing block belong to a height that is
       // older than the finalized state, prune them, as the are irrelevant
       // to consensus anymore.
-      if subtree.max_height() <= max_relevant_height {
+      if subtree.max_height() <= min_relevant_height {
         irrelevant.push(*hash);
       } else if subtree.since() >= missing_threshold {
         subtree.reset_timer();
