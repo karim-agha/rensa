@@ -94,7 +94,7 @@ impl<D: BlockData> Node<D> {
   }
 
   /// converts this orphan tree into a flat list of
-  /// blocks using breadth-first ordering, so the
+  /// blocks using breadth-first ordering, so that
   /// when included in that order in the chain they
   /// all end up finding their parent and become part
   /// of the chain.
@@ -111,6 +111,12 @@ impl<D: BlockData> Node<D> {
       }
     }
     output
+  }
+}
+
+impl<D: BlockData> From<Node<D>> for Vec<Produced<D>> {
+  fn from(node: Node<D>) -> Self {
+    node.flatten()
   }
 }
 
@@ -173,7 +179,7 @@ impl<D: BlockData> Orphans<D> {
       let parent = block.parent;
       let block_string = format!("{block}");
       v.insert(Node::new(block));
-      
+
       warn!(
         "parent block {} for {} not found (or has not arrived yet)",
         parent.to_b58(),
@@ -207,7 +213,7 @@ impl<D: BlockData> Orphans<D> {
   /// and re-requested after that interval.
   ///
   /// At the moment blocks are considered missing if the were not received
-  /// for longer then slots since its first reported.
+  /// for longer than two slots since its first reported.
   pub fn missing_blocks(
     &mut self,
     min_relevant_height: u64,

@@ -116,7 +116,7 @@ services:
       dockerfile: Dockerfile
     environment:
       - RUST_BACKTRACE=1
-    command: ./rensa --keypair Fi6HBTsAPURV75GEY1fPKXwF24pTikU4qsFc4TgrwbeB --genesis genesis.json --peer 172.29.1.2:44668
+    command: ./rensa --keypair Fi6HBTsAPURV75GEY1fPKXwF24pTikU4qsFc4TgrwbeB --genesis genesis.json --peer 172.29.1.2:44668 -v
     depends_on:
       validator_0:
         condition: service_started

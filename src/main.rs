@@ -35,7 +35,12 @@ use {
   std::sync::Arc,
   storage::{BlockStore, PersistentState},
   tracing::{debug, info, Level},
-  tracing_subscriber::EnvFilter,
+  tracing_subscriber::{
+    filter::filter_fn,
+    prelude::__tracing_subscriber_SubscriberExt,
+    util::SubscriberInitExt,
+    Layer,
+  },
   vm::Finalized,
 };
 
@@ -65,13 +70,17 @@ fn print_essentials(opts: &CliOpts) -> anyhow::Result<()> {
 async fn main() -> anyhow::Result<()> {
   let opts = CliOpts::parse();
 
-  tracing_subscriber::fmt()
-    .with_env_filter(EnvFilter::from_default_env())
-    .with_max_level(match opts.verbose {
-      1 => Level::DEBUG,
-      2 => Level::TRACE,
-      _ => Level::INFO,
-    })
+  let loglevel = match opts.verbose {
+    1 => Level::DEBUG,
+    2 => Level::TRACE,
+    _ => Level::INFO,
+  };
+  tracing_subscriber::registry()
+    .with(tracing_subscriber::fmt::layer().with_filter(filter_fn(
+      move |metadata| {
+        metadata.target().starts_with("rensa") && metadata.level() <= &loglevel
+      },
+    )))
     .init();
 
   // print basic information about the
