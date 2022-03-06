@@ -156,12 +156,12 @@ pub struct Genesis<D: BlockData> {
   /// over p2p gossip network in bytes.
   pub max_block_size: usize,
 
-  /// How many slots make up one epoch. Epochs are groups of
+  /// How many blocks make up one epoch. Epochs are groups of
   /// consecutive slots. Two epochs in a row that receive 2/3
   /// of validator votes constitute a finalized chechpoint that
   /// will never be reverted by any fork choice rule and could
   /// be considered forever immutable.
-  pub epoch_slots: u64,
+  pub epoch_blocks: u64,
 
   /// The maximum age in epochs of a finalized block that can be
   /// used as a justification of a vote on a block. This value should
@@ -220,7 +220,7 @@ impl<D: BlockData> Block<D> for Genesis<D> {
     sha3.update(self.chain_id.as_bytes());
     sha3.update(&self.genesis_time.timestamp_millis().to_le_bytes());
     sha3.update(&self.slot_interval.as_millis().to_le_bytes());
-    sha3.update(&self.epoch_slots.to_le_bytes());
+    sha3.update(&self.epoch_blocks.to_le_bytes());
     sha3.update(&self.max_justification_age.to_le_bytes());
     sha3.update(&self.max_block_size.to_le_bytes());
     sha3.update(&self.minimum_stake.to_le_bytes());

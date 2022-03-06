@@ -125,16 +125,14 @@ impl<D: BlockData> Network<D> {
       vset.contains(&pubkey)
     });
 
-    let epoch_duration = genesis.slot_interval * genesis.epoch_slots as u32;
-
     let mut swarm = Swarm::new(
       create_transport(&keypair).await?,
       Episub::new(Config {
         authorizer,
         network_size: genesis.validators.len(),
         max_transmit_size: genesis.max_block_size,
-        history_window: epoch_duration,
-        lazy_push_window: epoch_duration,
+        history_window: genesis.slot_interval * 6,
+        lazy_push_window: genesis.slot_interval * 4,
         shuffle_probability: 0.3, // shuffle only 30% of peers at once
         ..Config::default()
       }),

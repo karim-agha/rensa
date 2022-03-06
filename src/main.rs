@@ -78,7 +78,8 @@ async fn main() -> anyhow::Result<()> {
   tracing_subscriber::registry()
     .with(tracing_subscriber::fmt::layer().with_filter(filter_fn(
       move |metadata| {
-        metadata.target().starts_with("rensa") && metadata.level() <= &loglevel
+        !metadata.target().starts_with("netlink")
+          && metadata.level() <= &loglevel
       },
     )))
     .init();
@@ -247,7 +248,7 @@ async fn main() -> anyhow::Result<()> {
           ChainEvent::BlockIncluded(block) => {
             info!(
               "included block {} [epoch {}] [state hash: {}]",
-              *block, block.slot() / genesis.epoch_slots,
+              *block, block.height() / genesis.epoch_blocks,
               block.state().hash().to_bytes().to_b58()
             );
             // don't duplicate votes if they were
@@ -260,7 +261,7 @@ async fn main() -> anyhow::Result<()> {
               "confirmed block {} with {:.02}% votes [epoch {}] [state hash: {}]",
               *block,
               (votes as f64 * 100f64) / chain.total_stake() as f64,
-              block.slot() / genesis.epoch_slots,
+              block.height() / genesis.epoch_blocks,
               block.state().hash().to_bytes().to_b58()
             );
             consumers.consume(block, Commitment::Confirmed)?;
@@ -270,7 +271,7 @@ async fn main() -> anyhow::Result<()> {
               "finalized block {} with {:.02}% votes [epoch {}] [state hash: {}]",
               *block,
               (votes as f64 * 100f64) / chain.total_stake() as f64,
-              block.slot() / genesis.epoch_slots,
+              block.height() / genesis.epoch_blocks,
               block.state().hash().to_bytes().to_b58()
             );
             consumers.consume(block, Commitment::Finalized)?;

@@ -153,11 +153,12 @@ impl<'g, D: BlockData> Chain<'g, D> {
     machine: &'g vm::Machine,
     finalized: Finalized<'g, D>,
   ) -> Self {
+    let epoch_duration = genesis.slot_interval * genesis.epoch_blocks as u32;
     Self {
       genesis,
       finalized,
       forktrees: vec![],
-      orphans: Orphans::new(genesis.slot_interval),
+      orphans: Orphans::new(epoch_duration),
       ownvotes: HashMap::new(),
       events: VecDeque::new(),
       finalized_history: HashMap::new(),
@@ -234,8 +235,8 @@ impl<'g, D: BlockData> Chain<'g, D> {
 
   /// Given a block/slot height it returns
   /// the epoch number it belongs to
-  fn epoch(&self, slot: u64) -> u64 {
-    slot / self.genesis.epoch_slots
+  fn epoch(&self, block: &dyn Block<D>) -> u64 {
+    block.height() / self.genesis.epoch_blocks
   }
 }
 
@@ -469,10 +470,7 @@ impl<'g, 'f, D: BlockData> Chain<'g, D> {
     }
 
     let bhash = block.hash().unwrap();
-    debug!(
-      "ingesting block {block} in epoch {}",
-      self.epoch(block.slot())
-    );
+    debug!("ingesting block {block} in epoch {}", self.epoch(&block));
 
     // try inserting the new block into the chain by looking
     // for its parent block and adding it as a child.
@@ -522,7 +520,7 @@ impl<'g, 'f, D: BlockData> Chain<'g, D> {
   fn commit_and_vote(&mut self, target: Multihash) {
     for root in &self.forktrees {
       if let Some(target) = root.get(&target) {
-        let epoch = self.epoch(target.value.slot());
+        let epoch = self.epoch(&*target.value);
 
         // The justification is the last finalized block.
         let justification_hash = self.finalized.hash().unwrap();
@@ -570,12 +568,12 @@ impl<'g, 'f, D: BlockData> Chain<'g, D> {
         // second ancestor and all its parents.
 
         // first rewind to the beginning of the epoch of the current head
-        let head_epoch_start = head.epoch_start(self.genesis.epoch_slots);
+        let head_epoch_start = head.epoch_start(self.genesis.epoch_blocks);
 
         if let Some(first_checkpoint) = head_epoch_start
           .path()
           .nth(1) // last block in previous epoch
-          .map(|c| c.epoch_start(self.genesis.epoch_slots))
+          .map(|c| c.epoch_start(self.genesis.epoch_blocks))
         {
           // check if the preceeding epoch is confirmed.
           if first_checkpoint.value.votes >= self.minimum_majority_stake() {
@@ -583,7 +581,7 @@ impl<'g, 'f, D: BlockData> Chain<'g, D> {
             if let Some(second_checkpoint) = first_checkpoint
               .path()
               .nth(1) // last block in epoch N - 2
-              .map(|c| c.epoch_start(self.genesis.epoch_slots))
+              .map(|c| c.epoch_start(self.genesis.epoch_blocks))
             {
               // the second consecutive checkpoint is confirmed
               // all ancestors of this block are considered final
@@ -655,7 +653,7 @@ impl<'g, 'f, D: BlockData> Chain<'g, D> {
 
       // keep this collection size bounded,
       // finalized votes are irrelevant for new votes.
-      self.ownvotes.remove(&self.epoch(block.slot()));
+      self.ownvotes.remove(&self.epoch(&*block));
 
       // signal to external listeners that a block was finalized
       self
@@ -691,7 +689,7 @@ impl<'g, D: BlockData> Chain<'g, D> {
     // keep a sliding window of recently finalized blocks from
     // up to N specified in genesis epochs.
     // only those blocks are valid justifications of a vote.
-    let epoch = self.epoch(self.finalized.slot());
+    let epoch = self.epoch(self.finalized.as_ref());
     match self.finalized_history.entry(epoch) {
       Entry::Occupied(mut e) => {
         e.get_mut().insert(block.hash().unwrap());
@@ -783,7 +781,7 @@ mod test {
 
     let genesis = Genesis::<Vec<Transaction>> {
       chain_id: "1".to_owned(),
-      epoch_slots: 32,
+      epoch_blocks: 32,
       genesis_time: Utc::now(),
       max_block_size: 100_000,
       max_justification_age: 100,
@@ -865,7 +863,7 @@ mod test {
 
     let genesis = Genesis {
       chain_id: "1".to_owned(),
-      epoch_slots: 32,
+      epoch_blocks: 32,
       max_block_size: 100_000,
       max_justification_age: 100,
       genesis_time: Utc::now(),

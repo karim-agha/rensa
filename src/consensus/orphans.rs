@@ -132,7 +132,7 @@ impl<D: BlockData> From<Node<D>> for Vec<Produced<D>> {
 /// appended to the chain, we also look for any orphans that
 /// could be its children and append them to the chain.
 pub struct Orphans<D: BlockData> {
-  slot: Duration,
+  timeout: Duration,
   blocks: HashMap<Multihash, Node<D>>,
 
   /// Votes that have not matched any target land in here.
@@ -141,11 +141,11 @@ pub struct Orphans<D: BlockData> {
 }
 
 impl<D: BlockData> Orphans<D> {
-  pub fn new(slot: Duration) -> Self {
+  pub fn new(timeout: Duration) -> Self {
     Self {
       votes: HashMap::new(),
       blocks: HashMap::new(),
-      slot,
+      timeout,
     }
   }
 
@@ -218,7 +218,6 @@ impl<D: BlockData> Orphans<D> {
     &mut self,
     min_relevant_height: u64,
   ) -> impl Iterator<Item = Multihash> {
-    let missing_threshold = self.slot * 2;
 
     let mut output = vec![];
     let mut irrelevant = vec![];
@@ -228,7 +227,7 @@ impl<D: BlockData> Orphans<D> {
       // to consensus anymore.
       if subtree.max_height() <= min_relevant_height {
         irrelevant.push(*hash);
-      } else if subtree.since() >= missing_threshold {
+      } else if subtree.since() >= self.timeout {
         subtree.reset_timer();
         output.push(*hash);
       }

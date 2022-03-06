@@ -210,8 +210,8 @@ impl<D: BlockData> TreeNode<D> {
   /// This is used to check for finality of a block, and
   /// checking if the two consecutive epoch checkpoints
   /// are finalized.
-  pub fn epoch_start(&self, epoch_slots: u64) -> &TreeNode<D> {
-    let epoch = |n: &TreeNode<D>| n.value.slot() / epoch_slots;
+  pub fn epoch_start(&self, epoch_blocks: u64) -> &TreeNode<D> {
+    let epoch = |n: &TreeNode<D>| n.value.height() / epoch_blocks;
     let mut needle = self;
     for step in self.path().skip(1) {
       if epoch(step) == epoch(self) {
@@ -369,7 +369,7 @@ mod tests {
 
     let genesis = Genesis::<u8> {
       chain_id: "1".to_owned(),
-      epoch_slots: 32,
+      epoch_blocks: 32,
       genesis_time: Utc::now(),
       max_block_size: 100_000,
       max_justification_age: 100,
