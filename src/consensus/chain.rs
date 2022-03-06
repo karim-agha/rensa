@@ -153,12 +153,11 @@ impl<'g, D: BlockData> Chain<'g, D> {
     machine: &'g vm::Machine,
     finalized: Finalized<'g, D>,
   ) -> Self {
-    let epoch_duration = genesis.slot_interval * genesis.epoch_slots as u32;
     Self {
       genesis,
       finalized,
       forktrees: vec![],
-      orphans: Orphans::new(epoch_duration),
+      orphans: Orphans::new(genesis.slot_interval),
       ownvotes: HashMap::new(),
       events: VecDeque::new(),
       finalized_history: HashMap::new(),
