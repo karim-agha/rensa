@@ -74,7 +74,7 @@ pub struct Config {
   /// The difference in hops between observed IHAVEs and received
   /// messages that triggers tree optimization and replacing the
   /// eager node
-  pub hop_optimization_factor: usize,
+  pub hop_optimization_factor: u32,
 
   /// A predicate that decides whether a given peer is allowed to
   /// join a topic. The default authenticator allows any peer to

@@ -279,9 +279,9 @@ impl PlumTree {
       for observed in expected_ihaves {
         match self.received.get(&observed.key()) {
           Some(received) => {
-            if received.hop > observed.hop
-              && (received.hop - observed.hop) as usize
-                >= self.config.hop_optimization_factor
+            if received.hop.saturating_sub(observed.hop)
+              >= self.config.hop_optimization_factor
+              && observed.hop != 0
             {
               debug!(
                 "path for message {} from {} is better than {} ({}:{})",
