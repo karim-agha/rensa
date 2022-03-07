@@ -185,7 +185,7 @@ async fn main() -> anyhow::Result<()> {
         debug!("[slot {}]: {} is considered head of chain @ height {}",
           slot, block.hash()?.to_b58(), block.height());
         if validator.pubkey == me {
-          producer.produce(slot, state, block);
+          producer.produce(state, block);
         }
       }
 
@@ -213,6 +213,7 @@ async fn main() -> anyhow::Result<()> {
             chain.include(block);
           },
           NetworkEvent::VoteReceived(vote) => {
+            debug!("received vote {vote:?}");
             producer.record_vote(vote);
           },
           NetworkEvent::MissingBlock(block_hash) => {

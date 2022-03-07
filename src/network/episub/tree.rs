@@ -121,12 +121,15 @@ impl PlumTree {
     // if we don't have this message in the message cache
     // it means that we're seeing it for the first time,
     // then forward it to all eager push nodes.
-    if !self.received.insert(MessageRecord {
-      id,
-      hop,
-      payload: payload.clone(),
-      sender: peer_id,
-    }) {
+    if self
+      .received
+      .insert(MessageRecord {
+        id,
+        hop,
+        payload: payload.clone(),
+        sender: peer_id,
+      })
+    {
       self
         .out_events
         .push_back(EpisubNetworkBehaviourAction::GenerateEvent(
@@ -160,23 +163,25 @@ impl PlumTree {
         );
         debug!("sending message {} to peer {}", id, peer);
       }
-    } else {
+    } else if self.config.optimize_sender_tree {
       // this is a duplicate message, it means that we are
       // having a cycle in the node connectivity graph. The
       // sender should be moved to lazy push peers and notified
       // that we have moved them to lazy nodes.
-      self.inject_prune(peer_id);
-      self
-        .out_events
-        .push_back(EpisubNetworkBehaviourAction::NotifyHandler {
-          peer_id,
-          handler: NotifyHandler::Any,
-          event: rpc::Rpc {
-            topic: self.topic.clone(),
-            action: Some(rpc::rpc::Action::Prune(rpc::Prune {})),
+      if self.eager.contains(&peer_id) {
+        self.inject_prune(peer_id);
+        self.out_events.push_back(
+          EpisubNetworkBehaviourAction::NotifyHandler {
+            peer_id,
+            handler: NotifyHandler::Any,
+            event: rpc::Rpc {
+              topic: self.topic.clone(),
+              action: Some(rpc::rpc::Action::Prune(rpc::Prune {})),
+            },
           },
-        });
-      debug!("pruning link with {}", peer_id);
+        );
+        debug!("pruning link with {}", peer_id);
+      }
     }
   }
 
@@ -327,7 +332,7 @@ impl PlumTree {
       }
 
       grafts.into_iter().for_each(|(p, ids)| {
-        debug!("grafting link with {}", p);
+        debug!("grafting link with {p}: [{ids:?}]");
         self
           .out_events
           .push_back(EpisubNetworkBehaviourAction::NotifyHandler {

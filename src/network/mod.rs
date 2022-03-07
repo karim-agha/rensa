@@ -129,6 +129,7 @@ impl<D: BlockData> Network<D> {
       create_transport(&keypair).await?,
       Episub::new(Config {
         authorizer,
+        active_view_factor: 4,
         network_size: genesis.validators.len(),
         max_transmit_size: genesis.max_block_size,
         history_window: genesis.slot_interval * 6,

@@ -103,9 +103,6 @@ pub trait Block<D: BlockData>: Debug {
   /// Slot height at which the block was produced.
   fn height(&self) -> u64;
 
-  /// Slot height at which the block was produced.
-  fn slot(&self) -> u64;
-
   /// Block contents, that are opaque to the consensus.
   /// In most cases this is a list of transactions.
   fn payload(&self) -> &D;
@@ -284,11 +281,6 @@ impl<D: BlockData> Block<D> for Genesis<D> {
     0
   }
 
-  /// Constant zero
-  fn slot(&self) -> u64 {
-    0
-  }
-
   /// The initial set of data stored in the genesis.
   /// This data is specific to the execution layer
   /// that drives the chain
@@ -328,9 +320,6 @@ pub struct Produced<D: BlockData> {
 
   /// Hash of the state diff between this block and its parent.
   pub state_hash: Multihash,
-
-  /// The slot at which it was produced.  
-  pub slot: u64,
 
   /// The height at which it was produced.
   pub height: u64,
@@ -404,7 +393,6 @@ impl<D: BlockData> Block<D> for Produced<D> {
       .get_or_try_init(|| {
         Self::hash_parts(
           &self.signature.0,
-          &self.slot,
           &self.height,
           &self.parent,
           &self.state_hash,
@@ -441,15 +429,6 @@ impl<D: BlockData> Block<D> for Produced<D> {
   /// producer's private key
   fn signature(&self) -> Option<&(Pubkey, Signature)> {
     Some(&self.signature)
-  }
-
-  /// The time slot at which the block was produced.
-  ///
-  /// This is always a value greater than zero, and there may be gaps
-  /// in the block height in the blockchain if a producer fails to
-  /// produce a block during its turn.
-  fn slot(&self) -> u64 {
-    self.slot
   }
 
   /// The height at which the block was produced.
@@ -492,7 +471,6 @@ impl<D: BlockData> Produced<D> {
   pub fn new(
     keypair: &Keypair,
     height: u64,
-    slot: u64,
     parent: Multihash,
     data: D,
     state_hash: Multihash,
@@ -503,7 +481,6 @@ impl<D: BlockData> Produced<D> {
       (*keypair).sign(
         &Self::hash_parts(
           &keypair.public(),
-          &slot,
           &height,
           &parent,
           &state_hash,
@@ -516,7 +493,6 @@ impl<D: BlockData> Produced<D> {
 
     Ok(Self {
       parent,
-      slot,
       height,
       signature,
       data,
@@ -542,7 +518,6 @@ impl<D: BlockData> Produced<D> {
   /// Those are the bytes used to calculate block hash
   fn hash_parts(
     validator: &Pubkey,
-    slot: &u64,
     height: &u64,
     parent: &Multihash,
     state_hash: &Multihash,
@@ -553,7 +528,6 @@ impl<D: BlockData> Produced<D> {
     sha3.update(validator);
     sha3.update(&parent.to_bytes());
     sha3.update(&state_hash.to_bytes());
-    sha3.update(&slot.to_le_bytes());
     sha3.update(&height.to_le_bytes());
     sha3.update(&data.hash()?.to_bytes());
     for vote in votes {

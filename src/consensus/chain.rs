@@ -527,7 +527,7 @@ impl<'g, 'f, D: BlockData> Chain<'g, D> {
         let target_hash = target.value.hash().unwrap();
 
         // if we have already voted in this epoch, make sure that
-        // we are not braking any voting rules.
+        // we are not violating any voting rules.
         if let Some((j, t)) = self.ownvotes.get(&epoch) {
           // 1. no surround vote, never use a justification
           // that is an ancestor of a previous justification.
@@ -547,6 +547,11 @@ impl<'g, 'f, D: BlockData> Chain<'g, D> {
           .ownvotes
           .insert(epoch, (justification_hash, target_hash));
 
+        debug!(
+          "voting for block {} with justification {}",
+          target_hash.to_b58(),
+          justification_hash.to_b58(),
+        );
         self.events.push_front(ChainEvent::Vote {
           target: target_hash,
           justification: justification_hash,
@@ -814,7 +819,6 @@ mod test {
     let block = block::Produced::new(
       &keypair,
       1,
-      1,
       genesis.hash().unwrap(),
       vec![],
       statehash,
@@ -831,7 +835,6 @@ mod test {
 
     let block2 = block::Produced::new(
       &keypair,
-      2,
       2,
       chain.head().1.hash().unwrap(),
       vec![],
@@ -897,7 +900,6 @@ mod test {
     let block = block::Produced::new(
       &keypair,
       1,
-      1,
       genesis.hash().unwrap(),
       "two".to_string(),
       statehash,
@@ -916,7 +918,6 @@ mod test {
     let block2 = block::Produced::new(
       &keypair,
       2,
-      2,
       hash,
       "three".to_string(),
       statehash,
@@ -927,7 +928,6 @@ mod test {
 
     let block3 = block::Produced::new(
       &keypair,
-      3,
       3,
       hash2,
       "four".to_string(),

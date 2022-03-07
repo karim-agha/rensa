@@ -13,7 +13,7 @@ use {
 };
 
 pub trait Keyed {
-  type Key: Eq + Hash;
+  type Key: Eq + Hash + Clone;
   fn key(&self) -> Self::Key;
 }
 
@@ -84,12 +84,12 @@ where
         if ptr1.deref().deref() < o.get().deref().deref() {
           o.insert(ptr1);
         }
-        true
+        false
       }
       Entry::Vacant(v) => {
         v.insert(ptr1);
         self.by_time.push_back(ptr2);
-        false
+        true
       }
     }
   }

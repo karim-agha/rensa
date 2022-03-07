@@ -75,7 +75,6 @@ impl<'v> BlockProducer<'v> {
 
   pub fn produce(
     &mut self,
-    slot: u64,
     state: &dyn State,
     prev: &dyn Block<Vec<Transaction>>,
   ) {
@@ -94,7 +93,6 @@ impl<'v> BlockProducer<'v> {
     let block = Produced::new(
       &self.keypair,
       prev.height() + 1,
-      slot,
       prevhash,
       txs,
       state_hash,

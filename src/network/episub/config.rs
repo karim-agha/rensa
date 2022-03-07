@@ -71,6 +71,14 @@ pub struct Config {
   /// messages that other peers know about.
   pub tick_frequency: Duration,
 
+  /// Enables or disables the creation of a minimum spanning
+  /// tree among peers. Set this to true if the sender doesn't
+  /// change often, in that case the propagation gets more efficient
+  /// as graph cycles are pruned and a minimum spanning tree is formed,
+  /// otherwise, if the publishing node changes often then this
+  /// causes excessive churn.
+  pub optimize_sender_tree: bool,
+
   /// The difference in hops between observed IHAVEs and received
   /// messages that triggers tree optimization and replacing the
   /// eager node
@@ -129,6 +137,7 @@ impl Default for Config {
       history_window: Duration::from_secs(30),
       tick_frequency: Duration::from_millis(200),
       hop_optimization_factor: 4,
+      optimize_sender_tree: true,
       authorizer: PeerAuthorizer::new(|_: &str, _: &PeerId| {
         true // allow all by default
       }),

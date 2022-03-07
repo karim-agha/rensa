@@ -343,7 +343,6 @@ mod tests {
         Produced::new(
           keypair,
           parent.height + 1,
-          parent.height + 1,
           parent.hash().unwrap(),
           data,
           vec![].execute(vm, &StateDiff::default()).unwrap().hash(),
@@ -395,7 +394,6 @@ mod tests {
     let produced = Arc::new(
       Produced::new(
         &keypair,
-        1,
         1,
         Multihash::default(),
         1u8,
