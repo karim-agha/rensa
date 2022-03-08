@@ -39,9 +39,11 @@ impl PersistentState {
     std::fs::create_dir_all(directory.clone())?;
 
     let db = sled::open(directory)?;
-    for (addr, account) in &genesis.state {
-      if db.get(addr).unwrap().is_none() {
-        db.insert(addr, bincode::serialize(account)?)?;
+    if db.is_empty() {
+      for (addr, account) in &genesis.state {
+        if db.get(addr).unwrap().is_none() {
+          db.insert(addr, bincode::serialize(account)?)?;
+        }
       }
     }
 
