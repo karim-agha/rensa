@@ -12,6 +12,7 @@ use {
     },
   },
   borsh::{BorshDeserialize, BorshSerialize},
+  serde::Deserialize,
 };
 
 /// Represents a single token metadata on the chain.
@@ -19,7 +20,7 @@ use {
 /// The mint account is always owned by the Currency native contract and its
 /// address doesn't have a corresponding private key. It can be manipulated
 /// only through instructions to the Currency contract.
-#[derive(Debug, BorshSerialize, BorshDeserialize)]
+#[derive(Debug, Deserialize, BorshSerialize, BorshDeserialize)]
 pub struct Mint {
   /// Optional authority specifies the pubkey that is allowed to mint
   /// new tokens for this token. If set to None, then no more tokens
@@ -56,7 +57,7 @@ pub struct Mint {
 ///   CoinAccount = Currency.derive([mint_pubkey,wallet_pubkey])
 ///
 /// The owner of the token acconut is always the currency module
-#[derive(Debug, BorshSerialize, BorshDeserialize)]
+#[derive(Debug, Deserialize, BorshSerialize, BorshDeserialize)]
 pub struct CoinAccount {
   /// The token mint associated with this account
   pub mint: Pubkey,
@@ -106,12 +107,11 @@ pub enum Instruction {
   /// authority.
   ///
   /// Accounts expected by this instruction:
-  ///  0. [d-rw] The mint address
+  ///  0. [drw-] The mint address
   ///  1. [---s] The mint authority as signer
   ///  2. [----] The recipient wallet owner address
-  ///  3. [d-rw] The recipient address (generated through
-  /// Currency.derive([mint, wallet])).  2. [-s--] The mint authority as
-  /// signer.
+  ///  3. [drw-] The recipient address (Currency.derive([mint, wallet])))
+  ///  4. [-s--] The mint authority as signer.
   Mint(u64),
 
   /// Transfers tokens between wallets.
@@ -123,10 +123,8 @@ pub enum Instruction {
   /// Accounts expected by this instruction:
   ///  0. [d-r--] The mint address
   ///  1. [---s] The sender wallet owner address as signer
-  ///  2. [drw-] The sender token address (generated through
-  /// Currency.derive([mint, wallet]))               
-  ///  3. [drw-] The recipient token address
-  /// (generated through Currency.derive([mint, wallet]))
+  ///  2. [drw-] The sender token address (Currency.derive([mint, wallet]))
+  ///  3. [drw-] The recipient token address (Currency.derive([mint, wallet]))
   Transfer(u64),
 
   /// Remove tokens from circulation.

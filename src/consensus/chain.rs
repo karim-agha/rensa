@@ -171,8 +171,9 @@ impl<'g, D: BlockData> Chain<'g, D> {
     }
   }
 
-  /// Returns the block that is currently considered the
-  /// head of the chain and the state at that block.
+  /// Executes a closure with the block that is currently 
+  /// considered the head of the chain and the accumulated 
+  /// state global state at that block in its fork path.
   ///
   /// The selection of this block uses the Greedy Heaviest
   /// Observed Subtree algorithm (GHOST), and it basically
@@ -186,7 +187,10 @@ impl<'g, D: BlockData> Chain<'g, D> {
   ///
   /// This method returns the last finalized block if the
   /// volatile history is empty ingested or produced so far.
-  pub fn head(&self) -> (&dyn State, &dyn Block<D>) {
+  pub fn with_head<R>(
+    &self,
+    mut op: impl FnMut(&dyn State, &dyn Block<D>) -> R,
+  ) -> R {
     let mut heads: Vec<_> = self.forktrees.iter().map(|f| f.head()).collect();
 
     // get the most voted on subtree and if there is a draw, get
@@ -198,9 +202,16 @@ impl<'g, D: BlockData> Chain<'g, D> {
 
     // if no volatile state, either all blocks
     // are finalized or we are still at genesis block.
+    let head_block = match heads.last() {
+      Some(head) => &*head.value.block,
+      None => self.finalized.as_ref(),
+    };
+
+    let base_state = self.finalized.state();
+
     match heads.last() {
-      Some(head) => (&*head.value.block.state(), &*head.value.block),
-      None => (self.finalized.state(), self.finalized.as_ref()),
+      Some(head) => op(&Overlayed::new(base_state, &head.state()), head_block),
+      None => op(base_state, head_block),
     }
   }
 
@@ -480,7 +491,7 @@ impl<'g, 'f, D: BlockData> Chain<'g, D> {
         Ok(()) => {
           // if the newly inserted block have successfully
           // replaced our head of the chain, then vote for it.
-          if self.head().1.hash().unwrap() == bhash {
+          if bhash == self.with_head(|_, block| block.hash().unwrap()) {
             self.commit_and_vote(bhash);
           }
 
@@ -795,6 +806,9 @@ mod test {
       builtins: vec![],
       minimum_stake: 100,
       max_input_accounts: 32,
+      system_coin: "RensaToken1xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+        .parse()
+        .unwrap(),
       validators: vec![Validator {
         pubkey: keypair.public(),
         stake: 200000,
@@ -809,12 +823,12 @@ mod test {
     let vm = vm::Machine::new(&genesis).unwrap();
     let mut chain = Chain::new(&genesis, &vm, finalized);
 
-    let (hstate, hblock) = chain.head();
-
-    // blocks have no txs, so the statehash won't change across
-    // blocks, but it needs to be a valid hash otherwise the block
-    // gets rejected and not appended to the chain.
-    let statehash = vec![].execute(&vm, hstate).unwrap().hash();
+    let (first_hash, statehash) = chain.with_head(|s, b| {
+      // blocks have no txs, so the statehash won't change across
+      // blocks, but it needs to be a valid hash otherwise the block
+      // gets rejected and not appended to the chain.
+      (b.hash().unwrap(), vec![].execute(&vm, s).unwrap().hash())
+    });
 
     let block = block::Produced::new(
       &keypair,
@@ -826,17 +840,19 @@ mod test {
     )
     .unwrap();
 
-    assert_eq!(hblock.hash().unwrap(), genesis.hash().unwrap());
+    assert_eq!(first_hash, genesis.hash().unwrap());
 
     let hash = block.hash().unwrap();
 
     chain.include(block);
-    assert_eq!(hash, chain.head().1.hash().unwrap());
+    chain.with_head(|_, block| {
+      assert_eq!(hash, block.hash().unwrap());
+    });
 
     let block2 = block::Produced::new(
       &keypair,
       2,
-      chain.head().1.hash().unwrap(),
+      chain.with_head(|_, b| b.hash().unwrap()),
       vec![],
       statehash,
       vec![],
@@ -845,7 +861,7 @@ mod test {
 
     let hash2 = block2.hash().unwrap();
     chain.include(block2);
-    assert_eq!(hash2, chain.head().1.hash().unwrap());
+    assert_eq!(hash2, chain.with_head(|_, b| b.hash().unwrap()));
 
     drop(storage);
 
@@ -875,6 +891,9 @@ mod test {
       builtins: vec![],
       minimum_stake: 100,
       max_input_accounts: 32,
+      system_coin: "RensaToken1xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+        .parse()
+        .unwrap(),
       validators: vec![Validator {
         pubkey: keypair.public(),
         stake: 200000,
@@ -890,12 +909,12 @@ mod test {
     let vm = vm::Machine::new(&genesis).unwrap();
     let mut chain = Chain::new(&genesis, &vm, finalized);
 
-    let (hstate, hblock) = chain.head();
-
-    // blocks have no txs, so the statehash won't change across
-    // blocks, but it needs to be a valid hash otherwise the block
-    // gets rejected and not appended to the chain.
-    let statehash = vec![].execute(&vm, hstate).unwrap().hash();
+    let (first_hash, statehash) = chain.with_head(|s, b| {
+      // blocks have no txs, so the statehash won't change across
+      // blocks, but it needs to be a valid hash otherwise the block
+      // gets rejected and not appended to the chain.
+      (b.hash().unwrap(), vec![].execute(&vm, s).unwrap().hash())
+    });
 
     let block = block::Produced::new(
       &keypair,
@@ -909,11 +928,13 @@ mod test {
     let hash = block.hash().unwrap();
 
     // no we should have only genesis
-    assert_eq!(hblock.hash().unwrap(), genesis.hash().unwrap());
+    assert_eq!(first_hash, genesis.hash().unwrap());
 
     // block should be the head
     chain.include(block);
-    assert_eq!(hash, chain.head().1.hash().unwrap());
+    chain.with_head(|_, block| {
+      assert_eq!(hash, block.hash().unwrap());
+    });
 
     let block2 = block::Produced::new(
       &keypair,
@@ -940,12 +961,16 @@ mod test {
     // out of order insertion, the head should not change
     // after block3, instead it should be stored as an orphan
     chain.include(block3);
-    assert_eq!(hash, chain.head().1.hash().unwrap());
+    chain.with_head(|_, block| {
+      assert_eq!(hash, block.hash().unwrap());
+    });
 
     // include the missing parent, now the chain should match
     // it with the orphan and block3 shold be the new head
     chain.include(block2);
-    assert_eq!(hash3, chain.head().1.hash().unwrap());
+    chain.with_head(|_, block| {
+      assert_eq!(hash3, block.hash().unwrap());
+    });
 
     drop(storage);
 

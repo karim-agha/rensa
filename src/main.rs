@@ -181,12 +181,13 @@ async fn main() -> anyhow::Result<()> {
       // signalling that a new slot started and who's
       // turn it is for the current slot.
       Some((slot, validator)) = schedule.next() => {
-        let (state, block) = chain.head();
-        debug!("[slot {}]: {} is considered head of chain @ height {}",
-          slot, block.hash()?.to_b58(), block.height());
-        if validator.pubkey == me {
-          producer.produce(state, block);
-        }
+        chain.with_head(|state, block| {
+          debug!("[slot {}]: {} is considered head of chain @ height {}",
+            slot, block.hash().unwrap().to_b58(), block.height());
+          if validator.pubkey == me {
+            producer.produce(state, block);
+          }
+        });
       }
 
       // this node should respond with a block reply for

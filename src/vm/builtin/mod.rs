@@ -4,8 +4,9 @@
 //! and are exposed to the users of the chain. The invocation semantics are
 //! identical to invoking a regular user-uploaded contract.
 
-mod currency;
+pub mod currency;
 mod sha3;
+mod staking;
 
 use {
   crate::{primitives::Pubkey, vm::contract::ContractEntrypoint},
@@ -17,6 +18,7 @@ lazy_static::lazy_static! {
     let mut funcs = HashMap::<Pubkey, ContractEntrypoint>::new();
     funcs.insert("Sha3xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx".parse().unwrap(), sha3::contract);
     funcs.insert("Currency1xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx".parse().unwrap(), currency::contract);
+    funcs.insert("Staking1xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx".parse().unwrap(), staking::contract);
     funcs
   };
 }

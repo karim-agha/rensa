@@ -7,6 +7,7 @@
   "maxBlockSize": 5000000,
   "minimumStake": 1000,
   "maxInputAccounts": 32,
+  "systemCoin": "RensaToken1xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
   "state": {
     "CKDN1WjimfErkbgecnEfoPfs7CU1TknwMhpgbiXNknGC": {
       "owner": null,
@@ -15,11 +16,16 @@
     "CoTjo2WBfa9AQWqR8UHxisz1VU7YrAzLxi68iA7VRn4j": {
       "owner": null,
       "data": null
+    },
+    "RensaToken1xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx": {
+      "owner": "Currency1xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+      "data": null
     }
   },
   "builtins": [
     "Currency1xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
-    "Sha3xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+    "Sha3xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+    "Staking1xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
   ],
   "validators": [
     {

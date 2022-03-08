@@ -377,6 +377,9 @@ mod tests {
       builtins: vec![],
       minimum_stake: 100,
       max_input_accounts: 32,
+      system_coin: "RensaToken1xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+        .parse()
+        .unwrap(),
       validators: vec![Validator {
         pubkey: keypair.public(),
         stake: 200000,
@@ -392,15 +395,8 @@ mod tests {
     let statehash = vec![].execute(&vm, &StateDiff::default()).unwrap().hash();
 
     let produced = Arc::new(
-      Produced::new(
-        &keypair,
-        1,
-        Multihash::default(),
-        1u8,
-        statehash,
-        vec![],
-      )
-      .unwrap(),
+      Produced::new(&keypair, 1, Multihash::default(), 1u8, statehash, vec![])
+        .unwrap(),
     );
 
     let executed = Executed::new(&StateDiff::default(), produced, &vm).unwrap();

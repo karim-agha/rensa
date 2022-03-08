@@ -1,4 +1,4 @@
-mod builtin;
+pub mod builtin;
 mod contract;
 mod executed;
 mod machine;

@@ -14,7 +14,7 @@ services:
       dockerfile: Dockerfile
     environment:
       - RUST_BACKTRACE=1
-    command: ./rensa --keypair FtUhvsHCGA6KePPcBDxLiKcuLyhKAz4W1iU4hX2CWtUd --genesis genesis.json -v
+    command: ./rensa --keypair FtUhvsHCGA6KePPcBDxLiKcuLyhKAz4W1iU4hX2CWtUd --genesis genesis.json 
     networks:
       rensa_test_net:
         ipv4_address: 172.29.1.2
@@ -25,7 +25,7 @@ services:
       dockerfile: Dockerfile
     environment:
       - RUST_BACKTRACE=1
-    command: ./rensa --keypair 6GDs9UNWHp9oB6vPf7uSBocbJTR6Z4TQao7zQGDWE4Vu --genesis genesis.json --peer 172.29.1.2:44668 -v
+    command: ./rensa --keypair 6GDs9UNWHp9oB6vPf7uSBocbJTR6Z4TQao7zQGDWE4Vu --genesis genesis.json --peer 172.29.1.2:44668 
     depends_on:
       validator_0:
         condition: service_started
@@ -38,7 +38,7 @@ services:
       dockerfile: Dockerfile
     environment:
       - RUST_BACKTRACE=1
-    command: ./rensa --keypair 3TTteibqWqxdzDGg2oAvwatEs7iwXuFg45nprsFFpHEZ --genesis genesis.json --peer 172.29.1.2:44668 -v
+    command: ./rensa --keypair 3TTteibqWqxdzDGg2oAvwatEs7iwXuFg45nprsFFpHEZ --genesis genesis.json --peer 172.29.1.2:44668 
     depends_on:
       validator_0:
         condition: service_started
@@ -51,7 +51,7 @@ services:
       dockerfile: Dockerfile
     environment:
       - RUST_BACKTRACE=1
-    command: ./rensa --keypair csTUBKjVWS4P1Lq5fXQJ1U6JX2dEMef8MFzyNG21ycF --genesis genesis.json --peer 172.29.1.2:44668 -v
+    command: ./rensa --keypair csTUBKjVWS4P1Lq5fXQJ1U6JX2dEMef8MFzyNG21ycF --genesis genesis.json --peer 172.29.1.2:44668 
     depends_on:
       validator_0:
         condition: service_started
@@ -64,7 +64,7 @@ services:
       dockerfile: Dockerfile
     environment:
       - RUST_BACKTRACE=1
-    command: ./rensa --keypair 6SebepsFketmvHW5wHc4PGK41Nt9JGfojUN5PXybPSuo --genesis genesis.json --peer 172.29.1.2:44668 --rpc 8080 -v
+    command: ./rensa --keypair 6SebepsFketmvHW5wHc4PGK41Nt9JGfojUN5PXybPSuo --genesis genesis.json --peer 172.29.1.2:44668 --rpc 8080 
     depends_on:
       validator_0:
         condition: service_started
@@ -79,7 +79,7 @@ services:
       dockerfile: Dockerfile
     environment:
       - RUST_BACKTRACE=1
-    command: ./rensa --keypair 2r7N3U1vEsXGjm29TCfFTzwSuXjq9xPDiiah5egbSZpC --genesis genesis.json --peer 172.29.1.2:44668  -v
+    command: ./rensa --keypair 2r7N3U1vEsXGjm29TCfFTzwSuXjq9xPDiiah5egbSZpC --genesis genesis.json --peer 172.29.1.2:44668  
     depends_on:
       validator_0:
         condition: service_started
@@ -92,7 +92,7 @@ services:
       dockerfile: Dockerfile
     environment:
       - RUST_BACKTRACE=1
-    command: ./rensa --keypair Daa4SKexWyfgh5rN5DJUQAfEEQ4piJzRkf72CsBQJEtr --genesis genesis.json --peer 172.29.1.2:44668 -v
+    command: ./rensa --keypair Daa4SKexWyfgh5rN5DJUQAfEEQ4piJzRkf72CsBQJEtr --genesis genesis.json --peer 172.29.1.2:44668 
     depends_on:
       validator_0:
         condition: service_started
@@ -108,7 +108,7 @@ services:
       # Uncomment for attaching a memory profiler
       # - LD_PRELOAD=/home/libbytehound.so
     # command: bash -c "./rensa --keypair 6zUWXGnHLqZzKBEJERqrLiM4v3QLMDWJpDbjt9QtwJcg --genesis genesis.json --peer 172.29.1.2:44668 && ./bytehound server -i 0.0.0.0 memory-profiling_*.dat"
-    command: ./rensa --keypair 6zUWXGnHLqZzKBEJERqrLiM4v3QLMDWJpDbjt9QtwJcg --genesis genesis.json --peer 172.29.1.2:44668 -v
+    command: ./rensa --keypair 6zUWXGnHLqZzKBEJERqrLiM4v3QLMDWJpDbjt9QtwJcg --genesis genesis.json --peer 172.29.1.2:44668 
     depends_on:
       validator_0:
         condition: service_started
@@ -123,7 +123,7 @@ services:
       dockerfile: Dockerfile
     environment:
       - RUST_BACKTRACE=1
-    command: ./rensa --keypair Fi6HBTsAPURV75GEY1fPKXwF24pTikU4qsFc4TgrwbeB --genesis genesis.json --peer 172.29.1.2:44668 -v
+    command: ./rensa --keypair Fi6HBTsAPURV75GEY1fPKXwF24pTikU4qsFc4TgrwbeB --genesis genesis.json --peer 172.29.1.2:44668 
     depends_on:
       validator_0:
         condition: service_started
@@ -136,7 +136,7 @@ services:
       dockerfile: Dockerfile
     environment:
       - RUST_BACKTRACE=1
-    command: ./rensa --keypair 5jtFt9g9qYgicGbVS846BeZAyUbe7X7rvAWw3pNn2mXj --genesis genesis.json --peer 172.29.1.2:44668 -v
+    command: ./rensa --keypair 5jtFt9g9qYgicGbVS846BeZAyUbe7X7rvAWw3pNn2mXj --genesis genesis.json --peer 172.29.1.2:44668 
     depends_on:
       validator_0:
         condition: service_started
@@ -149,7 +149,7 @@ services:
       dockerfile: Dockerfile
     environment:
       - RUST_BACKTRACE=1
-    command: ./rensa --keypair 6y7wHcUD1j1AQymapHkKaQ6fEMEFakBXY9xhdxh2AiCN --genesis genesis.json --peer 172.29.1.2:44668 -v
+    command: ./rensa --keypair 6y7wHcUD1j1AQymapHkKaQ6fEMEFakBXY9xhdxh2AiCN --genesis genesis.json --peer 172.29.1.2:44668 
     depends_on:
       validator_0:
         condition: service_started
@@ -162,7 +162,7 @@ services:
       dockerfile: Dockerfile
     environment:
       - RUST_BACKTRACE=1
-    command: ./rensa --keypair Bc51y46xTKtpA7WSCX4EnGDhmCRqxwp59xUPEZJtNw4e --genesis genesis.json --peer 172.29.1.2:44668 -v
+    command: ./rensa --keypair Bc51y46xTKtpA7WSCX4EnGDhmCRqxwp59xUPEZJtNw4e --genesis genesis.json --peer 172.29.1.2:44668 
     depends_on:
       validator_0:
         condition: service_started
@@ -175,7 +175,7 @@ services:
       dockerfile: Dockerfile
     environment:
       - RUST_BACKTRACE=1
-    command: ./rensa --keypair CoGUcA3tWjGXuYjpDR211qFiTd4vAsXyXm1sL1yEYjzi --genesis genesis.json --peer 172.29.1.2:44668 -v
+    command: ./rensa --keypair CoGUcA3tWjGXuYjpDR211qFiTd4vAsXyXm1sL1yEYjzi --genesis genesis.json --peer 172.29.1.2:44668 
     depends_on:
       validator_0:
         condition: service_started
@@ -188,7 +188,7 @@ services:
       dockerfile: Dockerfile
     environment:
       - RUST_BACKTRACE=1
-    command: ./rensa --keypair EDqLRR1denHBhZCabkdazD3dBmjxLM5iNN5Nq3axEw9z --genesis genesis.json --peer 172.29.1.2:44668 -v
+    command: ./rensa --keypair EDqLRR1denHBhZCabkdazD3dBmjxLM5iNN5Nq3axEw9z --genesis genesis.json --peer 172.29.1.2:44668 
     depends_on:
       validator_0:
         condition: service_started
@@ -201,7 +201,7 @@ services:
       dockerfile: Dockerfile
     environment:
       - RUST_BACKTRACE=1
-    command: ./rensa --keypair H7xfZqfFpAvQsWTcqcL7h9VJbRAqAGsP85NukeyP1QBV --genesis genesis.json --peer 172.29.1.2:44668 -v
+    command: ./rensa --keypair H7xfZqfFpAvQsWTcqcL7h9VJbRAqAGsP85NukeyP1QBV --genesis genesis.json --peer 172.29.1.2:44668 
     depends_on:
       validator_0:
         condition: service_started
@@ -214,7 +214,7 @@ services:
       dockerfile: Dockerfile
     environment:
       - RUST_BACKTRACE=1
-    command: ./rensa --keypair 4ZLA2dHg4b1V5ZJMthBx8CDYGCRkubbFh6mvLJYPaCzM --genesis genesis.json --peer 172.29.1.2:44668 -v
+    command: ./rensa --keypair 4ZLA2dHg4b1V5ZJMthBx8CDYGCRkubbFh6mvLJYPaCzM --genesis genesis.json --peer 172.29.1.2:44668 
     depends_on:
       validator_0:
         condition: service_started
@@ -227,7 +227,7 @@ services:
       dockerfile: Dockerfile
     environment:
       - RUST_BACKTRACE=1
-    command: ./rensa --keypair DpYhazJ6QRLQVcX3XwmZ9RGY2QCNCocWegXVxpvTXSw3 --genesis genesis.json --peer 172.29.1.2:44668 -v
+    command: ./rensa --keypair DpYhazJ6QRLQVcX3XwmZ9RGY2QCNCocWegXVxpvTXSw3 --genesis genesis.json --peer 172.29.1.2:44668 
     depends_on:
       validator_0:
         condition: service_started
@@ -240,7 +240,7 @@ services:
       dockerfile: Dockerfile
     environment:
       - RUST_BACKTRACE=1
-    command: ./rensa --keypair 6uZYQhcF8bTuzaRG3y1T38AGeGcV9Ukm1C7rLU3qAvFX --genesis genesis.json --peer 172.29.1.2:44668 -v
+    command: ./rensa --keypair 6uZYQhcF8bTuzaRG3y1T38AGeGcV9Ukm1C7rLU3qAvFX --genesis genesis.json --peer 172.29.1.2:44668 
     depends_on:
       validator_0:
         condition: service_started
@@ -253,7 +253,7 @@ services:
       dockerfile: Dockerfile
     environment:
       - RUST_BACKTRACE=1
-    command: ./rensa --keypair 4qLfXAPn2zjiJ2jWNxYrz62fuMZkozSbkjfe7G6t8kr1 --genesis genesis.json --peer 172.29.1.2:44668 -v
+    command: ./rensa --keypair 4qLfXAPn2zjiJ2jWNxYrz62fuMZkozSbkjfe7G6t8kr1 --genesis genesis.json --peer 172.29.1.2:44668 
     depends_on:
       validator_0:
         condition: service_started
@@ -266,7 +266,7 @@ services:
       dockerfile: Dockerfile
     environment:
       - RUST_BACKTRACE=1
-    command: ./rensa --keypair 3zHk7yZdN3d62irDYCLUCRqW5pQxsTd8krwDwJtDbEbY --genesis genesis.json --peer 172.29.1.2:44668 -v
+    command: ./rensa --keypair 3zHk7yZdN3d62irDYCLUCRqW5pQxsTd8krwDwJtDbEbY --genesis genesis.json --peer 172.29.1.2:44668 
     depends_on:
       validator_0:
         condition: service_started

@@ -4,7 +4,9 @@ use {
     primitives::{Keypair, Pubkey, ToBase58String},
     vm::{self, AccountRef, Executable, State, Transaction},
   },
+  borsh::BorshSerialize,
   futures::Stream,
+  rand::{distributions::Uniform, thread_rng, Rng},
   rayon::prelude::*,
   std::{
     collections::{HashMap, HashSet, VecDeque},
@@ -19,6 +21,10 @@ pub struct BlockProducer<'v> {
   keypair: Keypair,
   vm: &'v vm::Machine,
   votes: HashMap<[u8; 64], Vote>,
+  mint: Pubkey,
+  alternate: bool,
+  wallets_a: Vec<Keypair>,
+  wallets_b: Vec<Keypair>,
   validators: HashSet<Pubkey>,
   pending: VecDeque<Produced<Vec<Transaction>>>,
 }
@@ -29,9 +35,24 @@ impl<'v> BlockProducer<'v> {
     vm: &'v vm::Machine,
     keypair: Keypair,
   ) -> Self {
+    let currency_addr: Pubkey = "Currency1xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+      .parse()
+      .unwrap();
+    let mint_addr = currency_addr.derive(&[&keypair.public()]);
+
     BlockProducer {
       vm,
       keypair,
+      mint: mint_addr,
+      alternate: false,
+      wallets_a: (0..2500)
+        .into_par_iter()
+        .map(|_| Keypair::unique())
+        .collect(),
+      wallets_b: (0..2500)
+        .into_par_iter()
+        .map(|_| Keypair::unique())
+        .collect(),
       votes: HashMap::new(),
       validators: genesis.validators.iter().map(|v| v.pubkey).collect(),
       pending: VecDeque::new(),
@@ -52,7 +73,7 @@ impl<'v> BlockProducer<'v> {
     }
   }
 
-  fn create_sha_tx(payer: &Keypair) -> Transaction {
+  fn _create_sha_tx(payer: &Keypair) -> Transaction {
     // private key of account CKDN1WjimfErkbgecnEfoPfs7CU1TknwMhpgbiXNknGC
     let signer = "9XhCqH1LxmziWmBb8WnqzuvKFjX7koBuyzwdcFkL1ym7"
       .parse()
@@ -73,6 +94,103 @@ impl<'v> BlockProducer<'v> {
     )
   }
 
+  fn create_transfer_tx(
+    payer: &Keypair,
+    mint: &Pubkey,
+    from: &Keypair,
+    to: &Pubkey,
+  ) -> Transaction {
+    let currency_addr: Pubkey = "Currency1xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+      .parse()
+      .unwrap();
+
+    let from_coin_addr = currency_addr.derive(&[mint, &from.public()]);
+    let to_coin_addr = currency_addr.derive(&[mint, to]);
+
+    let dist = Uniform::new(900, 1100);
+    let amount = thread_rng().sample(dist);
+    Transaction::new(
+      currency_addr,
+      payer,
+      vec![
+        AccountRef::readonly(*mint, false).unwrap(),
+        AccountRef::readonly(from.public(), true).unwrap(),
+        AccountRef::writable(from_coin_addr, false).unwrap(),
+        AccountRef::readonly(*to, false).unwrap(),
+        AccountRef::writable(to_coin_addr, false).unwrap(),
+      ],
+      vm::builtin::currency::Instruction::Transfer(amount)
+        .try_to_vec()
+        .unwrap(),
+      &[from],
+    )
+  }
+
+  /// Creates the coin and then mints 10k coins to
+  /// each wallet in group a and group b
+  fn create_mint_txs(
+    &self,
+    payer: &Keypair,
+    seed: [u8; 32],
+  ) -> Vec<Transaction> {
+    let currency_addr: Pubkey = "Currency1xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+      .parse()
+      .unwrap();
+
+    let mint_addr = currency_addr.derive(&[&seed]);
+    let create_tx = Transaction::new(
+      currency_addr,
+      payer,
+      vec![AccountRef::writable(mint_addr, false).unwrap()],
+      vm::builtin::currency::Instruction::Create {
+        seed,
+        authority: self.keypair.public(),
+        decimals: 6,
+        name: None,
+        symbol: None,
+      }
+      .try_to_vec()
+      .unwrap(),
+      &[&self.keypair],
+    );
+
+    let mut txs = Vec::with_capacity(5001);
+
+    // create the coin
+    txs.push(create_tx);
+
+    // mint 10k coins for each account
+    txs.append(
+      &mut self
+        .wallets_a
+        .par_iter()
+        .chain(self.wallets_b.par_iter())
+        .map(|w| {
+          Transaction::new(
+            currency_addr,
+            payer,
+            vec![
+              AccountRef::writable(mint_addr, false).unwrap(),
+              AccountRef::readonly(self.keypair.public(), true).unwrap(),
+              AccountRef::readonly(w.public(), false).unwrap(),
+              AccountRef::writable(
+                currency_addr.derive(&[&mint_addr, &w.public()]),
+                false,
+              )
+              .unwrap(),
+            ],
+            vm::builtin::currency::Instruction::Mint(10_000)
+              .try_to_vec()
+              .unwrap(),
+            &[&self.keypair],
+          )
+        })
+        .collect(),
+    );
+
+    txs
+  }
+
   pub fn produce(
     &mut self,
     state: &dyn State,
@@ -85,8 +203,31 @@ impl<'v> BlockProducer<'v> {
       .parse()
       .unwrap();
 
-    let tx = Self::create_sha_tx(&payer);
-    let txs = vec![tx; 5000];
+    let txs = if state.get(&self.mint).is_none() {
+      let seed = self.keypair.public().to_vec();
+      self.create_mint_txs(&payer, seed.try_into().unwrap())
+    } else if self.alternate {
+      self
+        .wallets_a
+        .par_iter()
+        .zip(self.wallets_b.par_iter())
+        .map(|(from, to)| {
+          Self::create_transfer_tx(&payer, &self.mint, from, &to.public())
+        })
+        .collect()
+    } else {
+      self
+        .wallets_b
+        .par_iter()
+        .zip(self.wallets_a.par_iter())
+        .map(|(from, to)| {
+          Self::create_transfer_tx(&payer, &self.mint, from, &to.public())
+        })
+        .collect()
+    };
+
+    self.alternate = !self.alternate;
+
     let statediff = txs.execute(self.vm, state).unwrap();
     let state_hash = statediff.hash();
 
@@ -107,20 +248,6 @@ impl<'v> BlockProducer<'v> {
     );
     self.pending.push_back(block);
   }
-}
-
-/// Generates a fixed number of user wallet keypair
-/// Used for test scenarios only.
-fn _generate_wallets(count: usize) -> Vec<Keypair> {
-  use rand::{prelude::ThreadRng, RngCore};
-  (0..count)
-    .into_par_iter()
-    .filter_map(|_| {
-      let mut secret = [0u8; 32];
-      ThreadRng::default().fill_bytes(&mut secret);
-      (&secret[..]).try_into().ok()
-    })
-    .collect()
 }
 
 impl<'v> Stream for BlockProducer<'v> {

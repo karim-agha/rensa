@@ -3,6 +3,7 @@ use {
   curve25519_dalek::edwards::CompressedEdwardsY,
   ed25519_dalek::{PublicKey, SecretKey},
   multihash::{Hasher, Sha3_256},
+  rand::RngCore,
   serde::{
     de::{self, Visitor},
     Deserialize,
@@ -163,6 +164,13 @@ impl PartialEq<Pubkey> for libp2p::PeerId {
 pub struct Keypair(ed25519_dalek::Keypair);
 
 impl Keypair {
+  pub fn unique() -> Self {
+    let mut rng = rand::thread_rng();
+    let mut bytes = [0u8; 32];
+    rng.fill_bytes(&mut bytes);
+    (bytes.as_slice()).try_into().unwrap()
+  }
+
   pub fn public(&self) -> Pubkey {
     self.0.public.into()
   }

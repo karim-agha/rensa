@@ -1,5 +1,3 @@
-use std::sync::Arc;
-
 use {
   super::Executed,
   crate::{
@@ -18,6 +16,7 @@ use {
   std::{
     collections::{btree_map::IntoIter, BTreeMap},
     ops::Deref,
+    sync::Arc,
   },
   thiserror::Error,
 };

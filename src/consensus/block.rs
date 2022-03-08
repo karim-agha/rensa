@@ -195,6 +195,11 @@ pub struct Genesis<D: BlockData> {
   /// a single transaction can interact with.
   pub max_input_accounts: usize,
 
+  /// The currency used for staking rewards and transaction fees.
+  /// This must also have a corresponding entry in the state dictionry
+  /// in genesis that defines the coin mint for the same address.
+  pub system_coin: Pubkey,
+
   /// The initial accounts state of the chain at the very first block.
   /// This is a list of accounts along with their balances, owners and
   /// data. This is the very first finalized state in the chain before
