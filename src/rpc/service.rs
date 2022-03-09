@@ -5,9 +5,10 @@ use {
     consumer::Commitment,
     primitives::ToBase58String,
     storage::{BlockStore, PersistentState},
+    vm::Transaction,
   },
   axum::{
-    extract::Extension,
+    extract::{Extension, Path},
     response::IntoResponse,
     routing::{get, post},
     AddExtensionLayer,
@@ -15,6 +16,7 @@ use {
   },
   axum_extra::response::ErasedJson,
   futures::Stream,
+  indexmap::IndexMap,
   serde_json::json,
   std::{
     collections::VecDeque,
@@ -50,6 +52,7 @@ impl ApiService {
 
     let svc = Router::new()
       .route("/info", get(serve_info::<D>))
+      .route("/block/:height", get(serve_block))
       .route("/transaction", post(serve_send_transaction))
       .layer(AddExtensionLayer::new(shared_state));
 
@@ -117,6 +120,46 @@ async fn serve_info<D: BlockData>(
     },
     "genesis": state.genesis,
   }))
+}
+
+async fn serve_block(
+  Path(height): Path<u64>,
+  Extension(state): Extension<Arc<ServiceSharedState<Vec<Transaction>>>>,
+) -> impl IntoResponse {
+  if let Some((block, commitment)) = state.blocks.get_by_height(height) {
+    ErasedJson::pretty(json!({
+      "commitment": commitment,
+      "block": {
+        "parent": block.underlying.parent.to_b58(),
+        "state": block.underlying.state_hash.to_b58(),
+        "height": block.underlying.height,
+        "hash": block.underlying.hash().unwrap().to_b58(),
+        "producer": block.underlying.signature.0,
+        "signature": block.underlying.signature.1.to_b58(),
+        "votes": block.underlying.votes,
+        "transactions": block.underlying.data
+          .iter()
+          .map(|tx| (tx.hash().to_b58(), tx))
+          .collect::<IndexMap<_, _>>()
+      },
+      "outputs": block.output.logs
+        .iter()
+        .map(|(txhash, logs)|
+          (
+            txhash.to_b58(),
+            logs.iter().cloned().collect::<IndexMap<_, _>>())
+          )
+        .collect::<IndexMap<_, _>>(),
+      "errors": block.output.errors
+        .iter()
+        .map(|(txhash, error)| (txhash.to_b58(), error))
+        .collect::<IndexMap<_, _>>()
+    }))
+  } else {
+    ErasedJson::pretty(json!({
+      "error": "not found",
+    }))
+  }
 }
 
 async fn serve_send_transaction() -> impl IntoResponse {

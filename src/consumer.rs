@@ -1,5 +1,6 @@
 use {
   crate::{consensus::BlockData, vm::Executed},
+  serde::{Deserialize, Serialize},
   tokio::sync::mpsc::{error::SendError, UnboundedSender},
 };
 
@@ -9,7 +10,7 @@ use {
 /// end up being finalized. See the consensus module for
 /// a detailed explanation of those levels and stages of a
 /// block processing.
-#[derive(Debug, Copy, Clone)]
+#[derive(Debug, Copy, Clone, Serialize, Deserialize)]
 pub enum Commitment {
   Included,
   Confirmed,

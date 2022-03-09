@@ -726,10 +726,10 @@ impl<'g, D: BlockData> Chain<'g, D> {
 impl<'g, D: BlockData> Chain<'g, D> {
   /// Attempts to retreive a non-finalized block that is still
   /// going through the consensus algorithm.
-  pub fn get(&self, hash: &Multihash) -> Option<&Produced<D>> {
+  pub fn get(&self, hash: &Multihash) -> Option<&Executed<D>> {
     for root in &self.forktrees {
       if let Some(node) = root.get(hash) {
-        return Some(node.value.block.underlying.as_ref());
+        return Some(&node.value.block);
       }
     }
     None

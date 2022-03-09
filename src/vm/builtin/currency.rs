@@ -248,7 +248,7 @@ fn process_create(
       "symbol".into(),
       spec.symbol.unwrap_or_default(),
     ),
-    contract::Output::LogEntry("decumals".into(), decimals.to_string()),
+    contract::Output::LogEntry("decimals".into(), decimals.to_string()),
   ])
 }
 
@@ -275,10 +275,9 @@ fn process_mint(env: &Environment, amount: u64) -> contract::Result {
   if let Some(ref mint_authority) = mint.authority {
     // fail if accounts do not match
     if mint_authority != authority {
-      return Err(ContractError::Other(std::io::Error::new(
-        std::io::ErrorKind::PermissionDenied,
-        "account not authorized to mint new coins of this currency",
-      )));
+      return Err(ContractError::Other(
+        "account not authorized to mint new coins of this currency".to_owned(),
+      ));
     }
 
     // fail if the authority is not a signer of the transaction
@@ -288,16 +287,16 @@ fn process_mint(env: &Environment, amount: u64) -> contract::Result {
       ));
     }
   } else {
-    return Err(ContractError::Other(std::io::Error::new(
-      std::io::ErrorKind::PermissionDenied,
-      "Minting new coins is disabled for this currency",
-    )));
+    return Err(ContractError::Other(
+      "Minting new coins is disabled for this currency".to_owned(),
+    ));
   }
 
   // logs for explorers and dApps
   let mut outputs = vec![
     contract::Output::LogEntry("action".into(), "mint-coins".into()),
     contract::Output::LogEntry("to".into(), wallet_addr.to_string()),
+    contract::Output::LogEntry("amount".into(), amount.to_string()),
   ];
 
   // all checks passed, now the coin account either has to be created because
@@ -373,10 +372,9 @@ fn process_transfer(env: &Environment, amount: u64) -> contract::Result {
 
     // make sure that the sender has enough balance
     if sender_coin.balance < amount {
-      return Err(ContractError::Other(std::io::Error::new(
-        std::io::ErrorKind::Interrupted,
-        "Not enough balance in sender's account",
-      )));
+      return Err(ContractError::Other(
+        "Not enough balance in sender's account".to_owned(),
+      ));
     }
 
     // all checks passed, first debit the sender account
@@ -472,10 +470,9 @@ fn process_burn(env: &Environment, amount: u64) -> contract::Result {
 
     // make sure the wallet coin account owns enough coins to burn
     if coin.balance < amount {
-      return Err(ContractError::Other(std::io::Error::new(
-        std::io::ErrorKind::Interrupted,
-        "Not enough balance in sender's account",
-      )));
+      return Err(ContractError::Other(
+        "Not enough balance in sender's account".to_owned(),
+      ));
     }
 
     // all good, decrement balances on the account and the total coin supply
@@ -520,10 +517,9 @@ fn process_set_authority(
 
   if let Some(ref existing_authority) = mint.authority {
     if existing_authority != current_auth_addr {
-      return Err(ContractError::Other(std::io::Error::new(
-        std::io::ErrorKind::PermissionDenied,
-        "account not authorized to change mint authority",
-      )));
+      return Err(ContractError::Other(
+        "account not authorized to change mint authority".to_owned(),
+      ));
     }
 
     // make sure that the current authority is authorizing this change
@@ -553,10 +549,9 @@ fn process_set_authority(
       contract::Output::ModifyAccountData(*mint_addr, Some(mint.try_to_vec()?)),
     ])
   } else {
-    Err(ContractError::Other(std::io::Error::new(
-      std::io::ErrorKind::PermissionDenied,
-      "Authority has been removed for this coin",
-    )))
+    Err(ContractError::Other(
+      "Authority has been removed for this coin".to_owned(),
+    ))
   }
 }
 

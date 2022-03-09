@@ -116,7 +116,7 @@ async fn main() -> anyhow::Result<()> {
   let storage = PersistentState::new(&genesis, opts.data_dir()?)?;
   let blocks_store = BlockStore::new(
     opts.data_dir()?, // storage dir root
-    opts.replay_blocks_len(),
+    opts.blocks_history_len(),
   )?;
 
   // get the latest finalized block that this validator is aware of
@@ -196,10 +196,10 @@ async fn main() -> anyhow::Result<()> {
         if let Some(block) = chain
           .get(&block_hash)
           .cloned()
-          .or_else(|| blocks_store.get(&block_hash).map(|(b, _)| b))
+          .or_else(|| blocks_store.get_by_hash(&block_hash).map(|(b, _)| b))
         {
-          info!("Replaying block {block}");
-          network.gossip_block(block)?
+          info!("Replaying block {}", &*block);
+          network.gossip_block((*block.underlying).clone())?
         }
       }
 

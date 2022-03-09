@@ -24,16 +24,7 @@ impl<D: BlockData> BlockStore<D> {
     std::fs::create_dir_all(directory.clone())?;
 
     Ok(Self {
-      db: Arc::new(
-        sled::Config::default()
-          // 50 MB, this storage is used only for block replay, and it 
-          // is not read-intensive. Limit the cache to free up more space
-          // for the state cache which is orders of magnitude more read
-          // intensive.
-          .cache_capacity(1024 * 1024 * 50) 
-          .path(directory)
-          .open()?,
-      ),
+      db: Arc::new(sled::Config::default().path(directory).open()?),
       history_len,
       _marker: PhantomData,
     })
@@ -59,25 +50,42 @@ impl<D: BlockData> BlockStore<D> {
   }
 
   /// Tries to get a block with a specific hash
-  pub fn get(&self, hash: &Multihash) -> Option<(Produced<D>, Commitment)> {
+  pub fn get_by_hash(
+    &self,
+    hash: &Multihash,
+  ) -> Option<(Executed<D>, Commitment)> {
     let hashes = self.db.open_tree(b"hashes").unwrap();
-    if let Some(height) = hashes.get(hash.to_bytes()).unwrap() {
-      let confirmed = self.db.open_tree(b"confirmed").unwrap();
-      if let Ok(Some(block)) = confirmed.get(&height) {
-        return Some((
-          bincode::deserialize(&block).unwrap(),
-          Commitment::Confirmed,
-        ));
-      }
-      let finalized = self.db.open_tree(b"finalized").unwrap();
-      if let Ok(Some(block)) = finalized.get(&height) {
-        return Some((
-          bincode::deserialize(&block).unwrap(),
-          Commitment::Finalized,
-        ));
-      }
+    hashes.get(&hash.to_bytes()).unwrap().and_then(|height| {
+      let height = u64::from_be_bytes(height.as_ref().try_into().unwrap());
+      self.get_by_height(height)
+    })
+  }
+
+  pub fn get_by_height(
+    &self,
+    height: u64,
+  ) -> Option<(Executed<D>, Commitment)> {
+    let height = height.to_be_bytes();
+    let confirmed = self.db.open_tree(b"confirmed").unwrap();
+    let finalized = self.db.open_tree(b"finalized").unwrap();
+
+    let block = if let Ok(Some(block)) = confirmed.get(&height) {
+      Some((bincode::deserialize(&block).unwrap(), Commitment::Confirmed))
+    } else if let Ok(Some(block)) = finalized.get(&height) {
+      Some((bincode::deserialize(&block).unwrap(), Commitment::Finalized))
+    } else {
+      None
+    };
+
+    if let Some((block, commitment)) = block {
+      let outputs = self.db.open_tree(b"outputs").unwrap();
+      let output = outputs.get(&height).unwrap().unwrap();
+      let output = bincode::deserialize(&output).unwrap();
+      let block = Executed::recreate(block, output);
+      Some((block, commitment))
+    } else {
+      None
     }
-    None
   }
 }
 
@@ -133,24 +141,41 @@ impl<D: BlockData> BlockConsumer<D> for BlockStore<D> {
     // store a mapping of block_hash -> height for
     // fast lookup by blockid
     let hashes = self.db.open_tree(b"hashes").unwrap();
-    hashes
-      .insert(
-        block.hash().unwrap().to_bytes(),
-        block.height.to_be_bytes().as_ref(),
-      )
-      .unwrap();
-    
+    let hashkey = block.hash().unwrap().to_bytes();
+    if !hashes.contains_key(&hashkey).unwrap() {
+      hashes
+        .insert(hashkey, block.height.to_be_bytes().as_ref())
+        .unwrap();
+    }
+
+    let outputs = self.db.open_tree(b"outputs").unwrap();
+    let heightkey = block.height.to_be_bytes();
+    if !outputs.contains_key(&heightkey).unwrap() {
+      outputs
+        .insert(
+          heightkey,
+          bincode::serialize(block.output.as_ref()).unwrap(),
+        )
+        .unwrap();
+    }
 
     // remove old blocks that are older than the history limit.
+    let confirmed = self.db.open_tree(b"confirmed").unwrap();
+    let finalized = self.db.open_tree(b"finalized").unwrap();
     let cutoff = block.height.saturating_sub(self.history_len);
     if cutoff > 0 {
       let cutoff = cutoff.to_be_bytes();
       let zero = 0u64.to_be_bytes();
       let mut drain = tree.range(zero..cutoff);
       while let Some(Ok((h, b))) = drain.next() {
-        tree.remove(h).unwrap();
+        outputs.remove(&h).unwrap();
+        confirmed.remove(&h).unwrap();
+        finalized.remove(&h).unwrap();
+
         let deserialized: Produced<D> = bincode::deserialize(&b).unwrap();
-        hashes.remove(deserialized.hash().unwrap().to_bytes()).unwrap();
+        hashes
+          .remove(deserialized.hash().unwrap().to_bytes())
+          .unwrap();
       }
     }
   }

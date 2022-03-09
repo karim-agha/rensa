@@ -55,9 +55,9 @@ pub struct CliOpts {
 
   #[clap(
     long,
-    help = "The number of N most recent block to store for block replays"
+    help = "The number of N most recent block to store"
   )]
-  replay_blocks_len: Option<u64>,
+  blocks_history_len: Option<u64>,
 }
 
 impl CliOpts {
@@ -154,18 +154,21 @@ impl CliOpts {
   }
 
   /// Specifies how many blocks need to be persisted by a node to respond
-  /// to block reply requests for other nodes. If the command line value
-  /// is not provided, then the default is calculated to make sure that
-  /// the node can replay any block within the last 30 minutes of confirmation.
-  ///
-  /// Peers that are at a point where they need replies older than that, will
-  /// never catch up with the chain by replaying those blocks, instead they
-  /// should trigger state sync to a more recent height and then replay the
-  /// last few blocks.
-  pub fn replay_blocks_len(&self) -> u64 {
-    self.replay_blocks_len.unwrap_or_else(|| {
+  /// to block reply requests for other nodes and RPC requests with block details. 
+  /// 
+  /// If the command line value is not provided, then the default is calculated
+  /// to make sure that the node can replay any block and serve detailed RPC calls
+  /// for blocks within the last 3 hours of confirmation. 3h is more than enough for
+  /// any realistic operation that needs to check the status of a block or a transaction.
+  /// 
+  /// Longer storage intervals have to be requested explicitly as they require vast
+  /// amounts of disk space and they are reserved for archival nodes. For block 
+  /// explorers and analytics its recommended to use the dbsync mechanism instead of
+  /// relying on this.
+  pub fn blocks_history_len(&self) -> u64 {
+    self.blocks_history_len.unwrap_or_else(|| {
       let slot = self.genesis().unwrap().slot_interval.as_millis() as u64;
-      let oldest = Duration::from_secs(30 * 60).as_millis() as u64; // 30 minutes
+      let oldest = Duration::from_secs(60 * 60 * 3).as_millis() as u64; // 3h
       oldest / slot
     })
   }

@@ -52,7 +52,7 @@ impl AccountRef {
   }
 }
 
-#[derive(Debug, Error)]
+#[derive(Debug, Error, Serialize, Deserialize)]
 pub enum SignatureError {
   #[error("Signature verification failed")]
   InvalidSignature,
@@ -68,7 +68,11 @@ pub struct Transaction {
   pub contract: Pubkey,
   pub payer: Pubkey,
   pub accounts: Vec<AccountRef>,
+
+  #[serde(with = "crate::primitives::b58::serde")]
   pub params: Vec<u8>,
+
+  #[serde(with = "crate::primitives::b58::serde::signatures")]
   pub signatures: Vec<Signature>,
 }
 

@@ -321,9 +321,11 @@ impl<D: BlockData> Block<D> for Genesis<D> {
 )]
 pub struct Produced<D: BlockData> {
   /// Hash of the parent block
+  #[serde(with="crate::primitives::b58::serde::multihash")]
   pub parent: Multihash,
 
   /// Hash of the state diff between this block and its parent.
+  #[serde(with="crate::primitives::b58::serde::multihash")]
   pub state_hash: Multihash,
 
   /// The height at which it was produced.
@@ -332,6 +334,7 @@ pub struct Produced<D: BlockData> {
   /// The public key of the validator that produced this block
   /// along with a signature using their private key of the hash
   /// of this block.
+  #[serde(with="crate::primitives::b58::serde::validator")]
   pub signature: (Pubkey, Signature),
 
   /// Block data stored in the block.

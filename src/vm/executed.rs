@@ -38,6 +38,13 @@ impl<D: BlockData> Executed<D> {
     }
   }
 
+  pub fn recreate(block: Produced<D>, output: BlockOutput) -> Self {
+    Self {
+      underlying: Arc::new(block),
+      output: Arc::new(output),
+    }
+  }
+
   pub fn state(&self) -> &impl State {
     &self.output.state
   }

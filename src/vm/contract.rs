@@ -7,10 +7,11 @@
 use {
   super::transaction::SignatureError,
   crate::primitives::Pubkey,
+  serde::{Deserialize, Serialize},
   thiserror::Error,
 };
 
-#[derive(Debug, Error)]
+#[derive(Debug, Error, Serialize, Deserialize)]
 pub enum ContractError {
   #[error("Account already exists")]
   AccountAlreadyExists,
@@ -45,11 +46,17 @@ pub enum ContractError {
   #[error("Invalid contract input paramters data")]
   InvalidInputParameters,
 
-  #[error("Contract error: {0:?}")]
-  Other(#[from] std::io::Error),
+  #[error("Contract error: {0}")]
+  Other(String),
 
   #[error("The transaction has used up all compute units before completing")]
   _ComputationalBudgetExhausted,
+}
+
+impl From<std::io::Error> for ContractError {
+  fn from(e: std::io::Error) -> Self {
+    ContractError::Other(e.to_string())
+  }
 }
 
 #[derive(Debug)]

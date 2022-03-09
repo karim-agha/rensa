@@ -13,6 +13,7 @@ use {
     Sha3_256,
   },
   once_cell::sync::OnceCell,
+  serde::{Deserialize, Serialize},
   std::{
     collections::{btree_map::IntoIter, BTreeMap},
     ops::Deref,
@@ -128,9 +129,10 @@ impl<D: BlockData> Deref for Finalized<'_, D> {
   }
 }
 
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct StateDiff {
   data: BTreeMap<Pubkey, Account>,
+  #[serde(skip)]
   hashcache: OnceCell<Multihash>,
 }
 
