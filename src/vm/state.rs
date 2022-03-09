@@ -111,7 +111,7 @@ impl<'f, D: BlockData> Finalized<'f, D> {
     self.underlying = block.underlying;
     self
       .state
-      .apply(block.state_diff)
+      .apply(block.output.state.clone())
       .expect("unrecoverable storage engine error"); // most likely disk is full
   }
 

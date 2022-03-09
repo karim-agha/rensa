@@ -2,6 +2,7 @@ use {
   super::{
     builtin::BUILTIN_CONTRACTS,
     contract::ContractEntrypoint,
+    output::{BlockOutput, ErrorsMap, LogsMap},
     unit::ExecutionUnit,
     Overlayed,
     State,
@@ -14,7 +15,7 @@ use {
   },
   std::collections::HashMap,
   thiserror::Error,
-  tracing::warn,
+  tracing::debug,
 };
 
 #[derive(Debug, Error)]
@@ -24,6 +25,12 @@ pub enum MachineError {
      hash decalred in the block header"
   )]
   InconsistentStateHash,
+
+  #[error(
+    "The resulting logs of this block are inconsistent with the state hash \
+     decalred in the block header"
+  )]
+  InconsistentLogsHash,
 
   #[error("Invalid block height, expected a monotonically increasing value")]
   InvalidBlockHeight,
@@ -37,7 +44,7 @@ pub trait Executable {
     &self,
     vm: &Machine,
     state: &dyn State,
-  ) -> Result<StateDiff, MachineError>;
+  ) -> Result<BlockOutput, MachineError>;
 }
 
 /// Represents a state machine that takes as an input a state
@@ -80,7 +87,7 @@ impl Machine {
     &self,
     state: &impl State,
     block: &Produced<D>,
-  ) -> Result<StateDiff, MachineError> {
+  ) -> Result<BlockOutput, MachineError> {
     block.data.execute(self, state)
   }
 }
@@ -91,8 +98,12 @@ impl Executable for Vec<Transaction> {
     &self,
     vm: &Machine,
     state: &dyn State,
-  ) -> Result<StateDiff, MachineError> {
+  ) -> Result<BlockOutput, MachineError> {
+    // accumulates state across all txs
+    let mut acclogs = LogsMap::new();
+    let mut accerrors = ErrorsMap::new();
     let mut accstate = StateDiff::default();
+
     for transaction in self {
       // Create a view of the state that encompasses the global state
       // and the state accumulated so far by the block.
@@ -104,21 +115,28 @@ impl Executable for Vec<Transaction> {
       match ExecutionUnit::new(transaction, &state, vm)
         .and_then(|exec_unit| exec_unit.execute())
       {
-        Ok(statediff) => {
+        Ok(txout) => {
           // transaction execution successfully ran to completion.
           // merge and accumulate state changes in this block.
-          accstate = accstate.merge(statediff);
+          accstate = accstate.merge(txout.state_diff);
+
+          // append all generated logs
+          acclogs.insert(transaction.hash(), txout.log_entries);
         }
         Err(error) => {
           // on error, don't apply any of transaction changes
-          warn!(
+          debug!(
             "transaction {} failed: {error}",
             transaction.hash().to_b58()
           );
+
+          // store the error output of the failed transaction
+          accerrors.insert(transaction.hash(), error);
         }
       }
     }
-    Ok(accstate)
+
+    Ok(BlockOutput::new(accstate, acclogs, accerrors))
   }
 }
 
@@ -129,8 +147,8 @@ impl Executable for String {
     &self,
     _vm: &Machine,
     _state: &dyn State,
-  ) -> Result<StateDiff, MachineError> {
-    Ok(StateDiff::default())
+  ) -> Result<BlockOutput, MachineError> {
+    Ok(BlockOutput::default())
   }
 }
 
@@ -141,7 +159,7 @@ impl Executable for u8 {
     &self,
     _vm: &Machine,
     _state: &dyn State,
-  ) -> Result<StateDiff, MachineError> {
-    Ok(StateDiff::default())
+  ) -> Result<BlockOutput, MachineError> {
+    Ok(BlockOutput::default())
   }
 }

@@ -107,7 +107,7 @@ impl<'v> BlockProducer<'v> {
     let from_coin_addr = currency_addr.derive(&[mint, &from.public()]);
     let to_coin_addr = currency_addr.derive(&[mint, to]);
 
-    let dist = Uniform::new(900, 1100);
+    let dist = Uniform::new(90000, 110000);
     let amount = thread_rng().sample(dist);
     Transaction::new(
       currency_addr,
@@ -145,7 +145,7 @@ impl<'v> BlockProducer<'v> {
       vm::builtin::currency::Instruction::Create {
         seed,
         authority: self.keypair.public(),
-        decimals: 6,
+        decimals: 2,
         name: None,
         symbol: None,
       }
@@ -179,7 +179,7 @@ impl<'v> BlockProducer<'v> {
               )
               .unwrap(),
             ],
-            vm::builtin::currency::Instruction::Mint(10_000)
+            vm::builtin::currency::Instruction::Mint(1000000)
               .try_to_vec()
               .unwrap(),
             &[&self.keypair],
@@ -228,15 +228,15 @@ impl<'v> BlockProducer<'v> {
 
     self.alternate = !self.alternate;
 
-    let statediff = txs.execute(self.vm, state).unwrap();
-    let state_hash = statediff.hash();
+    let blockoutput = txs.execute(self.vm, state).unwrap();
+    let state_hash = blockoutput.hash();
 
     let block = Produced::new(
       &self.keypair,
       prev.height() + 1,
       prevhash,
       txs,
-      state_hash,
+      *state_hash,
       take(&mut self.votes).into_iter().map(|(_, v)| v).collect(),
     )
     .unwrap();

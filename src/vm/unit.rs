@@ -7,6 +7,7 @@ use {
       Environment,
       Output,
     },
+    output::TransactionOutput,
     Machine,
     State,
     StateDiff,
@@ -46,10 +47,9 @@ impl<'s, 't> ExecutionUnit<'s, 't> {
     // for now only builtin contracts are supported, later wasm
     // contracts will be pulled here as well.
     if let Some(entrypoint) = vm.builtin(&transaction.contract).cloned() {
-      let env = Self::create_environment(state, transaction)?;
       Ok(Self {
         entrypoint,
-        env,
+        env: Self::create_environment(state, transaction)?,
         state,
         transaction,
       })
@@ -60,20 +60,20 @@ impl<'s, 't> ExecutionUnit<'s, 't> {
 
   /// Consumes the execution unit and returns the state difference
   /// that is caused by running this transaction and all its outputs.
-  pub fn execute(self) -> Result<StateDiff, ContractError> {
+  pub fn execute(self) -> Result<TransactionOutput, ContractError> {
     let entrypoint = self.entrypoint;
     match entrypoint(&self.env, &self.transaction.params) {
       Ok(outputs) => {
-        let mut txstate = StateDiff::default();
+        let mut txoutputs = TransactionOutput::default();
         // if the transaction execution successfully ran to
         // completion, then process all its outputs that
         // modify global state. Those outputs may still
         // fail. Any failure in processing returned
         // outputs will revert the entire transaction.
         for output in outputs {
-          txstate = txstate.merge(self.process_output(output)?);
+          txoutputs = txoutputs.merge(self.process_output(output)?);
         }
-        Ok(txstate)
+        Ok(txoutputs)
       }
       Err(err) => Err(err),
     }
@@ -144,11 +144,23 @@ impl<'s, 't> ExecutionUnit<'s, 't> {
     })
   }
 
-  fn process_output(&self, output: Output) -> Result<StateDiff, ContractError> {
+  fn process_output(
+    &self,
+    output: Output,
+  ) -> Result<TransactionOutput, ContractError> {
     match output {
-      Output::LogEntry(_, _) => Ok(StateDiff::default()), // todo
-      Output::CreateOwnedAccount(addr, data) => self.create_account(addr, data),
-      Output::ModifyAccountData(addr, data) => self.modify_account(addr, data),
+      Output::LogEntry(key, value) => Ok(TransactionOutput {
+        state_diff: StateDiff::default(),
+        log_entries: vec![(key, value)],
+      }),
+      Output::CreateOwnedAccount(addr, data) => Ok(TransactionOutput {
+        state_diff: self.create_account(addr, data)?,
+        ..Default::default()
+      }),
+      Output::ModifyAccountData(addr, data) => Ok(TransactionOutput {
+        state_diff: self.modify_account(addr, data)?,
+        ..Default::default()
+      }),
     }
   }
 

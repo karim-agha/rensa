@@ -771,7 +771,7 @@ mod test {
       },
       primitives::Keypair,
       storage::PersistentState,
-      vm::{self, Executable, Finalized, State, Transaction},
+      vm::{self, Executable, Finalized, Transaction},
     },
     chrono::Utc,
     ed25519_dalek::{PublicKey, SecretKey},
@@ -827,7 +827,7 @@ mod test {
       // blocks have no txs, so the statehash won't change across
       // blocks, but it needs to be a valid hash otherwise the block
       // gets rejected and not appended to the chain.
-      (b.hash().unwrap(), vec![].execute(&vm, s).unwrap().hash())
+      (b.hash().unwrap(), *vec![].execute(&vm, s).unwrap().hash())
     });
 
     let block = block::Produced::new(
@@ -913,7 +913,7 @@ mod test {
       // blocks have no txs, so the statehash won't change across
       // blocks, but it needs to be a valid hash otherwise the block
       // gets rejected and not appended to the chain.
-      (b.hash().unwrap(), vec![].execute(&vm, s).unwrap().hash())
+      (b.hash().unwrap(), *vec![].execute(&vm, s).unwrap().hash())
     });
 
     let block = block::Produced::new(

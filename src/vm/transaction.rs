@@ -1,7 +1,13 @@
 use {
   crate::primitives::{Keypair, Pubkey, ToBase58String},
   ed25519_dalek::{PublicKey, Signature, Signer, Verifier},
-  multihash::{Hasher, Sha3_256},
+  multihash::{
+    Code as MultihashCode,
+    Hasher,
+    Multihash,
+    MultihashDigest,
+    Sha3_256,
+  },
   serde::{Deserialize, Serialize},
   std::io::{Error as StdError, ErrorKind},
   thiserror::Error,
@@ -146,7 +152,7 @@ impl Transaction {
     Ok(())
   }
 
-  pub fn hash(&self) -> Vec<u8> {
+  pub fn hash(&self) -> Multihash {
     let mut hasher = Sha3_256::default();
     hasher.update(&self.contract);
     hasher.update(&self.payer);
@@ -158,7 +164,7 @@ impl Transaction {
     for sig in &self.signatures {
       hasher.update(sig.as_ref());
     }
-    hasher.finalize().as_ref().to_vec()
+    MultihashCode::Sha3_256.wrap(hasher.finalize()).unwrap()
   }
 
   fn hash_fields(

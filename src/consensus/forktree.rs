@@ -318,7 +318,7 @@ mod tests {
         Genesis,
       },
       primitives::Keypair,
-      vm::{self, Executable, Executed, State, StateDiff},
+      vm::{self, Executable, Executed, StateDiff},
     },
     chrono::Utc,
     ed25519_dalek::{PublicKey, SecretKey},
@@ -345,7 +345,7 @@ mod tests {
           parent.height + 1,
           parent.hash().unwrap(),
           data,
-          vec![].execute(vm, &StateDiff::default()).unwrap().hash(),
+          *vec![].execute(vm, &StateDiff::default()).unwrap().hash(),
           vec![],
         )
         .unwrap(),
@@ -392,7 +392,7 @@ mod tests {
     // blocks have no txs, so the statehash won't change across
     // blocks, but it needs to be a valid hash otherwise the block
     // gets rejected and not appended to the chain.
-    let statehash = vec![].execute(&vm, &StateDiff::default()).unwrap().hash();
+    let statehash = *vec![].execute(&vm, &StateDiff::default()).unwrap().hash();
 
     let produced = Arc::new(
       Produced::new(&keypair, 1, Multihash::default(), 1u8, statehash, vec![])
