@@ -116,7 +116,7 @@ async fn main() -> anyhow::Result<()> {
   let storage = PersistentState::new(&genesis, opts.data_dir()?)?;
   let blocks_store = BlockStore::new(
     opts.data_dir()?, // storage dir root
-    opts.blocks_history_len(),
+    opts.blocks_history(),
   )?;
 
   // get the latest finalized block that this validator is aware of

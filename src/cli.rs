@@ -57,7 +57,7 @@ pub struct CliOpts {
     long,
     help = "The number of N most recent block to store"
   )]
-  blocks_history_len: Option<u64>,
+  blocks_history: Option<u64>,
 }
 
 impl CliOpts {
@@ -158,17 +158,17 @@ impl CliOpts {
   /// 
   /// If the command line value is not provided, then the default is calculated
   /// to make sure that the node can replay any block and serve detailed RPC calls
-  /// for blocks within the last 3 hours of confirmation. 3h is more than enough for
+  /// for blocks within the last hour of confirmation. An hour is more than enough for
   /// any realistic operation that needs to check the status of a block or a transaction.
   /// 
   /// Longer storage intervals have to be requested explicitly as they require vast
   /// amounts of disk space and they are reserved for archival nodes. For block 
   /// explorers and analytics its recommended to use the dbsync mechanism instead of
   /// relying on this.
-  pub fn blocks_history_len(&self) -> u64 {
-    self.blocks_history_len.unwrap_or_else(|| {
+  pub fn blocks_history(&self) -> u64 {
+    self.blocks_history.unwrap_or_else(|| {
       let slot = self.genesis().unwrap().slot_interval.as_millis() as u64;
-      let oldest = Duration::from_secs(60 * 60 * 3).as_millis() as u64; // 3h
+      let oldest = Duration::from_secs(60 * 60).as_millis() as u64; // 1h
       oldest / slot
     })
   }
