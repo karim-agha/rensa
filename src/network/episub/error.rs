@@ -18,6 +18,9 @@ pub enum EpisubHandlerError {
 pub enum PublishError {
   #[error("Attempt to send a message on an unsubscribed topic")]
   TopicNotSubscribed,
+
+  #[error("IO Error: {0}")]
+  Io(#[from] std::io::Error),
 }
 
 /// Errors associated with RPC calls between active nodes

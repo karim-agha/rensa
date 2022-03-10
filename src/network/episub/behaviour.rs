@@ -34,6 +34,7 @@ use {
     task::{Context, Poll},
   },
   tracing::{debug, trace, warn},
+  zstd::encode_all,
 };
 
 /// Event that can be emitted by the episub behaviour.
@@ -218,6 +219,10 @@ impl Episub {
   ) -> Result<u64, PublishError> {
     if let Some(topic) = self.topics.get_mut(topic) {
       let id: u64 = rand::thread_rng().gen();
+      let message = match self.config.enable_compression {
+        true => encode_all(message.as_slice(), self.config.compression_level)?,
+        false => message,
+      };
       topic.publish(id, message.into());
       Ok(id)
     } else {

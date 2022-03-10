@@ -20,6 +20,7 @@ use {
     time::Instant,
   },
   tracing::{debug, error},
+  zstd::decode_all,
 };
 
 pub struct PlumTree {
@@ -121,22 +122,23 @@ impl PlumTree {
     // if we don't have this message in the message cache
     // it means that we're seeing it for the first time,
     // then forward it to all eager push nodes.
-    if self
-      .received
-      .insert(MessageRecord {
-        id,
-        hop,
-        payload: payload.clone(),
-        sender: peer_id,
-      })
-    {
+    if self.received.insert(MessageRecord {
+      id,
+      hop,
+      payload: payload.clone(),
+      sender: peer_id,
+    }) {
+      let out = match self.config.enable_compression {
+        true => Bytes::from(decode_all(payload.as_ref()).unwrap()),
+        false => payload.clone(),
+      };
       self
         .out_events
         .push_back(EpisubNetworkBehaviourAction::GenerateEvent(
           EpisubEvent::Message {
             topic: self.topic.clone(),
             id,
-            payload: payload.clone(),
+            payload: out,
           },
         ));
 

@@ -84,6 +84,16 @@ pub struct Config {
   /// eager node
   pub hop_optimization_factor: u32,
 
+  /// Defines if message payloads are going to be compressed over the wire.
+  /// This trades processing speed vs network bandwidth. Both sides of the
+  /// p2p protocol must use the same configuration, otherwise they will 
+  /// attempt to decompress uncompressed data.
+  pub enable_compression: bool,
+
+  /// A value between 1 and 21. Value of 0 uses zstd default compression
+  /// factor. See https://github.com/facebook/zstd for more info.
+  pub compression_level: i32,
+
   /// A predicate that decides whether a given peer is allowed to
   /// join a topic. The default authenticator allows any peer to
   /// join any topic.
@@ -130,6 +140,8 @@ impl Default for Config {
       network_size: 1000,
       active_view_factor: 1,
       passive_view_factor: 6,
+      enable_compression: true,
+      compression_level: 0,
       shuffle_probability: 1.0,     // always shuffle
       max_transmit_size: 1_024_000, // 1 MB
       shuffle_interval: Duration::from_secs(60),
