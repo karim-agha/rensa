@@ -23,8 +23,15 @@ impl<D: BlockData> BlockStore<D> {
     directory.push("blocks");
     std::fs::create_dir_all(directory.clone())?;
 
+    let db = sled::Config::default()
+      .path(directory)
+      .use_compression(true)
+      .compression_factor(10)
+      .mode(sled::Mode::HighThroughput)
+      .open()?;
+
     Ok(Self {
-      db: Arc::new(sled::Config::default().path(directory).open()?),
+      db: Arc::new(db),
       history_len,
       _marker: PhantomData,
     })
