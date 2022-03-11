@@ -171,8 +171,8 @@ impl<'g, D: BlockData> Chain<'g, D> {
     }
   }
 
-  /// Executes a closure with the block that is currently 
-  /// considered the head of the chain and the accumulated 
+  /// Executes a closure with the block that is currently
+  /// considered the head of the chain and the accumulated
   /// state global state at that block in its fork path.
   ///
   /// The selection of this block uses the Greedy Heaviest
@@ -805,6 +805,9 @@ mod test {
       state: BTreeMap::new(),
       builtins: vec![],
       minimum_stake: 100,
+      max_log_size: 512,
+      max_logs_count: 32,
+      max_account_size: 65536,
       max_input_accounts: 32,
       system_coin: "RensaToken1xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
         .parse()
@@ -890,6 +893,9 @@ mod test {
       state: BTreeMap::new(),
       builtins: vec![],
       minimum_stake: 100,
+      max_account_size: 65536,
+      max_log_size: 512,
+      max_logs_count: 32,
       max_input_accounts: 32,
       system_coin: "RensaToken1xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
         .parse()

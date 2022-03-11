@@ -47,17 +47,30 @@ pub trait Executable {
   ) -> Result<BlockOutput, MachineError>;
 }
 
+/// Virtual machine execution limits.
+///
+/// Those limits ensure that a malicious contract would be able
+/// to halt validators during execution or DoS them. They keep all
+/// resources usage within a transaction bounded to limits defined
+/// in genesis.
+#[derive(Debug, Clone)]
+pub struct Limits {
+  pub max_log_size: usize,
+  pub max_logs_count: usize,
+  pub max_account_size: usize,
+  pub max_input_accounts: usize,
+}
+
 /// Represents a state machine that takes as an input a state
 /// and a block and outputs a new state. This is the API
 /// entry point to the virtual machine that runs contracts.
 pub struct Machine {
-  max_input_accounts: usize,
+  limits: Limits,
   builtins: HashMap<Pubkey, ContractEntrypoint>,
 }
 
 impl Machine {
   pub fn new<D: BlockData>(genesis: &Genesis<D>) -> Result<Self, MachineError> {
-    let max_input_accounts = genesis.max_input_accounts;
     let mut builtins = HashMap::new();
     for addr in &genesis.builtins {
       if let Some(entrypoint) = BUILTIN_CONTRACTS.get(addr) {
@@ -68,7 +81,12 @@ impl Machine {
     }
     Ok(Self {
       builtins,
-      max_input_accounts,
+      limits: Limits {
+        max_log_size: genesis.max_log_size,
+        max_logs_count: genesis.max_logs_count,
+        max_account_size: genesis.max_account_size,
+        max_input_accounts: genesis.max_input_accounts,
+      },
     })
   }
 
@@ -78,9 +96,9 @@ impl Machine {
     self.builtins.get(addr)
   }
 
-  /// The maximum number of accounts a transaction can reference.
-  pub fn max_input_accounts(&self) -> usize {
-    self.max_input_accounts
+  /// Configured execution contraints.
+  pub fn limits(&self) -> &Limits {
+    &self.limits
   }
 
   pub fn execute<D: BlockData>(

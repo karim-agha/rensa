@@ -7,6 +7,7 @@ use {
       Environment,
       Output,
     },
+    machine::Limits,
     output::TransactionOutput,
     Machine,
     State,
@@ -24,6 +25,7 @@ use {
 /// any of the outputs will cause the entire transaction to fail
 /// and none of its changes will be persisted.
 pub struct ExecutionUnit<'s, 't> {
+  limits: Limits,
   entrypoint: ContractEntrypoint,
   env: Environment,
   state: &'s dyn State,
@@ -37,7 +39,7 @@ impl<'s, 't> ExecutionUnit<'s, 't> {
     vm: &Machine,
   ) -> Result<Self, ContractError> {
     // this value is defined in genesis
-    if transaction.accounts.len() > vm.max_input_accounts() {
+    if transaction.accounts.len() > vm.limits().max_input_accounts {
       return Err(ContractError::TooManyInputAccounts);
     }
 
@@ -49,6 +51,7 @@ impl<'s, 't> ExecutionUnit<'s, 't> {
     if let Some(entrypoint) = vm.builtin(&transaction.contract).cloned() {
       Ok(Self {
         entrypoint,
+        limits: vm.limits().clone(),
         env: Self::create_environment(state, transaction)?,
         state,
         transaction,
@@ -72,6 +75,11 @@ impl<'s, 't> ExecutionUnit<'s, 't> {
         // outputs will revert the entire transaction.
         for output in outputs {
           txoutputs = txoutputs.merge(self.process_output(output)?);
+
+          // ensure its bounded
+          if txoutputs.log_entries.len() > self.limits.max_logs_count {
+            return Err(ContractError::TooManyLogs);
+          }
         }
         Ok(txoutputs)
       }
@@ -149,18 +157,37 @@ impl<'s, 't> ExecutionUnit<'s, 't> {
     output: Output,
   ) -> Result<TransactionOutput, ContractError> {
     match output {
-      Output::LogEntry(key, value) => Ok(TransactionOutput {
-        state_diff: StateDiff::default(),
-        log_entries: vec![(key, value)],
-      }),
-      Output::CreateOwnedAccount(addr, data) => Ok(TransactionOutput {
-        state_diff: self.create_account(addr, data)?,
-        ..Default::default()
-      }),
-      Output::ModifyAccountData(addr, data) => Ok(TransactionOutput {
-        state_diff: self.modify_account(addr, data)?,
-        ..Default::default()
-      }),
+      Output::LogEntry(key, value) => {
+        if key.len() + value.len() > self.limits.max_log_size {
+          return Err(ContractError::LogTooLarge);
+        }
+        Ok(TransactionOutput {
+          state_diff: StateDiff::default(),
+          log_entries: vec![(key, value)],
+        })
+      }
+      Output::CreateOwnedAccount(addr, data) => {
+        if let Some(ref data) = data {
+          if data.len() > self.limits.max_account_size {
+            return Err(ContractError::AccountTooLarge);
+          }
+        }
+        Ok(TransactionOutput {
+          state_diff: self.create_account(addr, data)?,
+          ..Default::default()
+        })
+      }
+      Output::ModifyAccountData(addr, data) => {
+        if let Some(ref data) = data {
+          if data.len() > self.limits.max_account_size {
+            return Err(ContractError::AccountTooLarge);
+          }
+        }
+        Ok(TransactionOutput {
+          state_diff: self.modify_account(addr, data)?,
+          ..Default::default()
+        })
+      }
     }
   }
 

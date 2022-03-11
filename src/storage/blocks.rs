@@ -26,7 +26,6 @@ impl<D: BlockData> BlockStore<D> {
     let db = sled::Config::default()
       .path(directory)
       .use_compression(true)
-      .compression_factor(10)
       .mode(sled::Mode::HighThroughput)
       .open()?;
 

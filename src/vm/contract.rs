@@ -22,6 +22,15 @@ pub enum ContractError {
   #[error("The number of input accounts exceeds the maximum limit")]
   TooManyInputAccounts,
 
+  #[error("Account is exceeding the maximum size limit")]
+  AccountTooLarge,
+
+  #[error("Log is exceeding the maximum size limit")]
+  LogTooLarge,
+
+  #[error("Logs count for this transaction is exceeding the maximum limit")]
+  TooManyLogs,
+
   #[error("Invalid contract input accounts")]
   InvalidInputAccounts,
 

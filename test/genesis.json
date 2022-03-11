@@ -7,6 +7,9 @@
   "maxBlockSize": 5000000,
   "minimumStake": 1000,
   "maxInputAccounts": 32,
+  "maxAccountSize": 65536,
+  "maxLogSize": 256,
+  "maxLogsCount": 32,
   "systemCoin": "RensaToken1xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
   "state": {
     "CKDN1WjimfErkbgecnEfoPfs7CU1TknwMhpgbiXNknGC": {

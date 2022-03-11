@@ -376,6 +376,9 @@ mod tests {
       state: BTreeMap::new(),
       builtins: vec![],
       minimum_stake: 100,
+      max_log_size: 512,
+      max_logs_count: 32,
+      max_account_size: 65536,
       max_input_accounts: 32,
       system_coin: "RensaToken1xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
         .parse()
