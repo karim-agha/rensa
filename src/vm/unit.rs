@@ -24,19 +24,19 @@ use {
 /// blockchain state. Any failure in the contract logic or in
 /// any of the outputs will cause the entire transaction to fail
 /// and none of its changes will be persisted.
-pub struct ExecutionUnit<'s, 't> {
-  limits: Limits,
+pub struct ExecutionUnit<'s, 't, 'm> {
+  limits: &'m Limits,
   entrypoint: ContractEntrypoint,
   env: Environment,
   state: &'s dyn State,
   transaction: &'t Transaction,
 }
 
-impl<'s, 't> ExecutionUnit<'s, 't> {
+impl<'s, 't, 'm> ExecutionUnit<'s, 't, 'm> {
   pub fn new(
     transaction: &'t Transaction,
     state: &'s impl State,
-    vm: &Machine,
+    vm: &'m Machine,
   ) -> Result<Self, ContractError> {
     // this value is defined in genesis
     if transaction.accounts.len() > vm.limits().max_input_accounts {
@@ -51,7 +51,7 @@ impl<'s, 't> ExecutionUnit<'s, 't> {
     if let Some(entrypoint) = vm.builtin(&transaction.contract).cloned() {
       Ok(Self {
         entrypoint,
-        limits: vm.limits().clone(),
+        limits: vm.limits(),
         env: Self::create_environment(state, transaction)?,
         state,
         transaction,
