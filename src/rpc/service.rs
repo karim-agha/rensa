@@ -8,7 +8,7 @@ use {
     vm::{State, Transaction},
   },
   axum::{
-    extract::{Extension, Path},
+    extract::{Extension, Path, Query},
     http::StatusCode,
     response::IntoResponse,
     routing::{get, post},
@@ -20,7 +20,7 @@ use {
   indexmap::IndexMap,
   serde_json::json,
   std::{
-    collections::VecDeque,
+    collections::{HashMap, VecDeque},
     net::SocketAddr,
     pin::Pin,
     sync::Arc,
@@ -94,10 +94,61 @@ impl Stream for ApiService {
   }
 }
 
+/// Examples:
+///  - /accounts/B5Vsy6UPyGopvAM2GFv9VMyn29As8wjGyMxCQMVAGH6A
+///  - /accounts/B5Vsy6UPyGopvAM2GFv9VMyn29As8wjGyMxCQMVAGH6A?
+///    commitment=confirmed
 async fn serve_account(
   Path(account): Path<Pubkey>,
   Extension(state): Extension<Arc<ServiceSharedState>>,
+  Query(params): axum::extract::Query<HashMap<String, String>>,
 ) -> impl IntoResponse {
+  let commitment = match params.get("commitment") {
+    None => Commitment::Finalized,
+    Some(value) => match value.to_lowercase().as_str() {
+      "finalized" => Commitment::Finalized,
+      "confirmed" => Commitment::Confirmed,
+      _ => {
+        return (
+          StatusCode::BAD_REQUEST,
+          ErasedJson::pretty(json!({
+            "error": "invalid_parameter"
+          })),
+        );
+      }
+    },
+  };
+
+  if let Commitment::Confirmed = commitment {
+    let latest_finalized = state.blocks.latest(Commitment::Finalized);
+    let latest_confirmed = state.blocks.latest(Commitment::Confirmed);
+
+    if latest_finalized.is_some() && latest_confirmed.is_some() {
+      let finalized_height = latest_finalized.unwrap().height();
+      let mut cursor = latest_confirmed.unwrap().height();
+
+      while cursor > finalized_height {
+        if let Some((block, c)) = state.blocks.get_by_height(cursor) {
+          if let Some(acc) = block.state().get(&account) {
+            return (
+              StatusCode::OK,
+              ErasedJson::pretty(json! ({
+                "account": {
+                  "address": account,
+                  "owner": acc.owner,
+                  "data": acc.data.map(|a| a.to_b58())
+                },
+                "commitment": c
+              })),
+            );
+          } else {
+            cursor -= 1;
+          }
+        }
+      }
+    }
+  }
+
   if let Some(acc) = state.state.get(&account) {
     (
       StatusCode::OK,
@@ -107,7 +158,7 @@ async fn serve_account(
           "owner": acc.owner,
           "data": acc.data.map(|a| a.to_b58())
         },
-        "commitment": "finalized"
+        "commitment": Commitment::Finalized
       })),
     )
   } else {

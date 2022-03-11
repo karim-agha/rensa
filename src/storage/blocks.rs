@@ -86,13 +86,14 @@ impl<D: BlockData> BlockStore<D> {
 
     if let Some((block, commitment)) = block {
       let outputs = self.db.open_tree(b"outputs").unwrap();
-      let output = outputs.get(&height).unwrap().unwrap();
-      let output = bincode::deserialize(&output).unwrap();
-      let block = Executed::recreate(block, output);
-      Some((block, commitment))
-    } else {
-      None
+      if let Some(output) = outputs.get(&height).unwrap() {
+        let output = bincode::deserialize(&output).unwrap();
+        let block = Executed::recreate(block, output);
+        return Some((block, commitment));
+      }
     }
+
+    None
   }
 }
 
@@ -138,6 +139,17 @@ impl<D: BlockData> BlockConsumer<D> for BlockStore<D> {
       confirmed_tree.remove(block.height.to_be_bytes()).unwrap();
     }
 
+    let outputs = self.db.open_tree(b"outputs").unwrap();
+    let heightkey = block.height.to_be_bytes();
+    if !outputs.contains_key(&heightkey).unwrap() {
+      outputs
+        .insert(
+          heightkey,
+          bincode::serialize(block.output.as_ref()).unwrap(),
+        )
+        .unwrap();
+    }
+
     tree
       .insert(
         block.height.to_be_bytes(), // big endian for lexographic byte order
@@ -155,17 +167,6 @@ impl<D: BlockData> BlockConsumer<D> for BlockStore<D> {
         .unwrap();
     }
 
-    let outputs = self.db.open_tree(b"outputs").unwrap();
-    let heightkey = block.height.to_be_bytes();
-    if !outputs.contains_key(&heightkey).unwrap() {
-      outputs
-        .insert(
-          heightkey,
-          bincode::serialize(block.output.as_ref()).unwrap(),
-        )
-        .unwrap();
-    }
-
     // remove old blocks that are older than the history limit.
     let confirmed = self.db.open_tree(b"confirmed").unwrap();
     let finalized = self.db.open_tree(b"finalized").unwrap();
@@ -175,9 +176,9 @@ impl<D: BlockData> BlockConsumer<D> for BlockStore<D> {
       let zero = 0u64.to_be_bytes();
       let mut drain = tree.range(zero..cutoff);
       while let Some(Ok((h, b))) = drain.next() {
-        outputs.remove(&h).unwrap();
         confirmed.remove(&h).unwrap();
         finalized.remove(&h).unwrap();
+        outputs.remove(&h).unwrap();
 
         let deserialized: Produced<D> = bincode::deserialize(&b).unwrap();
         hashes
