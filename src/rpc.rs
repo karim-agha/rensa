@@ -1,5 +1,4 @@
 use {
-  super::ApiEvent,
   crate::{
     consensus::{Block, Genesis},
     consumer::Commitment,
@@ -12,7 +11,7 @@ use {
     http::StatusCode,
     response::IntoResponse,
     routing::{get, post},
-    AddExtensionLayer,
+    Json,
     Router,
   },
   axum_extra::response::ErasedJson,
@@ -20,12 +19,13 @@ use {
   indexmap::IndexMap,
   serde_json::json,
   std::{
-    collections::{HashMap, VecDeque},
+    collections::HashMap,
     net::SocketAddr,
     pin::Pin,
     sync::Arc,
     task::{Context, Poll},
   },
+  tokio::sync::mpsc::{self, UnboundedReceiver, UnboundedSender},
 };
 
 type BlockType = Vec<Transaction>;
@@ -34,10 +34,11 @@ struct ServiceSharedState {
   state: PersistentState,
   blocks: BlockStore<BlockType>,
   genesis: Genesis<BlockType>,
+  sender: UnboundedSender<Transaction>,
 }
 
 pub struct ApiService {
-  out_events: VecDeque<ApiEvent>,
+  receiver: UnboundedReceiver<Transaction>,
 }
 
 impl ApiService {
@@ -47,10 +48,12 @@ impl ApiService {
     blocks: BlockStore<BlockType>,
     genesis: Genesis<BlockType>,
   ) -> Self {
+    let (sender, receiver) = mpsc::unbounded_channel();
     let shared_state = Arc::new(ServiceSharedState {
       state,
       blocks,
       genesis,
+      sender,
     });
 
     let svc = Router::new()
@@ -58,7 +61,7 @@ impl ApiService {
       .route("/block/:height", get(serve_block))
       .route("/account/:account", get(serve_account))
       .route("/transaction", post(serve_send_transaction))
-      .layer(AddExtensionLayer::new(shared_state));
+      .layer(Extension(shared_state));
 
     addrs.iter().cloned().for_each(|addr| {
       let svc = svc.clone();
@@ -70,27 +73,19 @@ impl ApiService {
       });
     });
 
-    Self {
-      out_events: addrs
-        .into_iter()
-        .map(ApiEvent::ServiceInitialized)
-        .collect(),
-    }
+    Self { receiver }
   }
 }
 
 impl Unpin for ApiService {}
 impl Stream for ApiService {
-  type Item = ApiEvent;
+  type Item = Transaction;
 
   fn poll_next(
     mut self: Pin<&mut Self>,
-    _: &mut Context<'_>,
+    cx: &mut Context<'_>,
   ) -> Poll<Option<Self::Item>> {
-    if let Some(event) = self.out_events.pop_front() {
-      return Poll::Ready(Some(event));
-    }
-    Poll::Pending
+    self.receiver.poll_recv(cx)
   }
 }
 
@@ -250,11 +245,36 @@ async fn serve_block(
   }
 }
 
-async fn serve_send_transaction() -> impl IntoResponse {
+async fn serve_send_transaction(
+  Json(transaction): Json<Transaction>,
+  Extension(state): Extension<Arc<ServiceSharedState>>,
+) -> impl IntoResponse {
+  // filter out invalid signatures and addresses at the
+  // RPC level before bothering p2p and consensus and
+  // other validators.
+  if let Err(e) = transaction.verify_signatures() {
+    return (
+      StatusCode::BAD_REQUEST,
+      ErasedJson::pretty(json! ({
+        "error": e,
+      })),
+    );
+  }
+
+  let hash = *transaction.hash();
+  if let Err(e) = state.sender.send(transaction) {
+    return (
+      StatusCode::INTERNAL_SERVER_ERROR,
+      ErasedJson::pretty(json! ({
+        "error": e.to_string(),
+      })),
+    );
+  }
+
   (
-    StatusCode::NOT_IMPLEMENTED,
+    StatusCode::CREATED,
     ErasedJson::pretty(json! ({
-      "status": "not_implemented"
+      "transaction": hash.to_b58(),
     })),
   )
 }

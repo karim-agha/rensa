@@ -138,7 +138,7 @@ async fn main() -> anyhow::Result<()> {
 
   // components of the consensus
   let mut chain = Chain::new(&genesis, &vm, finalized);
-  let mut producer = BlockProducer::new(&genesis, &vm, opts.keypair.clone());
+  let mut producer = BlockProducer::new(&genesis, opts.keypair.clone());
   let mut schedule = ValidatorScheduleStream::new(
     ValidatorSchedule::new(seed, &genesis)?,
     genesis.genesis_time,
@@ -162,6 +162,9 @@ async fn main() -> anyhow::Result<()> {
     Box::new(DatabaseSync::new()),
     // persists blocks that have been confirmed or finalized
     Box::new(blocks_store.clone()),
+    // remove all observed votes and txs from the mempool that
+    // were included by other validators.
+    Box::new(producer.clone()),
   ]);
 
   // responsible for deciding if the current node should
@@ -185,7 +188,7 @@ async fn main() -> anyhow::Result<()> {
           debug!("[slot {}]: {} is considered head of chain @ height {}",
             slot, block.hash().unwrap().to_b58(), block.height());
           if validator.pubkey == me {
-            producer.produce(state, block);
+            producer.produce(state, block, &vm);
           }
         });
       }
@@ -214,11 +217,13 @@ async fn main() -> anyhow::Result<()> {
             chain.include(block);
           },
           NetworkEvent::VoteReceived(vote) => {
-            debug!("received vote {vote:?}");
             producer.record_vote(vote);
           },
           NetworkEvent::MissingBlock(block_hash) => {
            block_reply_responder.request(block_hash);
+          }
+          NetworkEvent::TransactionReceived(tx) => {
+            producer.record_transaction(tx);
           }
         }
       },
@@ -253,9 +258,8 @@ async fn main() -> anyhow::Result<()> {
               *block, block.height() / genesis.epoch_blocks,
               block.state().hash().to_bytes().to_b58()
             );
-            // don't duplicate votes if they were
-            // already included be an accepted block.
-            producer.exclude_votes(&block);
+
+            // run all consumers for this block on a separate thread
             consumers.consume(block, Commitment::Included)?;
           }
           ChainEvent::BlockConfirmed { block, votes } => {
@@ -283,9 +287,18 @@ async fn main() -> anyhow::Result<()> {
 
       // optional services:
 
-      // RPC API events
-      Some(event) = apisvc.next() => {
-        info!("RPC Event: {event:?}");
+      // RPC API
+      //  The only RPC events that modify the state, and thus
+      //  relevant for the validator loop are new transactions,
+      //  all other RPC calls are read-only operations that retreive
+      //  information about and from the chain or storage.
+      //
+      // When a transaction arrives through RPC, immediately propagate
+      // it through gossip to validators to be picked up by all validators
+      // mempools
+      Some(tx) = apisvc.next() => {
+        debug!("Transaction received throught RPC: {tx:?}");
+        network.gossip_transaction(tx)?;
       }
     }
   }

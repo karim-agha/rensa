@@ -8,6 +8,7 @@ use {
     MultihashDigest,
     Sha3_256,
   },
+  once_cell::sync::OnceCell,
   serde::{Deserialize, Serialize},
   std::io::{Error as StdError, ErrorKind},
   thiserror::Error,
@@ -74,6 +75,9 @@ pub struct Transaction {
 
   #[serde(with = "crate::primitives::b58::serde::signatures")]
   pub signatures: Vec<Signature>,
+
+  #[serde(skip)]
+  hashcache: OnceCell<Multihash>,
 }
 
 impl Transaction {
@@ -101,6 +105,7 @@ impl Transaction {
       accounts,
       params,
       signatures,
+      hashcache: OnceCell::new(),
     }
   }
 
@@ -156,19 +161,21 @@ impl Transaction {
     Ok(())
   }
 
-  pub fn hash(&self) -> Multihash {
-    let mut hasher = Sha3_256::default();
-    hasher.update(&self.contract);
-    hasher.update(&self.payer);
-    for accref in &self.accounts {
-      hasher.update(&accref.address);
-      hasher.update(&[accref.writable as u8]);
-    }
-    hasher.update(&self.params);
-    for sig in &self.signatures {
-      hasher.update(sig.as_ref());
-    }
-    MultihashCode::Sha3_256.wrap(hasher.finalize()).unwrap()
+  pub fn hash(&self) -> &Multihash {
+    self.hashcache.get_or_init(|| {
+      let mut hasher = Sha3_256::default();
+      hasher.update(&self.contract);
+      hasher.update(&self.payer);
+      for accref in &self.accounts {
+        hasher.update(&accref.address);
+        hasher.update(&[accref.writable as u8]);
+      }
+      hasher.update(&self.params);
+      for sig in &self.signatures {
+        hasher.update(sig.as_ref());
+      }
+      MultihashCode::Sha3_256.wrap(hasher.finalize()).unwrap()
+    })
   }
 
   fn hash_fields(
@@ -208,5 +215,11 @@ impl std::fmt::Debug for Transaction {
       )
       .field("hash", &self.hash().to_b58())
       .finish()
+  }
+}
+
+impl std::fmt::Display for Transaction {
+  fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    write!(f, "{}", self.hash().to_b58())
   }
 }

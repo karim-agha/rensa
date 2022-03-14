@@ -1,9 +1,11 @@
+use crate::vm::Transaction;
+
 mod episub;
 pub mod responder;
 
 use {
   crate::{
-    consensus::{Block, BlockData, Genesis, Produced, Vote},
+    consensus::{BlockData, Genesis, Produced, Vote},
     primitives::{Keypair, Pubkey, ToBase58String},
   },
   episub::{Config, Episub, EpisubEvent, PeerAuthorizer},
@@ -74,6 +76,7 @@ pub enum NetworkEvent<D: BlockData> {
   MissingBlock(Multihash),
   BlockReceived(Produced<D>),
   VoteReceived(Vote),
+  TransactionReceived(Transaction),
 }
 // this is a bug in clippy, I filed an issue on GH:
 // https://github.com/rust-lang/rust-clippy/issues/8321
@@ -85,6 +88,7 @@ pub enum NetworkCommand<D: BlockData> {
   GossipMissing(Multihash),
   GossipBlock(Produced<D>),
   GossipVote(Vote),
+  GossipTransaction(Transaction),
 }
 
 pub struct Network<D: BlockData> {
@@ -145,6 +149,7 @@ impl<D: BlockData> Network<D> {
     swarm
       .behaviour_mut()
       .subscribe(format!("/{}/vote", &chainid));
+    swarm.behaviour_mut().subscribe(format!("/{}/tx", &chainid));
     swarm
       .behaviour_mut()
       .subscribe(format!("/{}/block", &chainid));
@@ -195,6 +200,14 @@ impl<D: BlockData> Network<D> {
                   }
                   Err(e) => error!("Failed to deserialize missing block hash: {e}"),
                 }
+              } else if topic == format!("/{}/tx", chainid) {
+                match bincode::deserialize(&payload) {
+                  Ok(transaction) => {
+                    debug!("received transaction {transaction} through gossip");
+                    netin_tx.send(NetworkEvent::TransactionReceived(transaction)).unwrap();
+                  }
+                  Err(e) => error!("Failed to deserialize transaction: {e}"),
+                }
               } else {
                 warn!("Received a message on an unexpected topic {topic}");
               }
@@ -220,7 +233,7 @@ impl<D: BlockData> Network<D> {
                 .behaviour_mut()
                 .publish(
                   &format!("/{}/block", chainid),
-                  block.to_bytes().expect("Produced malformed block"))
+                  bincode::serialize(&block).expect("failed to serialize block"))
                 .unwrap();
               },
               NetworkCommand::GossipVote(vote) => {
@@ -228,7 +241,15 @@ impl<D: BlockData> Network<D> {
                 .behaviour_mut()
                 .publish(
                   &format!("/{}/vote", chainid),
-                  vote.to_bytes().expect("Produced malformed vote"))
+                  bincode::serialize(&vote).expect("Produced malformed vote"))
+                .unwrap();
+              }
+              NetworkCommand::GossipTransaction(transaction) => {
+                swarm
+                .behaviour_mut()
+                .publish(
+                  &format!("/{}/tx", chainid),
+                  bincode::serialize(&transaction).expect("failed to serialize transaction"))
                 .unwrap();
               }
             }
@@ -236,7 +257,6 @@ impl<D: BlockData> Network<D> {
         }
       }
     });
-
     Ok(Self {
       netin: netin_rx,
       netout: netout_tx,
@@ -255,6 +275,13 @@ impl<D: BlockData> Network<D> {
     vote: Vote,
   ) -> Result<(), SendError<NetworkCommand<D>>> {
     self.netout.send(NetworkCommand::GossipVote(vote))
+  }
+
+  pub fn gossip_transaction(
+    &mut self,
+    tx: Transaction,
+  ) -> Result<(), SendError<NetworkCommand<D>>> {
+    self.netout.send(NetworkCommand::GossipTransaction(tx))
   }
 
   pub fn gossip_block(

@@ -21,7 +21,6 @@ use {
     Sha3_256,
   },
   serde::{Deserialize, Serialize},
-  std::io::ErrorKind,
 };
 
 /// A message of this type means that a validator with the
@@ -40,20 +39,20 @@ pub struct Vote {
   /// A vote on a target block is implicitly also a
   /// vote on all blocks that are this target's
   /// ancestors until the justification block.
-  #[serde(with="crate::primitives::b58::serde::multihash")]
+  #[serde(with = "crate::primitives::b58::serde::multihash")]
   pub target: Multihash,
 
   /// The hash of the last finalized block that is an
   /// ancestor of the [`target`]. See the finalization
   /// rules for more info.
-  #[serde(with="crate::primitives::b58::serde::multihash")]
+  #[serde(with = "crate::primitives::b58::serde::multihash")]
   pub justification: Multihash,
 
   /// ED25519 signature using validator's private key.
   ///
   /// The message being signed is a concatinated bytestring
   /// of target bytes and justification bytes.
-  #[serde(with="crate::primitives::b58::serde::signature")]
+  #[serde(with = "crate::primitives::b58::serde::signature")]
   pub signature: Signature,
 }
 
@@ -96,11 +95,6 @@ impl Vote {
       justification,
       signature,
     }
-  }
-
-  pub fn to_bytes(&self) -> Result<Vec<u8>, std::io::Error> {
-    bincode::serialize(&self)
-      .map_err(|e| std::io::Error::new(ErrorKind::InvalidData, e))
   }
 
   pub fn hash(&self) -> Multihash {

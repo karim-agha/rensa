@@ -139,7 +139,7 @@ impl Executable for Vec<Transaction> {
           accstate = accstate.merge(txout.state_diff);
 
           // append all generated logs
-          acclogs.insert(transaction.hash(), txout.log_entries);
+          acclogs.insert(*transaction.hash(), txout.log_entries);
         }
         Err(error) => {
           // on error, don't apply any of transaction changes
@@ -149,7 +149,7 @@ impl Executable for Vec<Transaction> {
           );
 
           // store the error output of the failed transaction
-          accerrors.insert(transaction.hash(), error);
+          accerrors.insert(*transaction.hash(), error);
         }
       }
     }

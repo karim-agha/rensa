@@ -1,5 +1,6 @@
 use {
   crate::{consensus::BlockData, vm::Executed},
+  rayon::prelude::*,
   serde::{Deserialize, Serialize},
   tokio::sync::mpsc::{error::SendError, UnboundedSender},
 };
@@ -36,9 +37,9 @@ impl<D: BlockData> BlockConsumers<D> {
     let (sender, mut receiver) = tokio::sync::mpsc::unbounded_channel();
     tokio::spawn(async move {
       while let Some((b, c)) = receiver.recv().await {
-        for consumer in consumers.iter() {
+        consumers.par_iter().for_each(|consumer| {
           consumer.consume(&b, c);
-        }
+        });
       }
     });
 

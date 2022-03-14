@@ -111,11 +111,6 @@ pub trait Block<D: BlockData>: Debug {
   /// validators. A vote on a block is also implicitly a vote on
   /// all its ancestors.
   fn votes(&self) -> &[Vote];
-
-  /// Serializes the contents of the block into a byte buffer.
-  /// This serialization must be stable as it is
-  /// used for calculating hashes.
-  fn to_bytes(&self) -> Result<Vec<u8>, std::io::Error>;
 }
 
 /// The genesis block of the blockchain.
@@ -312,14 +307,6 @@ impl<D: BlockData> Block<D> for Genesis<D> {
   fn votes(&self) -> &[Vote] {
     &[]
   }
-
-  /// Serializes the contents of the block into a byte buffer.
-  /// This serialization must be stable as it is
-  /// used for calculating hashes.
-  fn to_bytes(&self) -> Result<Vec<u8>, std::io::Error> {
-    bincode::serialize(&self)
-      .map_err(|e| std::io::Error::new(ErrorKind::InvalidData, e))
-  }
 }
 
 /// A block produced by one of the validators after Genesis.
@@ -477,14 +464,6 @@ impl<D: BlockData> Block<D> for Produced<D> {
   /// Greedy Heaviest Observed Subtree (GHOST) fork choice algo.
   fn votes(&self) -> &[Vote] {
     &self.votes
-  }
-
-  /// Serializes the contents of the block into a byte buffer.
-  /// This serialization must be stable as it is
-  /// used for calculating hashes.
-  fn to_bytes(&self) -> Result<Vec<u8>, std::io::Error> {
-    bincode::serialize(&self)
-      .map_err(|e| std::io::Error::new(ErrorKind::InvalidData, e))
   }
 }
 
