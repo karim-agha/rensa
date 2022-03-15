@@ -54,6 +54,7 @@ impl Pubkey {
     let mut bump: u64 = 0;
     loop {
       let mut hasher = Sha3_256::default();
+      hasher.update(&self.0);
       for seed in seeds.iter() {
         hasher.update(seed);
       }
