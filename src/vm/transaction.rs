@@ -67,6 +67,7 @@ pub enum SignatureError {
 #[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Transaction {
   pub contract: Pubkey,
+  pub nonce: u64,
   pub payer: Pubkey,
   pub accounts: Vec<AccountRef>,
 
@@ -83,13 +84,14 @@ pub struct Transaction {
 impl Transaction {
   pub fn new(
     contract: Pubkey,
+    nonce: u64,
     payer: &Keypair,
     accounts: Vec<AccountRef>,
     params: Vec<u8>,
     signers: &[&Keypair],
   ) -> Self {
     let fields_hash =
-      Self::hash_fields(&contract, &payer.public(), &accounts, &params);
+      Self::hash_fields(&contract, nonce, &payer.public(), &accounts, &params);
 
     // payers signature alwyas goes first
     let mut signatures = vec![payer.sign(fields_hash.as_ref())];
@@ -101,6 +103,7 @@ impl Transaction {
 
     Self {
       contract,
+      nonce,
       payer: payer.public(),
       accounts,
       params,
@@ -112,6 +115,7 @@ impl Transaction {
   pub fn verify_signatures(&self) -> Result<(), SignatureError> {
     let fields_hash = Self::hash_fields(
       &self.contract,
+      self.nonce,
       &self.payer,
       &self.accounts,
       &self.params,
@@ -165,6 +169,7 @@ impl Transaction {
     self.hashcache.get_or_init(|| {
       let mut hasher = Sha3_256::default();
       hasher.update(&self.contract);
+      hasher.update(&self.nonce.to_le_bytes());
       hasher.update(&self.payer);
       for accref in &self.accounts {
         hasher.update(&accref.address);
@@ -180,12 +185,14 @@ impl Transaction {
 
   fn hash_fields(
     contract: &Pubkey,
+    nonce: u64,
     payer: &Pubkey,
     accounts: &[AccountRef],
     params: &[u8],
   ) -> Vec<u8> {
     let mut hasher = Sha3_256::default();
     hasher.update(contract);
+    hasher.update(&nonce.to_le_bytes());
     hasher.update(payer);
 
     for accref in accounts {

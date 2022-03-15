@@ -130,6 +130,7 @@ async fn serve_account(
               ErasedJson::pretty(json! ({
                 "account": {
                   "address": account,
+                  "nonce": acc.nonce,
                   "owner": acc.owner,
                   "data": acc.data.map(|a| a.to_b58())
                 },
@@ -150,6 +151,7 @@ async fn serve_account(
       ErasedJson::pretty(json! ({
         "account": {
           "address": account,
+          "nonce": acc.nonce,
           "owner": acc.owner,
           "data": acc.data.map(|a| a.to_b58())
         },

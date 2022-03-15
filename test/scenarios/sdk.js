@@ -115,9 +115,15 @@ class Pubkey {
 }
 
 class Transaction {
-  static async create(contract, payer, accounts, params) {
+  static async create(contract, nonce, payer, accounts, params) {
     const hasher = new SHA3(256);
     hasher.update(Buffer.from(contract.bytes));
+
+    // nonce as le bytes
+    const buffer = new ArrayBuffer(8);
+    new DataView(buffer).setBigUint64(0, BigInt(nonce), true);
+    hasher.update(Buffer.from(buffer));
+
     hasher.update(Buffer.from(await ed.getPublicKey(payer)));
 
     for (const acc of accounts) {
@@ -128,6 +134,7 @@ class Transaction {
     hasher.update(Buffer.from(params));
     const digest = hasher.digest();
     return {
+      nonce: nonce,
       contract: contract.toString(),
       accounts: accounts.map((acc) => ({
         address: acc.address.toString(),

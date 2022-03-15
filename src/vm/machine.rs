@@ -11,7 +11,7 @@ use {
   },
   crate::{
     consensus::{BlockData, Genesis, Produced},
-    primitives::{Pubkey, ToBase58String},
+    primitives::{Account, Pubkey, ToBase58String},
   },
   std::collections::HashMap,
   thiserror::Error,
@@ -130,12 +130,33 @@ impl Executable for Vec<Transaction> {
       // try instantiating the contract, construct its
       // isolated environment and execute it then injest
       // all its outputs if ran successfully to completion.
+
       match ExecutionUnit::new(transaction, &state, vm)
         .and_then(|exec_unit| exec_unit.execute())
       {
-        Ok(txout) => {
+        Ok(mut txout) => {
           // transaction execution successfully ran to completion.
           // merge and accumulate state changes in this block.
+
+          // also on successful execution of a tranasction, increment
+          // payer's nonce value.
+          if let Some(mut payer) =
+            Overlayed::new(&state, &accstate).get(&transaction.payer)
+          {
+            payer.nonce += 1;
+            txout.state_diff.set(transaction.payer, payer).unwrap();
+          } else {
+            txout
+              .state_diff
+              .set(transaction.payer, Account {
+                executable: false,
+                nonce: 1,
+                data: None,
+                owner: None,
+              })
+              .unwrap();
+          }
+
           accstate = accstate.merge(txout.state_diff);
 
           // append all generated logs

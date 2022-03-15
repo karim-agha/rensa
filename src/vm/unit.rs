@@ -64,6 +64,20 @@ impl<'s, 't, 'm> ExecutionUnit<'s, 't, 'm> {
   /// Consumes the execution unit and returns the state difference
   /// that is caused by running this transaction and all its outputs.
   pub fn execute(self) -> Result<TransactionOutput, ContractError> {
+    // to prevent transaction reply, the payer account has a
+    // nonce field that is incremented with every transaction
+    // that it is paying for. Fail the transaction if it is not
+    // exactly +1 of the previous nonce.
+    let payer_nonce = self
+      .state
+      .get(&self.transaction.payer)
+      .map(|a| a.nonce)
+      .unwrap_or(0);
+
+    if self.transaction.nonce != (payer_nonce + 1) {
+      return Err(ContractError::InvalidTransactionNonce);
+    }
+
     let entrypoint = self.entrypoint;
     match entrypoint(&self.env, &self.transaction.params) {
       Ok(outputs) => {
@@ -199,6 +213,7 @@ impl<'s, 't, 'm> ExecutionUnit<'s, 't, 'm> {
   ) -> Result<StateDiff, ContractError> {
     if self.state.get(&address).is_none() {
       self.set_account(address, Account {
+        nonce: 0,
         executable: false,
         owner: Some(self.transaction.contract),
         data,

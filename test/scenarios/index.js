@@ -9,7 +9,6 @@ const CURRENCY_CONTRACT_ADDR = new sdk.Pubkey("Currency1xxxxxxxxxxxxxxxxxxxxxxxx
 // Creates a new transaction that initiates a new coin type
 async function createCoin(payer, seed, decimals, authority, name, symbol) {
   let seedBytes = bs58.decode(seed);
-  console.log(seedBytes);
   let mintAddress = CURRENCY_CONTRACT_ADDR.derive([seedBytes]);
 
   // params
@@ -25,6 +24,7 @@ async function createCoin(payer, seed, decimals, authority, name, symbol) {
 
   return await sdk.Transaction.create(
     CURRENCY_CONTRACT_ADDR, // contract
+    1, // nonce
     payer, // payer
     [
       {
