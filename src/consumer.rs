@@ -1,8 +1,9 @@
 use {
   crate::{consensus::BlockData, vm::Executed},
-  rayon::prelude::*,
+  futures::future::join_all,
   serde::{Deserialize, Serialize},
-  tokio::sync::mpsc::{error::SendError, UnboundedSender},
+  std::sync::Arc,
+  tokio::sync::mpsc::{error::SendError, unbounded_channel, UnboundedSender},
 };
 
 /// Specifies the commitment level of a block.
@@ -21,8 +22,9 @@ pub enum Commitment {
 /// This trait is implemented by all services and components that ingest
 /// blocks as soon as the consensus engine agrees on them. This includes
 /// things like disk persistance, RPC service, sync service, etc.
+#[async_trait::async_trait]
 pub trait BlockConsumer<D: BlockData>: Sync + Send {
-  fn consume(&self, block: &Executed<D>, commitment: Commitment);
+  async fn consume(&self, block: Executed<D>, commitment: Commitment);
 }
 
 /// A collection of block consumers that will all receive
@@ -32,14 +34,20 @@ pub struct BlockConsumers<D: BlockData> {
 }
 
 impl<D: BlockData> BlockConsumers<D> {
-  pub fn new(consumers: Vec<Box<dyn BlockConsumer<D>>>) -> Self {
+  pub fn new(consumers: Vec<Arc<dyn BlockConsumer<D>>>) -> Self {
     // move all the consumption heavyweight work to a sperate thread
-    let (sender, mut receiver) = tokio::sync::mpsc::unbounded_channel();
+    let (sender, mut receiver) =
+      unbounded_channel::<(Executed<D>, Commitment)>();
     tokio::spawn(async move {
       while let Some((b, c)) = receiver.recv().await {
-        consumers.par_iter().for_each(|consumer| {
-          consumer.consume(&b, c);
-        });
+        join_all(consumers.iter().map(|consumer| {
+          let block = b.clone();
+          let consumer = Arc::clone(consumer);
+          tokio::spawn(async move {
+            consumer.consume(block, c).await;
+          })
+        }))
+        .await;
       }
     });
 

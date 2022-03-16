@@ -59,10 +59,10 @@ impl MempoolState {
 }
 
 /// This type is responsible for maintaining a list of transactions
-/// that were submitted through RPC to one of the validators then 
+/// that were submitted through RPC to one of the validators then
 /// gossiped to the network, and producing new blocks when it is this
 /// validator's turn to produce one.
-/// 
+///
 /// It also implements the BlockConsumer interface so that it can remove
 /// pending transactions that already appeared in blocks produced by
 /// other validators.
@@ -149,10 +149,11 @@ impl Stream for BlockProducer {
 }
 
 /// Exclude already included blocks and votes on a background thread
+#[async_trait::async_trait]
 impl BlockConsumer<Vec<Transaction>> for BlockProducer {
-  fn consume(
+  async fn consume(
     &self,
-    block: &vm::Executed<Vec<Transaction>>,
+    block: vm::Executed<Vec<Transaction>>,
     commitment: Commitment,
   ) {
     if let Commitment::Included = commitment {

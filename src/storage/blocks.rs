@@ -3,7 +3,7 @@ use {
   crate::{
     consensus::{Block, Produced},
     consumer::{BlockConsumer, Commitment},
-    vm::{Executed, Transaction},
+    vm::{Executed, ExecutedTransaction, Transaction},
   },
   multihash::Multihash,
   sled::{Db, Tree},
@@ -95,7 +95,18 @@ impl BlockStore {
     None
   }
 
-  fn store_raw_block(
+  pub fn get_transaction(
+    &self,
+    hash: &Multihash,
+  ) -> Option<ExecutedTransaction> {
+    let transactions = self.db.open_tree(b"transactions").unwrap();
+    transactions
+      .get(hash.to_bytes())
+      .unwrap()
+      .map(|tx| bincode::deserialize(&tx).unwrap())
+  }
+
+  async fn store_raw_block(
     &self,
     block: &Produced<BlockType>,
     commitment: Commitment,
@@ -138,8 +149,11 @@ impl BlockStore {
   }
 
   /// Stores the results of executed transactions in a block.
-  fn store_outputs(&self, block: &Executed<BlockType>) {
+  async fn store_outputs(&self, block: &Executed<BlockType>) {
+    let block = block.clone();
     let outputs = self.db.open_tree(b"outputs").unwrap();
+    let transactions = self.db.open_tree(b"transactions").unwrap();
+
     let heightkey = block.height.to_be_bytes();
     if !outputs.contains_key(&heightkey).unwrap() {
       outputs
@@ -149,43 +163,64 @@ impl BlockStore {
         )
         .unwrap();
     }
+
+    // store all individual transactions with their outputs
+    let mut txbatch = sled::Batch::default();
+    for tx in block.underlying.data.iter() {
+      let txhash = tx.hash();
+      let logs = block.output.logs.get(txhash);
+      let error = block.output.errors.get(txhash);
+      let tx = ExecutedTransaction {
+        transaction: tx.clone(),
+        output: error
+          .map(|e| Err(e.clone()))
+          .or_else(|| logs.map(|l| Ok(l.clone())))
+          .unwrap(),
+      };
+      let txbytes = bincode::serialize(&tx).unwrap().to_vec();
+      txbatch.insert(txhash.to_bytes(), txbytes);
+    }
+
+    transactions.apply_batch(txbatch).unwrap();
   }
 
   /// Removes blocks and all associated outputs, transactions and logs
   /// belonging to those blocks for all committment levels from the storage,
   /// that have block heights lower than then given height.
-  fn prune_older_than(&self, height: u64) {
-    let height = height;
-    let hashes = self.db.open_tree(b"hashes").unwrap();
-    let outputs = self.db.open_tree(b"outputs").unwrap();
-    let confirmed = self.db.open_tree(b"confirmed").unwrap();
-    let finalized = self.db.open_tree(b"finalized").unwrap();
-
-    let prune_tree = |tree: Tree, height: u64, with_hash: bool| {
-      let zero = 0u64.to_be_bytes();
-      let height = height.to_be_bytes();
-      let mut drain = tree.range(zero..height);
-      while let Some(Ok((h, b))) = drain.next() {
-        tree.remove(&h).unwrap();
-        if with_hash {
-          let deserialized: Produced<BlockType> =
-            bincode::deserialize(&b).unwrap();
-          hashes
-            .remove(deserialized.hash().unwrap().to_bytes())
-            .unwrap();
-        }
-      }
-    };
-
+  async fn prune_older_than(&self, height: u64) {
     if height > 0 {
-      rayon::join(
-        || prune_tree(outputs, height, false),
-        || {
-          rayon::join(
-            || prune_tree(confirmed, height, true),
-            || prune_tree(finalized, height, true),
-          )
-        },
+      let hashes = self.db.open_tree(b"hashes").unwrap();
+      let outputs = self.db.open_tree(b"outputs").unwrap();
+      let confirmed = self.db.open_tree(b"confirmed").unwrap();
+      let finalized = self.db.open_tree(b"finalized").unwrap();
+      let transactions = self.db.open_tree(b"finalized").unwrap();
+
+      let prune_tree = |tree: Tree, height: u64, isblock: bool| {
+        let zero = 0u64.to_be_bytes();
+        let height = height.to_be_bytes();
+        let mut drain = tree.range(zero..height);
+        while let Some(Ok((h, b))) = drain.next() {
+          tree.remove(&h).unwrap();
+          if isblock {
+            let deserialized: Produced<BlockType> =
+              bincode::deserialize(&b).unwrap();
+            hashes
+              .remove(deserialized.hash().unwrap().to_bytes())
+              .unwrap();
+
+            // remove all transactions associated with the
+            // pruned block.
+            deserialized.data.iter().for_each(|tx| {
+              transactions.remove(tx.hash().to_bytes()).unwrap();
+            });
+          }
+        }
+      };
+
+      tokio::join!(
+        async { prune_tree(outputs, height, false) },
+        async { prune_tree(confirmed, height, true) },
+        async { prune_tree(finalized, height, true) }
       );
     }
   }
@@ -200,19 +235,22 @@ impl Clone for BlockStore {
   }
 }
 
+#[async_trait::async_trait]
 impl BlockConsumer<BlockType> for BlockStore {
   /// The block consumer guarantees that we will get all blocks in order
   /// and without gaps, their height should be monotonically increasing.
-  fn consume(&self, block: &Executed<BlockType>, commitment: Commitment) {
+  async fn consume(&self, block: Executed<BlockType>, commitment: Commitment) {
     if commitment == Commitment::Included {
       return; // unconfirmed blocks are not persisted
     }
 
-    rayon::join(
+    tokio::join!(
       // Store the block itself, as it was transmitted over the wire
-      || self.store_raw_block(block.underlying.as_ref(), commitment),
+      self.store_raw_block(block.underlying.as_ref(), commitment),
       // Store transactions outputs for this block
-      || self.store_outputs(block),
+      self.store_outputs(&block),
+      // remove old blocks that are older than the history limit.
+      self.prune_older_than(block.height.saturating_sub(self.history_len))
     );
 
     // store a mapping of block_hash -> height for
@@ -224,8 +262,5 @@ impl BlockConsumer<BlockType> for BlockStore {
         .insert(hashkey, block.height.to_be_bytes().as_ref())
         .unwrap();
     }
-
-    // remove old blocks that are older than the history limit.
-    self.prune_older_than(block.height.saturating_sub(self.history_len));
   }
 }

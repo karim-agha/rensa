@@ -95,23 +95,27 @@ impl Stream for ApiService {
 
 /// Examples:
 ///  - /transaction/W1kbxQHfhfkG3DYoSczbbie4L16XviszWT4yK4VzUBW1Yy
-///  - /transaction/W1kbxQHfhfkG3DYoSczbbie4L16XviszWT4yK4VzUBW1Yy?
-///    commitment=confirmed
 async fn serve_transaction(
   Path(hash): Path<TransactionHash>,
-  Extension(_state): Extension<Arc<ServiceSharedState>>,
-  Query(params): axum::extract::Query<HashMap<String, String>>,
+  Extension(state): Extension<Arc<ServiceSharedState>>,
 ) -> impl IntoResponse {
-  let commitment = extract_commitment(params);
-  (
-    StatusCode::OK,
-    ErasedJson::pretty(json! ({
-      "transaction": {
-        "hash": hash.to_b58(),
-      },
-      "commitment": commitment
-    })),
-  )
+  if let Some(tx) = state.blocks.get_transaction(&hash) {
+    (
+      StatusCode::OK,
+      ErasedJson::pretty(json!({
+        "transaction": tx.transaction,
+        "output": tx.output.map(|o| o.into_iter().collect::<IndexMap<_, _>>())
+      })),
+    )
+  } else {
+    (
+      StatusCode::NOT_FOUND,
+      ErasedJson::pretty(json! ({
+        "transaction": hash.to_b58(),
+        "error": "not_found"
+      })),
+    )
+  }
 }
 
 /// Examples:
@@ -121,7 +125,7 @@ async fn serve_transaction(
 async fn serve_account(
   Path(account): Path<Pubkey>,
   Extension(state): Extension<Arc<ServiceSharedState>>,
-  Query(params): axum::extract::Query<HashMap<String, String>>,
+  Query(params): Query<HashMap<String, String>>,
 ) -> impl IntoResponse {
   let commitment = extract_commitment(params);
 
@@ -315,7 +319,7 @@ fn get_confirmed_account(
     let finalized_height = finalized.height();
     if let Some(confirmed) = latest_confirmed {
       let confirmed_height = confirmed.height();
-      
+
       // walk the confirmed blocks one by one until
       // it reaches the finalized height.
       let mut cursor = confirmed_height;

@@ -18,10 +18,11 @@ impl DatabaseSync {
   }
 }
 
+#[async_trait::async_trait]
 impl BlockConsumer<Vec<Transaction>> for DatabaseSync {
-  fn consume(
+  async fn consume(
     &self,
-    block: &Executed<Vec<Transaction>>,
+    block: Executed<Vec<Transaction>>,
     commitment: Commitment,
   ) {
     debug!("dbsync consuming {} at {commitment:?}", block.underlying);

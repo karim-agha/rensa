@@ -11,7 +11,7 @@ use {
   thiserror::Error,
 };
 
-#[derive(Debug, Error, Serialize, Deserialize)]
+#[derive(Debug, Error, Clone, Serialize, Deserialize)]
 pub enum ContractError {
   #[error("Invalid transaction nonce value for this payer")]
   InvalidTransactionNonce,

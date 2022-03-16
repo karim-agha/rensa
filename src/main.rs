@@ -159,12 +159,12 @@ async fn main() -> anyhow::Result<()> {
   // confirmed and finalized blocks
   let consumers = BlockConsumers::new(vec![
     // exports data changes to external DBs
-    Box::new(DatabaseSync::new()),
+    Arc::new(DatabaseSync::new()),
     // persists blocks that have been confirmed or finalized
-    Box::new(blocks_store.clone()),
+    Arc::new(blocks_store.clone()),
     // remove all observed votes and txs from the mempool that
     // were included by other validators.
-    Box::new(producer.clone()),
+    Arc::new(producer.clone()),
   ]);
 
   // responsible for deciding if the current node should

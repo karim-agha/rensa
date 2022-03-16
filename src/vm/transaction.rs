@@ -1,4 +1,5 @@
 use {
+  super::contract::ContractError,
   crate::primitives::{Keypair, Pubkey, ToBase58String},
   ed25519_dalek::{PublicKey, Signature, Signer, Verifier},
   multihash::{
@@ -53,7 +54,7 @@ impl AccountRef {
   }
 }
 
-#[derive(Debug, Error, Serialize, Deserialize)]
+#[derive(Debug, Clone, Error, Serialize, Deserialize)]
 pub enum SignatureError {
   #[error("Signature verification failed")]
   InvalidSignature,
@@ -229,4 +230,10 @@ impl std::fmt::Display for Transaction {
   fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
     write!(f, "{}", self.hash().to_b58())
   }
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct ExecutedTransaction {
+  pub transaction: Transaction,
+  pub output: Result<Vec<(String, String)>, ContractError>,
 }
