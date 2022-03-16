@@ -225,9 +225,11 @@ impl BlockStore {
 
             // remove all transactions associated with the
             // pruned block.
+            let mut txbatch = sled::Batch::default();
             deserialized.data.iter().for_each(|tx| {
-              transactions.remove(tx.hash().to_bytes()).unwrap();
+              txbatch.remove(tx.hash().to_bytes());
             });
+            transactions.apply_batch(txbatch).unwrap();
           }
         }
       };
