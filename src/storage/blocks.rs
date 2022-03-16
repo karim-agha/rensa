@@ -6,7 +6,7 @@ use {
     vm::{Executed, Transaction},
   },
   multihash::Multihash,
-  sled::Db,
+  sled::{Db, Tree},
   std::{path::PathBuf, sync::Arc},
 };
 
@@ -94,25 +94,18 @@ impl BlockStore {
 
     None
   }
-}
 
-impl Clone for BlockStore {
-  fn clone(&self) -> Self {
-    Self {
-      db: Arc::clone(&self.db),
-      history_len: self.history_len,
-    }
-  }
-}
-
-impl BlockConsumer<BlockType> for BlockStore {
-  /// The block consumer guarantees that we will get all blocks in order
-  /// and without gaps, their height should be monotonically increasing.
-  fn consume(&self, block: &Executed<BlockType>, commitment: Commitment) {
-    let tree = match commitment {
-      Commitment::Included => return, // unconfirmed blocks are not persisted
-      Commitment::Confirmed => self.db.open_tree(b"confirmed").unwrap(),
-      Commitment::Finalized => self.db.open_tree(b"finalized").unwrap(),
+  fn store_raw_block(
+    &self,
+    block: &Produced<BlockType>,
+    commitment: Commitment,
+  ) {
+    let confirmed = self.db.open_tree(b"confirmed").unwrap();
+    let finalized = self.db.open_tree(b"finalized").unwrap();
+    let destination = match commitment {
+      Commitment::Included => return,
+      Commitment::Confirmed => &confirmed,
+      Commitment::Finalized => &finalized,
     };
 
     if let Commitment::Finalized = commitment {
@@ -133,10 +126,19 @@ impl BlockConsumer<BlockType> for BlockStore {
       // if the block being added is finalized, then it was most likely
       // previously inserted as confirmed. Remove it from the confirmed
       // history.
-      let confirmed_tree = self.db.open_tree(b"confirmed").unwrap();
-      confirmed_tree.remove(block.height.to_be_bytes()).unwrap();
+      confirmed.remove(block.height.to_be_bytes()).unwrap();
     }
 
+    destination
+      .insert(
+        block.height.to_be_bytes(), // big endian for lexographic byte order
+        bincode::serialize(block).unwrap(),
+      )
+      .unwrap();
+  }
+
+  /// Stores the results of executed transactions in a block.
+  fn store_outputs(&self, block: &Executed<BlockType>) {
     let outputs = self.db.open_tree(b"outputs").unwrap();
     let heightkey = block.height.to_be_bytes();
     if !outputs.contains_key(&heightkey).unwrap() {
@@ -147,13 +149,71 @@ impl BlockConsumer<BlockType> for BlockStore {
         )
         .unwrap();
     }
+  }
 
-    tree
-      .insert(
-        block.height.to_be_bytes(), // big endian for lexographic byte order
-        bincode::serialize(block.underlying.as_ref()).unwrap(),
-      )
-      .unwrap();
+  /// Removes blocks and all associated outputs, transactions and logs
+  /// belonging to those blocks for all committment levels from the storage,
+  /// that have block heights lower than then given height.
+  fn prune_older_than(&self, height: u64) {
+    let height = height;
+    let hashes = self.db.open_tree(b"hashes").unwrap();
+    let outputs = self.db.open_tree(b"outputs").unwrap();
+    let confirmed = self.db.open_tree(b"confirmed").unwrap();
+    let finalized = self.db.open_tree(b"finalized").unwrap();
+
+    let prune_tree = |tree: Tree, height: u64, with_hash: bool| {
+      let zero = 0u64.to_be_bytes();
+      let height = height.to_be_bytes();
+      let mut drain = tree.range(zero..height);
+      while let Some(Ok((h, b))) = drain.next() {
+        tree.remove(&h).unwrap();
+        if with_hash {
+          let deserialized: Produced<BlockType> =
+            bincode::deserialize(&b).unwrap();
+          hashes
+            .remove(deserialized.hash().unwrap().to_bytes())
+            .unwrap();
+        }
+      }
+    };
+
+    if height > 0 {
+      rayon::join(
+        || prune_tree(outputs, height, false),
+        || {
+          rayon::join(
+            || prune_tree(confirmed, height, true),
+            || prune_tree(finalized, height, true),
+          )
+        },
+      );
+    }
+  }
+}
+
+impl Clone for BlockStore {
+  fn clone(&self) -> Self {
+    Self {
+      db: Arc::clone(&self.db),
+      history_len: self.history_len,
+    }
+  }
+}
+
+impl BlockConsumer<BlockType> for BlockStore {
+  /// The block consumer guarantees that we will get all blocks in order
+  /// and without gaps, their height should be monotonically increasing.
+  fn consume(&self, block: &Executed<BlockType>, commitment: Commitment) {
+    if commitment == Commitment::Included {
+      return; // unconfirmed blocks are not persisted
+    }
+
+    rayon::join(
+      // Store the block itself, as it was transmitted over the wire
+      || self.store_raw_block(block.underlying.as_ref(), commitment),
+      // Store transactions outputs for this block
+      || self.store_outputs(block),
+    );
 
     // store a mapping of block_hash -> height for
     // fast lookup by blockid
@@ -166,24 +226,6 @@ impl BlockConsumer<BlockType> for BlockStore {
     }
 
     // remove old blocks that are older than the history limit.
-    let confirmed = self.db.open_tree(b"confirmed").unwrap();
-    let finalized = self.db.open_tree(b"finalized").unwrap();
-    let cutoff = block.height.saturating_sub(self.history_len);
-    if cutoff > 0 {
-      let cutoff = cutoff.to_be_bytes();
-      let zero = 0u64.to_be_bytes();
-      let mut drain = tree.range(zero..cutoff);
-      while let Some(Ok((h, b))) = drain.next() {
-        confirmed.remove(&h).unwrap();
-        finalized.remove(&h).unwrap();
-        outputs.remove(&h).unwrap();
-
-        let deserialized: Produced<BlockType> =
-          bincode::deserialize(&b).unwrap();
-        hashes
-          .remove(deserialized.hash().unwrap().to_bytes())
-          .unwrap();
-      }
-    }
+    self.prune_older_than(block.height.saturating_sub(self.history_len));
   }
 }

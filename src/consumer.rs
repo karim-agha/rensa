@@ -11,7 +11,7 @@ use {
 /// end up being finalized. See the consensus module for
 /// a detailed explanation of those levels and stages of a
 /// block processing.
-#[derive(Debug, Copy, Clone, Serialize, Deserialize)]
+#[derive(Debug, Copy, Clone, Serialize, Deserialize, PartialEq)]
 pub enum Commitment {
   Included,
   Confirmed,
