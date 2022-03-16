@@ -234,6 +234,7 @@ impl std::fmt::Display for Transaction {
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct ExecutedTransaction {
+  pub block: u64,
   pub transaction: Transaction,
   pub output: Result<Vec<(String, String)>, ContractError>,
 }

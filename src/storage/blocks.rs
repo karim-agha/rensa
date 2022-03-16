@@ -95,6 +95,20 @@ impl BlockStore {
     None
   }
 
+  pub fn get_block_commitment(&self, height: u64) -> Option<Commitment> {
+    let height = height.to_be_bytes();
+    let confirmed = self.db.open_tree(b"confirmed").unwrap();
+    let finalized = self.db.open_tree(b"finalized").unwrap();
+
+    if confirmed.contains_key(&height).unwrap() {
+      Some(Commitment::Confirmed)
+    } else if finalized.contains_key(&height).unwrap() {
+      Some(Commitment::Finalized)
+    } else {
+      None
+    }
+  }
+
   pub fn get_transaction(
     &self,
     hash: &Multihash,
@@ -171,6 +185,7 @@ impl BlockStore {
       let logs = block.output.logs.get(txhash);
       let error = block.output.errors.get(txhash);
       let tx = ExecutedTransaction {
+        block: block.height,
         transaction: tx.clone(),
         output: error
           .map(|e| Err(e.clone()))

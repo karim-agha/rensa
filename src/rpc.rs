@@ -103,6 +103,9 @@ async fn serve_transaction(
     (
       StatusCode::OK,
       ErasedJson::pretty(json!({
+        "hash": tx.transaction.hash().to_b58(),
+        "block": tx.block,
+        "commitment": state.blocks.get_block_commitment(tx.block),
         "transaction": tx.transaction,
         "output": tx.output.map(|o| o.into_iter().collect::<IndexMap<_, _>>())
       })),
