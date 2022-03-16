@@ -1,23 +1,24 @@
 use {
   super::Error,
   crate::{
-    consensus::{Block, BlockData, Produced},
+    consensus::{Block, Produced},
     consumer::{BlockConsumer, Commitment},
-    vm::Executed,
+    vm::{Executed, Transaction},
   },
   multihash::Multihash,
   sled::Db,
-  std::{marker::PhantomData, path::PathBuf, sync::Arc},
+  std::{path::PathBuf, sync::Arc},
 };
 
+type BlockType = Vec<Transaction>;
+
 #[derive(Debug)]
-pub struct BlockStore<D: BlockData> {
+pub struct BlockStore {
   db: Arc<Db>,
   history_len: u64,
-  _marker: PhantomData<D>,
 }
 
-impl<D: BlockData> BlockStore<D> {
+impl BlockStore {
   pub fn new(directory: PathBuf, history_len: u64) -> Result<Self, Error> {
     let mut directory = directory;
     directory.push("blocks");
@@ -32,12 +33,11 @@ impl<D: BlockData> BlockStore<D> {
     Ok(Self {
       db: Arc::new(db),
       history_len,
-      _marker: PhantomData,
     })
   }
 
   /// Returns a block with the highest height at a given commitment.
-  pub fn latest(&self, commitment: Commitment) -> Option<Produced<D>> {
+  pub fn latest(&self, commitment: Commitment) -> Option<Produced<BlockType>> {
     let tree = match commitment {
       Commitment::Included => {
         // persistance is only implemented for confirmed+ blocks, that have no
@@ -59,7 +59,7 @@ impl<D: BlockData> BlockStore<D> {
   pub fn get_by_hash(
     &self,
     hash: &Multihash,
-  ) -> Option<(Executed<D>, Commitment)> {
+  ) -> Option<(Executed<BlockType>, Commitment)> {
     let hashes = self.db.open_tree(b"hashes").unwrap();
     hashes.get(&hash.to_bytes()).unwrap().and_then(|height| {
       let height = u64::from_be_bytes(height.as_ref().try_into().unwrap());
@@ -70,7 +70,7 @@ impl<D: BlockData> BlockStore<D> {
   pub fn get_by_height(
     &self,
     height: u64,
-  ) -> Option<(Executed<D>, Commitment)> {
+  ) -> Option<(Executed<BlockType>, Commitment)> {
     let height = height.to_be_bytes();
     let confirmed = self.db.open_tree(b"confirmed").unwrap();
     let finalized = self.db.open_tree(b"finalized").unwrap();
@@ -96,20 +96,19 @@ impl<D: BlockData> BlockStore<D> {
   }
 }
 
-impl<D: BlockData> Clone for BlockStore<D> {
+impl Clone for BlockStore {
   fn clone(&self) -> Self {
     Self {
       db: Arc::clone(&self.db),
       history_len: self.history_len,
-      _marker: PhantomData,
     }
   }
 }
 
-impl<D: BlockData> BlockConsumer<D> for BlockStore<D> {
+impl BlockConsumer<BlockType> for BlockStore {
   /// The block consumer guarantees that we will get all blocks in order
   /// and without gaps, their height should be monotonically increasing.
-  fn consume(&self, block: &Executed<D>, commitment: Commitment) {
+  fn consume(&self, block: &Executed<BlockType>, commitment: Commitment) {
     let tree = match commitment {
       Commitment::Included => return, // unconfirmed blocks are not persisted
       Commitment::Confirmed => self.db.open_tree(b"confirmed").unwrap(),
@@ -179,7 +178,8 @@ impl<D: BlockData> BlockConsumer<D> for BlockStore<D> {
         finalized.remove(&h).unwrap();
         outputs.remove(&h).unwrap();
 
-        let deserialized: Produced<D> = bincode::deserialize(&b).unwrap();
+        let deserialized: Produced<BlockType> =
+          bincode::deserialize(&b).unwrap();
         hashes
           .remove(deserialized.hash().unwrap().to_bytes())
           .unwrap();

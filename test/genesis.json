@@ -2,7 +2,7 @@
   "chainId": "rensa-t1",
   "genesisTime": "2022-01-18T13:40:00Z",
   "slotInterval": "2s",
-  "epochBlocks": 5,
+  "epochBlocks": 4,
   "maxJustificationAge": 4,
   "maxBlockSize": 5000000,
   "minimumStake": 1000,

@@ -17,11 +17,14 @@ use {
   axum_extra::response::ErasedJson,
   futures::Stream,
   indexmap::IndexMap,
+  multihash::Multihash,
+  serde::Deserialize,
   serde_json::json,
   std::{
     collections::HashMap,
     net::SocketAddr,
     pin::Pin,
+    str::FromStr,
     sync::Arc,
     task::{Context, Poll},
   },
@@ -32,7 +35,7 @@ type BlockType = Vec<Transaction>;
 
 struct ServiceSharedState {
   state: PersistentState,
-  blocks: BlockStore<BlockType>,
+  blocks: BlockStore,
   genesis: Genesis<BlockType>,
   sender: UnboundedSender<Transaction>,
 }
@@ -45,7 +48,7 @@ impl ApiService {
   pub fn new(
     addrs: Vec<SocketAddr>,
     state: PersistentState,
-    blocks: BlockStore<BlockType>,
+    blocks: BlockStore,
     genesis: Genesis<BlockType>,
   ) -> Self {
     let (sender, receiver) = mpsc::unbounded_channel();
@@ -60,6 +63,7 @@ impl ApiService {
       .route("/info", get(serve_info))
       .route("/block/:height", get(serve_block))
       .route("/account/:account", get(serve_account))
+      .route("/transaction/:hash", get(serve_transaction))
       .route("/transaction", post(serve_send_transaction))
       .layer(Extension(shared_state));
 
@@ -90,6 +94,27 @@ impl Stream for ApiService {
 }
 
 /// Examples:
+///  - /transaction/W1kbxQHfhfkG3DYoSczbbie4L16XviszWT4yK4VzUBW1Yy
+///  - /transaction/W1kbxQHfhfkG3DYoSczbbie4L16XviszWT4yK4VzUBW1Yy?
+///    commitment=confirmed
+async fn serve_transaction(
+  Path(hash): Path<TransactionHash>,
+  Extension(_state): Extension<Arc<ServiceSharedState>>,
+  Query(params): axum::extract::Query<HashMap<String, String>>,
+) -> impl IntoResponse {
+  let commitment = extract_commitment(params);
+  (
+    StatusCode::OK,
+    ErasedJson::pretty(json! ({
+      "transaction": {
+        "hash": hash.to_b58(),
+      },
+      "commitment": commitment
+    })),
+  )
+}
+
+/// Examples:
 ///  - /accounts/B5Vsy6UPyGopvAM2GFv9VMyn29As8wjGyMxCQMVAGH6A
 ///  - /accounts/B5Vsy6UPyGopvAM2GFv9VMyn29As8wjGyMxCQMVAGH6A?
 ///    commitment=confirmed
@@ -98,21 +123,7 @@ async fn serve_account(
   Extension(state): Extension<Arc<ServiceSharedState>>,
   Query(params): axum::extract::Query<HashMap<String, String>>,
 ) -> impl IntoResponse {
-  let commitment = match params.get("commitment") {
-    None => Commitment::Finalized,
-    Some(value) => match value.to_lowercase().as_str() {
-      "finalized" => Commitment::Finalized,
-      "confirmed" => Commitment::Confirmed,
-      _ => {
-        return (
-          StatusCode::BAD_REQUEST,
-          ErasedJson::pretty(json!({
-            "error": "invalid_parameter"
-          })),
-        );
-      }
-    },
-  };
+  let commitment = extract_commitment(params);
 
   if let Commitment::Confirmed = commitment {
     let latest_finalized = state.blocks.latest(Commitment::Finalized);
@@ -279,4 +290,49 @@ async fn serve_send_transaction(
       "transaction": hash.to_b58(),
     })),
   )
+}
+
+fn extract_commitment(params: HashMap<String, String>) -> Commitment {
+  match params.get("commitment") {
+    None => Commitment::Finalized,
+    Some(value) => match value.to_lowercase().as_str() {
+      "finalized" => Commitment::Finalized,
+      "confirmed" => Commitment::Confirmed,
+      _ => Commitment::Finalized,
+    },
+  }
+}
+
+struct TransactionHash(Multihash);
+impl std::ops::Deref for TransactionHash {
+  type Target = Multihash;
+
+  fn deref(&self) -> &Self::Target {
+    &self.0
+  }
+}
+
+impl FromStr for TransactionHash {
+  type Err = StatusCode;
+
+  fn from_str(s: &str) -> Result<Self, Self::Err> {
+    Ok(TransactionHash(
+      Multihash::from_bytes(
+        &bs58::decode(s)
+          .into_vec()
+          .map_err(|_| StatusCode::BAD_REQUEST)?,
+      )
+      .map_err(|_| StatusCode::BAD_REQUEST)?,
+    ))
+  }
+}
+
+impl<'de> Deserialize<'de> for TransactionHash {
+  fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+  where
+    D: serde::Deserializer<'de>,
+  {
+    TransactionHash::from_str(String::deserialize(deserializer)?.as_str())
+      .map_err(|_| serde::de::Error::custom("invalid transaction hash"))
+  }
 }
