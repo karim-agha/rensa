@@ -208,7 +208,7 @@ impl BlockStore {
       let outputs = self.db.open_tree(b"outputs").unwrap();
       let confirmed = self.db.open_tree(b"confirmed").unwrap();
       let finalized = self.db.open_tree(b"finalized").unwrap();
-      let transactions = self.db.open_tree(b"finalized").unwrap();
+      let transactions = self.db.open_tree(b"transactions").unwrap();
 
       let prune_tree = |tree: Tree, height: u64, isblock: bool| {
         let zero = 0u64.to_be_bytes();
@@ -226,9 +226,9 @@ impl BlockStore {
             // remove all transactions associated with the
             // pruned block.
             let mut txbatch = sled::Batch::default();
-            deserialized.data.iter().for_each(|tx| {
+            for tx in deserialized.data.iter() {
               txbatch.remove(tx.hash().to_bytes());
-            });
+            }
             transactions.apply_batch(txbatch).unwrap();
           }
         }

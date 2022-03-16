@@ -125,6 +125,18 @@ impl BlockProducer {
     self.pending = Some(block);
   }
 
+  pub fn reuse_discarded(&self, block: Produced<Vec<Transaction>>) {
+    // try to reuse votes
+    for vote in block.votes {
+      self.record_vote(vote);
+    }
+
+    // try to reinclude transactions
+    for tx in block.data {
+      self.record_transaction(tx);
+    }
+  }
+
   pub fn record_vote(&self, vote: Vote) {
     self.mempool.add_vote(vote);
   }

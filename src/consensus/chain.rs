@@ -56,20 +56,38 @@ use {
 
 #[derive(Debug)]
 pub enum ChainEvent<D: BlockData> {
+  /// Indicates that the consensus algorithm on the current
+  /// validator casted a vote for a block that it has included.
   Vote {
     target: Multihash,
     justification: Multihash,
   },
+
+  /// Indicates that a block in the forktree didn't make it into
+  /// the confirmed branch and will not be processed further.
+  ///
+  /// This is a signal that the votes and transactions on the
+  /// discarded block should be reincluded in a future block
+  /// so they make it into a future confirmed branch.
+  BlockDiscarded(Produced<D>),
+
+  /// Indicates that there are blocks that are missing their
+  /// parent block for a long time. This asks other validators
+  /// that may have the missing block to replay it.
   BlockMissing(Multihash),
+
+  /// Indicates that a block was successfully verified and included
+  /// in the forktree but has not yet received more than 2/3rds vote.
   BlockIncluded(Executed<D>),
-  BlockConfirmed {
-    block: Executed<D>,
-    votes: u64,
-  },
-  BlockFinalized {
-    block: Executed<D>,
-    votes: u64,
-  },
+
+  /// Indicates that the block has already received more than 2/3rds
+  /// of the voting stake and is in the canonical chain.
+  BlockConfirmed { block: Executed<D>, votes: u64 },
+
+  /// Indicates that a block has reached a point where it will never
+  /// be reverted in any case and its state is final for the entire
+  /// chain across all participating validators.
+  BlockFinalized { block: Executed<D>, votes: u64 },
 }
 
 /// Represents the state of the consensus protocol
@@ -624,8 +642,40 @@ impl<'g, 'f, D: BlockData> Chain<'g, D> {
   /// Applies state accumulate by the root to the current
   /// finalized state.
   fn finalize_root(&mut self, subtree: TreeNode<D>) {
+    let newroot_hash = subtree.value.hash().unwrap();
     // apply root's state diff and set it as the new finalized block
     self.finalized.apply(subtree.value.block);
+
+    // this is the list of trees in the forktree that didn't make
+    // it and will be removed permanently from the consensus tree.
+    //
+    // This list is collected to mark those blocks as "Discarded",
+    // so that votes and transactions included in them can be reincluded
+    // in a future block.
+    let discarded = self
+      .forktrees
+      .iter()
+      .filter(|tree| tree.value.hash().unwrap() != newroot_hash);
+
+    // traverse all discarded blocks
+    fn visit<D: BlockData>(
+      node: &TreeNode<D>,
+      op: &mut impl FnMut(&TreeNode<D>),
+    ) {
+      op(node);
+      for child in node.children.iter() {
+        visit(child, op);
+      }
+    }
+
+    // signal an event with a discarded block
+    for root in discarded {
+      visit(root, &mut |node| {
+        self.events.push_front(ChainEvent::BlockDiscarded(
+          node.value.block.underlying.as_ref().clone(),
+        ));
+      });
+    }
 
     self.forktrees = subtree
       .children

@@ -245,6 +245,10 @@ async fn main() -> anyhow::Result<()> {
               target,
               justification))?;
           },
+          ChainEvent::BlockDiscarded(block) => {
+            info!("discarded block {block}");
+            producer.reuse_discarded(block);
+          }
           ChainEvent::BlockMissing(hash) => {
             info!(
               "Block {} is missing, requesting replay.",

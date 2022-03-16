@@ -10,14 +10,14 @@ use {
   serde::{Deserialize, Serialize},
 };
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Default, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Account {
   #[serde(skip)]
   pub executable: bool,
 
   #[serde(default)]
   pub nonce: u64,
-  
+
   pub owner: Option<Pubkey>,
   pub data: Option<Vec<u8>>,
 }

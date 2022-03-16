@@ -123,6 +123,24 @@ impl Executable for Vec<Transaction> {
     let mut accstate = StateDiff::default();
 
     for transaction in self {
+      // on execution of a tranasction, increment payer's nonce value
+      // so the same transaction could not be replayed in the future,
+      // regardless of its execution outcome.
+      match Overlayed::new(state, &accstate).get(&transaction.payer) {
+        Some(mut payer) => {
+          payer.nonce += 1;
+          accstate.set(transaction.payer, payer).unwrap();
+        }
+        None => {
+          accstate
+            .set(transaction.payer, Account {
+              nonce: 1,
+              ..Account::default()
+            })
+            .unwrap();
+        }
+      };
+
       // Create a view of the state that encompasses the global state
       // and the state accumulated so far by the block.
       let state = Overlayed::new(state, &accstate);
@@ -134,29 +152,9 @@ impl Executable for Vec<Transaction> {
       match ExecutionUnit::new(transaction, &state, vm)
         .and_then(|exec_unit| exec_unit.execute())
       {
-        Ok(mut txout) => {
+        Ok(txout) => {
           // transaction execution successfully ran to completion.
           // merge and accumulate state changes in this block.
-
-          // also on successful execution of a tranasction, increment
-          // payer's nonce value.
-          if let Some(mut payer) =
-            Overlayed::new(&state, &accstate).get(&transaction.payer)
-          {
-            payer.nonce += 1;
-            txout.state_diff.set(transaction.payer, payer).unwrap();
-          } else {
-            txout
-              .state_diff
-              .set(transaction.payer, Account {
-                executable: false,
-                nonce: 1,
-                data: None,
-                owner: None,
-              })
-              .unwrap();
-          }
-
           accstate = accstate.merge(txout.state_diff);
 
           // append all generated logs
@@ -172,7 +170,7 @@ impl Executable for Vec<Transaction> {
           // store the error output of the failed transaction
           accerrors.insert(*transaction.hash(), error);
         }
-      }
+      };
     }
 
     Ok(BlockOutput::new(accstate, acclogs, accerrors))

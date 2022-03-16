@@ -67,14 +67,15 @@ impl<'s, 't, 'm> ExecutionUnit<'s, 't, 'm> {
     // to prevent transaction reply, the payer account has a
     // nonce field that is incremented with every transaction
     // that it is paying for. Fail the transaction if it is not
-    // exactly +1 of the previous nonce.
+    // if the transaction nonce value does not match the current
+    // account nonce.
     let payer_nonce = self
       .state
       .get(&self.transaction.payer)
       .map(|a| a.nonce)
       .unwrap_or(0);
 
-    if self.transaction.nonce != (payer_nonce + 1) {
+    if self.transaction.nonce != payer_nonce {
       return Err(ContractError::InvalidTransactionNonce);
     }
 
