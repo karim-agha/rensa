@@ -117,6 +117,7 @@ async fn main() -> anyhow::Result<()> {
   let blocks_store = BlockStore::new(
     opts.data_dir()?, // storage dir root
     opts.blocks_history(),
+    opts.rpc_endpoints().is_some(), // store tx details only if RPC is enabled
   )?;
 
   // get the latest finalized block that this validator is aware of

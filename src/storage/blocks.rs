@@ -15,11 +15,27 @@ type BlockType = Vec<Transaction>;
 #[derive(Debug)]
 pub struct BlockStore {
   db: Arc<Db>,
+  detailed: bool,
   history_len: u64,
 }
 
 impl BlockStore {
-  pub fn new(directory: PathBuf, history_len: u64) -> Result<Self, Error> {
+  /// Creates a new block storage.
+  /// 
+  /// The history len parameter specifies how many latest blocks should be 
+  /// kept in storage. This value determines how old is the oldest replayeable
+  /// block by this node, and how old is the oldest accessible transaction and
+  /// block information through RPC.
+  /// 
+  /// Detailed means that details of block execution (individual transaction 
+  /// logs, tx errors, etc.) are also persisted for [`history_len`] latest blocks.
+  /// This value is true when the RPC interface is enabled on the node, otherwise
+  /// detailed data is useless for a node to participate in consensus.
+  pub fn new(
+    directory: PathBuf,
+    history_len: u64,
+    detailed: bool,
+  ) -> Result<Self, Error> {
     let mut directory = directory;
     directory.push("blocks");
     std::fs::create_dir_all(directory.clone())?;
@@ -31,6 +47,7 @@ impl BlockStore {
       .open()?;
 
     Ok(Self {
+      detailed,
       db: Arc::new(db),
       history_len,
     })
@@ -113,6 +130,7 @@ impl BlockStore {
     &self,
     hash: &Multihash,
   ) -> Option<ExecutedTransaction> {
+    assert!(self.detailed, "detailed storage is set to false");
     let transactions = self.db.open_tree(b"transactions").unwrap();
     transactions
       .get(hash.to_bytes())
@@ -164,6 +182,7 @@ impl BlockStore {
 
   /// Stores the results of executed transactions in a block.
   async fn store_outputs(&self, block: &Executed<BlockType>) {
+    assert!(self.detailed, "detailed storage is set to false");
     let block = block.clone();
     let outputs = self.db.open_tree(b"outputs").unwrap();
     let transactions = self.db.open_tree(b"transactions").unwrap();
@@ -225,20 +244,29 @@ impl BlockStore {
 
             // remove all transactions associated with the
             // pruned block.
-            let mut txbatch = sled::Batch::default();
-            for tx in deserialized.data.iter() {
-              txbatch.remove(tx.hash().to_bytes());
+            if self.detailed {
+              let mut txbatch = sled::Batch::default();
+              for tx in deserialized.data.iter() {
+                txbatch.remove(tx.hash().to_bytes());
+              }
+              transactions.apply_batch(txbatch).unwrap();
             }
-            transactions.apply_batch(txbatch).unwrap();
           }
         }
       };
 
-      tokio::join!(
-        async { prune_tree(outputs, height, false) },
-        async { prune_tree(confirmed, height, true) },
-        async { prune_tree(finalized, height, true) }
-      );
+      if self.detailed {
+        tokio::join!(
+          async { prune_tree(outputs, height, false) },
+          async { prune_tree(confirmed, height, true) },
+          async { prune_tree(finalized, height, true) }
+        );
+      } else {
+        tokio::join!(
+          async { prune_tree(confirmed, height, true) }, //
+          async { prune_tree(finalized, height, true) }
+        );
+      }
     }
   }
 }
@@ -246,6 +274,7 @@ impl BlockStore {
 impl Clone for BlockStore {
   fn clone(&self) -> Self {
     Self {
+      detailed: self.detailed,
       db: Arc::clone(&self.db),
       history_len: self.history_len,
     }
@@ -261,14 +290,23 @@ impl BlockConsumer<BlockType> for BlockStore {
       return; // unconfirmed blocks are not persisted
     }
 
-    tokio::join!(
-      // Store the block itself, as it was transmitted over the wire
-      self.store_raw_block(block.underlying.as_ref(), commitment),
-      // Store transactions outputs for this block
-      self.store_outputs(&block),
-      // remove old blocks that are older than the history limit.
-      self.prune_older_than(block.height.saturating_sub(self.history_len))
-    );
+    if self.detailed {
+      tokio::join!(
+        // Store the block itself, as it was transmitted over the wire
+        self.store_raw_block(block.underlying.as_ref(), commitment),
+        // Store transactions outputs for this block
+        self.store_outputs(&block),
+        // remove old blocks that are older than the history limit.
+        self.prune_older_than(block.height.saturating_sub(self.history_len))
+      );
+    } else {
+      tokio::join!(
+        // Store the block itself, as it was transmitted over the wire
+        self.store_raw_block(block.underlying.as_ref(), commitment),
+        // remove old blocks that are older than the history limit.
+        self.prune_older_than(block.height.saturating_sub(self.history_len))
+      );
+    }
 
     // store a mapping of block_hash -> height for
     // fast lookup by blockid
