@@ -1,10 +1,9 @@
-const sdk = require('./sdk');
 const bs58 = require('bs58');
 const borsh = require('borsh');
 const ed = require('@noble/ed25519');
 const web3 = require('rensa-web3');
 
-const CURRENCY_CONTRACT_ADDR = new sdk.Pubkey("Currency1xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx");
+const CURRENCY_CONTRACT_ADDR = new web3.Pubkey("Currency1xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx");
 
 console.log(web3);
 
@@ -12,7 +11,7 @@ console.log(web3);
 async function createCoin(payer, seed, decimals, authority, name, symbol) {
   let seedBytes = bs58.decode(seed);
   let mintAddress = CURRENCY_CONTRACT_ADDR.derive([seedBytes]);
-
+  
   // params
   const writer = new borsh.BinaryWriter();
   writer.writeU8(0);
@@ -24,17 +23,18 @@ async function createCoin(payer, seed, decimals, authority, name, symbol) {
   writer.writeU8(1);
   writer.writeString(symbol);
 
-  return await sdk.Transaction.create(
+  return await web3.createTransaction(
     CURRENCY_CONTRACT_ADDR, // contract
     1, // nonce
     payer, // payer
     [
       {
-        address: mintAddress,
+        address: mintAddress.toString(),
         signer: false,
         writable: true
       }
     ], // accounts
+    [], // signers
     writer.toArray() // params
   );
 }
@@ -50,12 +50,12 @@ async function transferCoins(payer, coin, from, to, amount) {
 }
 
 (async () => {
-  const payer = ed.utils.randomPrivateKey();
+  const payer = await web3.Keypair.random();
   const createcoin = await createCoin(
     payer,
     'csTUBKjVWS4P1Lq5fXQJ1U6JX2dEMef8MFzyNG21ycF',
     2, // decimals
-    new sdk.Pubkey('csTUBKjVWS4P1Lq5fXQJ1U6JX2dEMef8MFzyNG21ycF'),
+    new web3.Pubkey('csTUBKjVWS4P1Lq5fXQJ1U6JX2dEMef8MFzyNG21ycF'),
     'Rensa Token',
     'RNS'
   );
