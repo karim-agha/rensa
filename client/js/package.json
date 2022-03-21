@@ -7,10 +7,14 @@
   "license": "MIT",
   "type": "commonjs",
   "files": [
-    "/dist",
-    "/src"
+    "/dist"
   ],
   "devDependencies": {
     "typescript": "^4.6.2"
+  },
+  "dependencies": {
+    "@noble/ed25519": "^1.6.0",
+    "borsh": "^0.7.0",
+    "bs58": "^5.0.0"
   }
 }

@@ -10,6 +10,7 @@
     "borsh": "^0.7.0",
     "bs58": "^5.0.0",
     "sha3": "^2.1.4",
-    "tweetnacl": "^1.0.3"
+    "tweetnacl": "^1.0.3",
+    "rensa-web3": "file:../../client/js/"
   }
 }

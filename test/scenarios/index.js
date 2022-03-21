@@ -2,9 +2,11 @@ const sdk = require('./sdk');
 const bs58 = require('bs58');
 const borsh = require('borsh');
 const ed = require('@noble/ed25519');
+const web3 = require('rensa-web3');
 
 const CURRENCY_CONTRACT_ADDR = new sdk.Pubkey("Currency1xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx");
 
+console.log(web3);
 
 // Creates a new transaction that initiates a new coin type
 async function createCoin(payer, seed, decimals, authority, name, symbol) {
