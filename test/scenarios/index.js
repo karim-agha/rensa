@@ -1,64 +1,19 @@
-const bs58 = require('bs58');
-const borsh = require('borsh');
-const ed = require('@noble/ed25519');
+const { Commitment, Currency, Keypair } = require('rensa-web3');
 const web3 = require('rensa-web3');
 
-const CURRENCY_CONTRACT_ADDR = new web3.Pubkey("Currency1xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx");
-
-console.log(web3);
-
-// Creates a new transaction that initiates a new coin type
-async function createCoin(payer, seed, decimals, authority, name, symbol) {
-  let seedBytes = bs58.decode(seed);
-  let mintAddress = CURRENCY_CONTRACT_ADDR.derive([seedBytes]);
-  
-  // params
-  const writer = new borsh.BinaryWriter();
-  writer.writeU8(0);
-  writer.writeFixedArray(seedBytes);
-  writer.writeFixedArray(authority.bytes);
-  writer.writeU8(decimals);
-  writer.writeU8(1);
-  writer.writeString(name);
-  writer.writeU8(1);
-  writer.writeString(symbol);
-
-  return await web3.createTransaction(
-    CURRENCY_CONTRACT_ADDR, // contract
-    1, // nonce
-    payer, // payer
-    [
-      {
-        address: mintAddress.toString(),
-        signer: false,
-        writable: true
-      }
-    ], // accounts
-    [], // signers
-    writer.toArray() // params
-  );
-}
-
-// For an existing coin, mints new coins to a given wallet address
-async function mintCoins(payer, coin, to, amount) {
-
-}
-
-// Transfers coins of a given type between two wallets
-async function transferCoins(payer, coin, from, to, amount) {
-
-}
 
 (async () => {
   const payer = await web3.Keypair.random();
-  const createcoin = await createCoin(
-    payer,
-    'csTUBKjVWS4P1Lq5fXQJ1U6JX2dEMef8MFzyNG21ycF',
-    2, // decimals
-    new web3.Pubkey('csTUBKjVWS4P1Lq5fXQJ1U6JX2dEMef8MFzyNG21ycF'),
-    'Rensa Token',
-    'RNS'
-  );
+  const client = new web3.Client("http://3.70.190.253:8080");
 
-  console.log(JSON.stringify(createcoin, null, 2));
+  console.log("creating new coin...");
+  let mintTx = await Currency.create(client,
+    payer.publicKey.bytes,
+    payer,
+    4,
+    null,
+    null);
+
+  let result = await client.sendAndConfirmTransaction(mintTx);
+  console.log("new coin created", result);
 })();

@@ -9,8 +9,9 @@
     "@noble/ed25519": "^1.6.0",
     "borsh": "^0.7.0",
     "bs58": "^5.0.0",
+    "node-fetch": "^3.2.3",
+    "rensa-web3": "file:../../client/js/",
     "sha3": "^2.1.4",
-    "tweetnacl": "^1.0.3",
-    "rensa-web3": "file:../../client/js/"
+    "tweetnacl": "^1.0.3"
   }
 }

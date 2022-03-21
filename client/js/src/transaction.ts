@@ -23,8 +23,8 @@ export async function createTransaction(
   contract: Pubkey,
   nonce: number,
   payer: Keypair,
-  accounts: [AccountRef],
-  signers: [Keypair],
+  accounts: AccountRef[],
+  signers: Keypair[],
   params: Uint8Array): Promise<Transaction> {
 
   const hasher = new SHA3(256);
