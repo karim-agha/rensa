@@ -12,13 +12,102 @@ export class Currency {
     this.mintAddress = mint;
   }
 
-  // async mint(to: Pubkey, authority: Keypair, amount: number): Promise<Transaction> {
+  async mint(client: Client, to: Pubkey, authority: Keypair, amount: number): Promise<Transaction> {
+    let nonce = await client.getNextAccountNonce(authority.publicKey);
 
-  // }
+    let accounts = [
+      // mint address
+      {
+        address: this.mintAddress.toString(),
+        writable: true,
+        signer: false
+      },
+      // mint authority as signer
+      {
+        address: authority.publicKey.toString(),
+        writable: false,
+        signer: true
+      },
+      // recipient wallet owner address
+      {
+        address: to.toString(),
+        writable: false,
+        signer: false
+      },
+      // recipient coin account
+      {
+        address: CURRENCY_CONTRACT_ADDR.derive([this.mintAddress, to]).toString(),
+        writable: true,
+        signer: false
+      }
+    ];
 
-  // async transfer(from: Keypair, to: Pubkey, amount: number): Promise<Transaction> {
+    // params in BORSH format
+    const writer = new BinaryWriter();
+    writer.writeU8(1);
+    writer.writeU64(amount);
 
-  // }
+    return createTransaction(
+      CURRENCY_CONTRACT_ADDR,
+      nonce,
+      authority,
+      accounts,
+      [authority],
+      writer.toArray()
+    );
+  }
+
+  async transfer(client: Client, from: Keypair, to: Pubkey, amount: number): Promise<Transaction> {
+    let nonce = await client.getNextAccountNonce(from.publicKey);
+
+    let accounts = [
+      // mint address
+      {
+        address: this.mintAddress.toString(),
+        writable: false,
+        signer: false
+      },
+      // sender wallet owner
+      {
+        address: from.publicKey.toString(),
+        writable: false,
+        signer: true
+      },
+      // sender coin address
+      {
+        address: CURRENCY_CONTRACT_ADDR.derive([this.mintAddress, from.publicKey]).toString(),
+        writable: true,
+        signer: false
+      },
+      // recipient wallet owner
+      {
+        address: to.toString(),
+        writable: false,
+        signer: false
+      },
+      // recipient coin address
+      {
+        address: CURRENCY_CONTRACT_ADDR.derive([this.mintAddress, to]).toString(),
+        writable: true,
+        signer: false
+      }
+    ];
+
+    // params in BORSH format
+    const writer = new BinaryWriter();
+    writer.writeU8(2);
+    writer.writeU64(amount);
+
+    return createTransaction(
+      CURRENCY_CONTRACT_ADDR,
+      nonce,
+      from,
+      accounts,
+      [from],
+      writer.toArray()
+    );
+
+  }
 
   // async burn(from: Keypair, amount: number): Promise<Transaction> {
 
@@ -46,10 +135,20 @@ export class Currency {
 
     // params in BORSH format
     const writer = new BinaryWriter();
+
+    // instruction index
     writer.writeU8(0);
+
+    // seed
     writer.writeFixedArray(seed);
+
+    // authority pubkey
     writer.writeFixedArray(authority.publicKey.bytes);
+
+    // decimals
     writer.writeU8(decimals);
+
+    // optional name
     if (name === null) {
       writer.writeU8(0);
     } else {
@@ -57,6 +156,7 @@ export class Currency {
       writer.writeString(name);
     }
 
+    // optional symbol
     if (symbol === null) {
       writer.writeU8(0);
     } else {
@@ -77,9 +177,5 @@ export class Currency {
       writer.toArray()
     );
   }
-
-  // static async fromCreateTransaction(client: Client, tx: TransactionHash): Promise<Currency> {
-
-  // }
 }
 

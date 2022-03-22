@@ -51,9 +51,18 @@ impl MempoolState {
     output
   }
 
-  pub fn take_transactions(&self) -> Vec<Transaction> {
-    let output = self.txs.iter().map(|t| t.value().clone()).collect();
-    self.txs.clear();
+  pub fn take_transactions(&self, count: usize) -> Vec<Transaction> {
+    let output: Vec<_> = self
+      .txs
+      .iter()
+      .take(count)
+      .map(|t| t.value().clone())
+      .collect();
+    
+    // remove from mempool the selected count
+    output.iter().for_each(|tx| {
+      self.txs.remove(tx.hash());
+    });
     output
   }
 }
@@ -68,6 +77,7 @@ impl MempoolState {
 /// other validators.
 pub struct BlockProducer {
   keypair: Keypair,
+  max_txs: usize,
   mempool: Arc<MempoolState>,
   pending: Option<Produced<Vec<Transaction>>>,
 }
@@ -77,6 +87,7 @@ impl Clone for BlockProducer {
     Self {
       keypair: self.keypair.clone(),
       mempool: Arc::clone(&self.mempool),
+      max_txs: self.max_txs,
       pending: None,
     }
   }
@@ -86,6 +97,7 @@ impl BlockProducer {
   pub fn new(genesis: &Genesis<Vec<Transaction>>, keypair: Keypair) -> Self {
     BlockProducer {
       keypair,
+      max_txs: genesis.max_block_transactions,
       mempool: Arc::new(MempoolState::new(
         genesis.validators.iter().map(|v| v.pubkey).collect(),
       )),
@@ -103,7 +115,7 @@ impl BlockProducer {
     let prevhash = prev.hash().unwrap();
 
     let votes = self.mempool.take_votes();
-    let txs = self.mempool.take_transactions();
+    let txs = self.mempool.take_transactions(self.max_txs);
 
     let blockoutput = txs.execute(vm, state).unwrap();
     let state_hash = blockoutput.hash();

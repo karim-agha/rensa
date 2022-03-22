@@ -22,7 +22,7 @@ export class Client {
   }
 
   async getNextAccountNonce(address: Pubkey): Promise<number> {
-    const account = await this.getAccount(address, Commitment.Finalized);
+    const account = await this.getAccount(address, Commitment.Confirmed);
     return account !== null ? account.nonce + 1 : 1;
   }
 
@@ -50,7 +50,7 @@ export class Client {
       if (txresult !== null) {
         return txresult;
       } else {
-        await new Promise(f => setTimeout(f, 1000));
+        await new Promise(f => setTimeout(f, 500));
       }
     }
   }
@@ -91,7 +91,7 @@ export class Client {
     } else if (result.status == 404) {
       return null
     } else {
-      throw Error(`invalid return code ${result.status} from server`);
+      throw Error(`invalid return code ${result.status} from server: ${await result.text()}`);
     }
   }
 }

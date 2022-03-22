@@ -111,7 +111,6 @@ pub enum Instruction {
   ///  1. [---s] The mint authority as signer
   ///  2. [----] The recipient wallet owner address
   ///  3. [drw-] The recipient address (Currency.derive([mint, wallet])))
-  ///  4. [-s--] The mint authority as signer.
   Mint(u64),
 
   /// Transfers tokens between wallets.
@@ -121,10 +120,11 @@ pub enum Instruction {
   /// tokens.
   ///
   /// Accounts expected by this instruction:
-  ///  0. [d-r--] The mint address
-  ///  1. [---s] The sender wallet owner address as signer
-  ///  2. [drw-] The sender token address (Currency.derive([mint, wallet]))
-  ///  3. [drw-] The recipient token address (Currency.derive([mint, wallet]))
+  //  0. [d-r--] The mint address
+  //  1. [---s] The sender wallet owner address as signer
+  //  2. [drw-] The sender coin address
+  //  3. [----] The recipient wallet owner address
+  //  4. [drw-] The recipient token address
   Transfer(u64),
 
   /// Remove tokens from circulation.
@@ -241,7 +241,7 @@ fn process_create(
       ),
     ),
     // generate logs
-    contract::Output::LogEntry("action".into(), "mint-created".into()),
+    contract::Output::LogEntry("action".into(), "create".into()),
     contract::Output::LogEntry("address".into(), addr.to_string()),
     contract::Output::LogEntry("name".into(), spec.name.unwrap_or_default()),
     contract::Output::LogEntry(
@@ -294,7 +294,7 @@ fn process_mint(env: &Environment, amount: u64) -> contract::Result {
 
   // logs for explorers and dApps
   let mut outputs = vec![
-    contract::Output::LogEntry("action".into(), "mint-coins".into()),
+    contract::Output::LogEntry("action".into(), "mint".into()),
     contract::Output::LogEntry("to".into(), wallet_addr.to_string()),
     contract::Output::LogEntry("amount".into(), amount.to_string()),
   ];
@@ -351,7 +351,7 @@ fn process_transfer(env: &Environment, amount: u64) -> contract::Result {
   let (recipient_coin_addr, recipient_coin_acc) = &env.accounts[4];
 
   // make sure that the mint address points to a valid coin mint.
-  let mint = read_coin_mint(mint_addr, mint_acc, env)?;
+  read_coin_mint(mint_addr, mint_acc, env)?;
 
   // validate and read coin mint data, this also validates
   // the validity of the derived coin address.
@@ -384,15 +384,7 @@ fn process_transfer(env: &Environment, amount: u64) -> contract::Result {
       // logs for explorers and dApps
       contract::Output::LogEntry("action".into(), "transfer".into()),
       contract::Output::LogEntry("from".into(), sender_wallet_addr.to_string()),
-      contract::Output::LogEntry("coin.address".into(), mint_addr.to_string()),
-      contract::Output::LogEntry(
-        "coin.name".into(),
-        mint.name.unwrap_or_default(),
-      ),
-      contract::Output::LogEntry(
-        "coin.symbol".into(),
-        mint.symbol.unwrap_or_default(),
-      ),
+      contract::Output::LogEntry("coin".into(), mint_addr.to_string()),
       contract::Output::LogEntry(
         "to".into(),
         recipient_wallet_addr.to_string(),
@@ -479,17 +471,12 @@ fn process_burn(env: &Environment, amount: u64) -> contract::Result {
     mint.supply = mint.supply.saturating_sub(amount);
     coin.balance = coin.balance.saturating_sub(amount);
 
-    let coin_name = mint.name.clone().unwrap_or_default();
-    let coin_symbol = mint.symbol.clone().unwrap_or_default();
-
     Ok(vec![
       // logs for explorers and dApps
       contract::Output::LogEntry("action".into(), "burn".into()),
       contract::Output::LogEntry("from".into(), wallet_addr.to_string()),
       contract::Output::LogEntry("amount".into(), amount.to_string()),
-      contract::Output::LogEntry("coin.address".into(), mint_addr.to_string()),
-      contract::Output::LogEntry("coin.name".into(), coin_name),
-      contract::Output::LogEntry("coin.symbol".into(), coin_symbol),
+      contract::Output::LogEntry("coin".into(), mint_addr.to_string()),
       // store updated accounts
       contract::Output::ModifyAccountData(*mint_addr, Some(mint.try_to_vec()?)),
       contract::Output::ModifyAccountData(*coin_addr, Some(coin.try_to_vec()?)),

@@ -10,6 +10,7 @@
   "maxAccountSize": 65536,
   "maxLogSize": 256,
   "maxLogsCount": 32,
+  "maxBlockTransactions": 2000,
   "systemCoin": "RensaToken1xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
   "state": {
     "CKDN1WjimfErkbgecnEfoPfs7CU1TknwMhpgbiXNknGC": {

@@ -859,6 +859,7 @@ mod test {
       max_logs_count: 32,
       max_account_size: 65536,
       max_input_accounts: 32,
+      max_block_transactions: 2000,
       system_coin: "RensaToken1xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
         .parse()
         .unwrap(),
@@ -947,6 +948,7 @@ mod test {
       max_log_size: 512,
       max_logs_count: 32,
       max_input_accounts: 32,
+      max_block_transactions: 2000,
       system_coin: "RensaToken1xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
         .parse()
         .unwrap(),

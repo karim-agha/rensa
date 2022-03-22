@@ -6,6 +6,8 @@ import { utils, getPublicKey, sign } from '@noble/ed25519';
 // @ts-ignore
 let naclLowLevel = nacl.lowlevel;
 
+export type AddressDeriveBase = Uint8Array | Pubkey | string;
+
 export class Pubkey {
   bytes: Uint8Array;
 
@@ -39,7 +41,7 @@ export class Pubkey {
    * @param seeds a collection of byte arrays or pubkeys
    * @returns A derived address that is not on the Ed25519 Curve.
    */
-  derive(seeds: [Uint8Array | Pubkey | string]): Pubkey {
+  derive(seeds: AddressDeriveBase[]): Pubkey {
     var bump = 0;
     while (true) {
       const hasher = new SHA3(256);
