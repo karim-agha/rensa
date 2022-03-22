@@ -339,6 +339,10 @@ fn process_transfer(env: &Environment, amount: u64) -> contract::Result {
     return Err(ContractError::InvalidInputAccounts);
   }
 
+  if amount == 0 {
+    return Err(ContractError::InvalidInputParameters);
+  }
+
   //  0. [d-r--] The mint address
   //  1. [---s] The sender wallet owner address as signer
   //  2. [drw-] The sender coin address

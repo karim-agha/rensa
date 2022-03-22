@@ -79,12 +79,14 @@ services:
       dockerfile: Dockerfile
     environment:
       - RUST_BACKTRACE=1
-    command: ./rensa --keypair 2r7N3U1vEsXGjm29TCfFTzwSuXjq9xPDiiah5egbSZpC --genesis genesis.json --peer 172.29.1.2:44668 --blocks-history 30
+    command: ./rensa --keypair 2r7N3U1vEsXGjm29TCfFTzwSuXjq9xPDiiah5egbSZpC --genesis genesis.json --peer 172.29.1.2:44668 --rpc 8080 --blocks-history 2000
     depends_on:
       validator_0:
         condition: service_started
     networks:
       rensa_test_net:
+    ports:
+      - "8081:8080"
 
   validator_6:
     build:
@@ -114,8 +116,9 @@ services:
         condition: service_started
     networks:
       rensa_test_net:
-    ports:
-      - "9090:8080"
+    # Uncomment for attaching a memory profiler
+    # ports:
+    #   - "9090:8080"
 
   validator_8:
     build:

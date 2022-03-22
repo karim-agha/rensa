@@ -41,19 +41,22 @@ let host = process.argv[2];
     }
 
     // sequencial, nonce-dependent batch
-    for (var iteration = 1; iteration < (walletsCount / 2); ++iteration) {
+    var factor = walletsCount;
+    const sqrt = Math.sqrt(walletsCount);
+    for (var iteration = 0; iteration < sqrt; ++iteration) {
       var txs = [];
-      // parallel batch
-      for (var i = 0; i < iteration; ++i) {
-        console.log("sending transafer", iteration, i);
+      const count = Math.floor(Math.pow(iteration, 2) / 2);
+      console.log("sending transafers, interation, count:", iteration, count);
+      for (var i = 0; i < count; ++i) { // parallel batch
         txs.push(client.sendAndConfirmTransaction(
           await currency.transfer(
-            client, 
+            client,
             wallets[i], // from
-            wallets[i + iteration].publicKey, // too
-            10 * (iteration - i))
+            wallets[i + count].publicKey, // too
+            2000000 * factor) // amount
         ));
       }
+      factor /= 2;
       console.dir(await (await Promise.all(txs)).map((tx) => tx.output), { depth: null });
     }
   }
