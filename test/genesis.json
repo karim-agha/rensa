@@ -29,7 +29,8 @@
   "builtins": [
     "Currency1xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
     "Sha3xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
-    "Staking1xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+    "Staking1xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+    "ContractSetup1xxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
   ],
   "validators": [
     {
