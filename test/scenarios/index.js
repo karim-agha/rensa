@@ -36,7 +36,7 @@ let host = process.argv[2];
 
     for (var i = 0; i < 10; ++i) {
       console.dir(await client.sendAndConfirmTransaction(
-        await currency.mint(client, wallets[i].publicKey, payer, 100000000)
+        await currency.mint(client, wallets[i].publicKey, payer, 1000000000)
       ), { depth: null });
     }
 
@@ -53,7 +53,7 @@ let host = process.argv[2];
             client,
             wallets[i], // from
             wallets[i + count].publicKey, // too
-            2000000 * factor) // amount
+            4000000 * factor) // amount
         ));
       }
       factor /= 2;
