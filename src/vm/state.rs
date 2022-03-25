@@ -15,7 +15,7 @@ use {
   once_cell::sync::OnceCell,
   serde::{Deserialize, Serialize},
   std::{
-    collections::{btree_map::IntoIter, BTreeMap},
+    collections::{btree_map::IntoIter, BTreeMap, BTreeSet},
     ops::Deref,
     sync::Arc,
   },
@@ -45,6 +45,9 @@ pub trait State {
     address: Pubkey,
     account: Account,
   ) -> Result<Option<Account>>;
+
+  /// Stores or overwrites an account object and its contents in the state.
+  fn remove(&mut self, address: Pubkey) -> Result<bool>;
 
   /// Returns the CID or hash of the current state.
   ///
@@ -83,6 +86,10 @@ impl<'s1, 's2> State for Overlayed<'s1, 's2> {
   }
 
   fn set(&mut self, _: Pubkey, _: Account) -> Result<Option<Account>> {
+    Err(StateError::WritesNotSupported)
+  }
+
+  fn remove(&mut self, _: Pubkey) -> Result<bool> {
     Err(StateError::WritesNotSupported)
   }
 
@@ -132,6 +139,8 @@ impl<D: BlockData> Deref for Finalized<'_, D> {
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct StateDiff {
   data: BTreeMap<Pubkey, Account>,
+  deletes: BTreeSet<Pubkey>,
+
   #[serde(skip)]
   hashcache: OnceCell<Multihash>,
 }
@@ -142,8 +151,16 @@ impl StateDiff {
     for (addr, acc) in newer.data {
       data.insert(addr, acc);
     }
+
+    let mut deletes = self.deletes;
+    for addr in newer.deletes {
+      data.remove(&addr);
+      deletes.insert(addr);
+    }
+
     StateDiff {
       data,
+      deletes,
       hashcache: OnceCell::new(),
     }
   }
@@ -159,7 +176,13 @@ impl State for StateDiff {
     address: Pubkey,
     account: Account,
   ) -> Result<Option<Account>> {
+    self.deletes.remove(&address);
     Ok(self.data.insert(address, account))
+  }
+
+  fn remove(&mut self, address: Pubkey) -> Result<bool> {
+    self.deletes.insert(address);
+    Ok(self.data.remove(&address).is_some())
   }
 
   fn hash(&self) -> Multihash {
@@ -175,11 +198,17 @@ impl State for StateDiff {
 }
 
 impl IntoIterator for StateDiff {
-  type IntoIter = IntoIter<Pubkey, Account>;
-  type Item = (Pubkey, Account);
+  type IntoIter = IntoIter<Pubkey, Option<Account>>;
+  type Item = (Pubkey, Option<Account>);
 
   fn into_iter(self) -> Self::IntoIter {
-    self.data.into_iter()
+    self
+      .data
+      .into_iter()
+      .map(|(addr, acc)| (addr, Some(acc)))
+      .chain(self.deletes.into_iter().map(|addr| (addr, None)))
+      .collect::<BTreeMap<_, _>>()
+      .into_iter()
   }
 }
 

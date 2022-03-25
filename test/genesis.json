@@ -5,13 +5,13 @@
   "epochBlocks": 4,
   "limits": {
     "maxJustificationAge": 4,
-    "maxBlockSize": 5000000,
+    "maxBlockSize": 1000000,
     "minimumStake": 1000,
     "maxInputAccounts": 32,
     "maxAccountSize": 65536,
     "maxLogSize": 256,
     "maxLogsCount": 32,
-    "maxTransactionParamsSize": 2048,
+    "maxTransactionParamsSize": 614400,
     "maxBlockTransactions": 2000,
     "maxContractSize": 614400
   },

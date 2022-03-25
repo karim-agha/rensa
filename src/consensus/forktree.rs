@@ -302,6 +302,10 @@ impl<'c, D: BlockData> State for CascadingState<'c, D> {
     Err(StateError::WritesNotSupported)
   }
 
+  fn remove(&mut self, _address: Pubkey) -> Result<bool, StateError> {
+    Err(StateError::WritesNotSupported)
+  }
+
   fn hash(&self) -> Multihash {
     unimplemented!() // not applicable here
   }

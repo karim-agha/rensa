@@ -88,6 +88,13 @@ pub enum Output {
   /// visible to external observers through the RPC interface.
   LogEntry(String, String),
 
+  /// Represents creation of a new account that is owned by a calling
+  /// contract.
+  ///
+  /// The modified account should be set as writable in the transaction
+  /// inputs, otherwise the transaction will fail.
+  CreateOwnedAccount(Pubkey, Option<Vec<u8>>),
+
   /// Represents a modification to the contents of an account owned
   /// by the contract.
   ///
@@ -95,12 +102,11 @@ pub enum Output {
   /// inputs, otherwise the transaction will fail.
   ModifyAccountData(Pubkey, Option<Vec<u8>>),
 
-  /// Represents creation of a new account that is owned by a calling
-  /// contract.
+  /// Represents a deletion of an account that is owned by the contract.
   ///
   /// The modified account should be set as writable in the transaction
-  /// inputs, otherwise the transaction will fail.
-  CreateOwnedAccount(Pubkey, Option<Vec<u8>>),
+  /// inputs, and its owner should match the executing contract.
+  DeleteOwnedAccount(Pubkey),
 }
 
 /// Represents the output of invocing a smart contract by a transaction.

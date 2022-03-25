@@ -54,7 +54,12 @@ impl PersistentState {
   pub fn apply(&self, diff: StateDiff) -> Result<(), Error> {
     let mut batch = Batch::default();
     for (addr, account) in diff.into_iter() {
-      batch.insert(addr.as_ref(), bincode::serialize(&account)?);
+      match account {
+        Some(account) => {
+          batch.insert(addr.as_ref(), bincode::serialize(&account)?)
+        }
+        None => batch.remove(addr.as_ref()),
+      };
     }
     self.db.apply_batch(batch).map_err(Error::StorageEngine)
   }
@@ -77,6 +82,13 @@ impl State for PersistentState {
     _address: Pubkey,
     _account: Account,
   ) -> Result<Option<Account>, StateError> {
+    Err(StateError::WritesNotSupported)
+  }
+
+  /// Writes directly to finalized state are not supported, instead
+  /// state diffs from newly finalized blocks should be applied using the
+  /// [`apply`] method
+  fn remove(&mut self, _address: Pubkey) -> Result<bool, StateError> {
     Err(StateError::WritesNotSupported)
   }
 

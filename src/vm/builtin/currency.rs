@@ -259,6 +259,10 @@ fn process_mint(env: &Environment, amount: u64) -> contract::Result {
     return Err(ContractError::InvalidInputAccounts);
   }
 
+  if amount == 0 {
+    return Err(ContractError::InvalidInputParameters);
+  }
+
   //  0. [d-rw] The mint address
   //  1. [---s] The mint authority as signer
   //  2. [----] The recipient wallet owner address
@@ -433,6 +437,12 @@ fn process_transfer(env: &Environment, amount: u64) -> contract::Result {
       }
     }
 
+    if sender_coin.balance == 0 {
+      // collect dust coin account, that have zero balance after the
+      // transaction.
+      outputs.push(contract::Output::DeleteOwnedAccount(*sender_coin_addr));
+    }
+
     // success, coins transfer completed
     Ok(outputs)
   } else {
@@ -443,6 +453,10 @@ fn process_transfer(env: &Environment, amount: u64) -> contract::Result {
 fn process_burn(env: &Environment, amount: u64) -> contract::Result {
   if env.accounts.len() != 3 {
     return Err(ContractError::InvalidInputAccounts);
+  }
+
+  if amount == 0 {
+    return Err(ContractError::InvalidInputParameters);
   }
 
   // Accounts expected by this instruction:
@@ -475,7 +489,7 @@ fn process_burn(env: &Environment, amount: u64) -> contract::Result {
     mint.supply = mint.supply.saturating_sub(amount);
     coin.balance = coin.balance.saturating_sub(amount);
 
-    Ok(vec![
+    let mut outputs = vec![
       // logs for explorers and dApps
       contract::Output::LogEntry("action".into(), "burn".into()),
       contract::Output::LogEntry("from".into(), wallet_addr.to_string()),
@@ -484,7 +498,15 @@ fn process_burn(env: &Environment, amount: u64) -> contract::Result {
       // store updated accounts
       contract::Output::ModifyAccountData(*mint_addr, Some(mint.try_to_vec()?)),
       contract::Output::ModifyAccountData(*coin_addr, Some(coin.try_to_vec()?)),
-    ])
+    ];
+
+    if coin.balance == 0 {
+      // collect dust coin account, that have zero balance after the
+      // transaction.
+      outputs.push(contract::Output::DeleteOwnedAccount(*coin_addr));
+    }
+
+    Ok(outputs)
   } else {
     Err(ContractError::AccountDoesNotExist)
   }

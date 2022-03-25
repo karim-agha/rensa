@@ -211,6 +211,10 @@ impl<'s, 't, 'm> ExecutionUnit<'s, 't, 'm> {
           ..Default::default()
         })
       }
+      Output::DeleteOwnedAccount(addr) => Ok(TransactionOutput {
+        state_diff: self.delete_account(addr)?,
+        ..Default::default()
+      }),
     }
   }
 
@@ -244,6 +248,28 @@ impl<'s, 't, 'm> ExecutionUnit<'s, 't, 'm> {
     } else {
       Err(ContractError::AccountDoesNotExist)
     }
+  }
+
+  /// Process an output that deletes an existing
+  /// contract owned account.
+  fn delete_account(
+    &self,
+    address: Pubkey,
+  ) -> Result<StateDiff, ContractError> {
+    for (addr, view) in &self.env.accounts {
+      if addr == &address {
+        let is_owned = // allow deletion only on a contract-owned account
+          view.owner.map(|a| a == self.env.address).unwrap_or(false);
+        if view.writable && is_owned {
+          let mut output = StateDiff::default();
+          output.remove(address).unwrap();
+          return Ok(output);
+        } else {
+          return Err(ContractError::AccountNotWritable);
+        }
+      }
+    }
+    Err(ContractError::InvalidOutputAccount)
   }
 
   fn set_account(
