@@ -88,7 +88,7 @@ impl State for PersistentState {
   /// Writes directly to finalized state are not supported, instead
   /// state diffs from newly finalized blocks should be applied using the
   /// [`apply`] method
-  fn remove(&mut self, _address: Pubkey) -> Result<bool, StateError> {
+  fn remove(&mut self, _address: Pubkey) -> Result<(), StateError> {
     Err(StateError::WritesNotSupported)
   }
 

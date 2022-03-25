@@ -29,6 +29,10 @@ export class Pubkey {
     return new Pubkey(onCurvePublicKey);
   }
 
+  equals(other: Pubkey): boolean {
+    return this.bytes.every((value, index) => value == other.bytes[index]);
+  }
+
   toString(): string {
     return encode(this.bytes);
   }

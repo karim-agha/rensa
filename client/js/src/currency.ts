@@ -1,7 +1,9 @@
-import { BinaryWriter } from "borsh";
-import { Client } from "./client";
+import BN from "bn.js";
+import { BinaryReader, BinaryWriter } from "borsh";
+import { decode } from "bs58";
+import { Client, Commitment } from "./client";
 import { Keypair, Pubkey } from "./pubkey";
-import { createTransaction, Transaction, TransactionHash } from "./transaction";
+import { createTransaction, Transaction } from "./transaction";
 
 const CURRENCY_CONTRACT_ADDR = new Pubkey("Currency1xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx");
 
@@ -10,6 +12,35 @@ export class Currency {
 
   constructor(mint: Pubkey) {
     this.mintAddress = mint;
+  }
+
+  async balance(client: Client, wallet: Pubkey, commitment: Commitment = Commitment.Confirmed): Promise<BN> {
+    let coinAddress = CURRENCY_CONTRACT_ADDR.derive([this.mintAddress, wallet]);
+    let coinAccount = await client.getAccount(coinAddress, commitment);
+    
+    if (coinAccount === null) {
+      return new BN(0);
+    } else {
+      if (coinAccount.owner !== CURRENCY_CONTRACT_ADDR.toString()) {
+        throw Error("unexpected coin account owner");
+      }
+
+      const coinData = decode(coinAccount.data);
+      const reader = new BinaryReader(Buffer.from(coinData));
+      const mintAddress = new Pubkey(reader.readFixedArray(32));
+
+      if (!mintAddress.equals(this.mintAddress)) {
+        throw Error("unexpected mint address for this coin account: " + mintAddress.toString());
+      }
+
+      const ownerAddress = new Pubkey(reader.readFixedArray(32));
+      if (!ownerAddress.equals(wallet)) {
+        throw Error("unexpected wallet owner for this coin account: " + ownerAddress.toString());
+      }
+
+      const balance = reader.readU64();
+      return balance;
+    }
   }
 
   async mint(client: Client, to: Pubkey, authority: Keypair, amount: number): Promise<Transaction> {
@@ -109,9 +140,44 @@ export class Currency {
 
   }
 
-  // async burn(from: Keypair, amount: number): Promise<Transaction> {
+  async burn(client: Client, wallet: Keypair, amount: number): Promise<Transaction> {
+    let nonce = await client.getNextAccountNonce(wallet.publicKey);
 
-  // }
+    let accounts = [
+      // mint address
+      {
+        address: this.mintAddress.toString(),
+        writable: true,
+        signer: false
+      },
+      // wallet owner
+      {
+        address: wallet.publicKey.toString(),
+        writable: false,
+        signer: true
+      },
+      // wallet coin address
+      {
+        address: CURRENCY_CONTRACT_ADDR.derive([this.mintAddress, wallet.publicKey]).toString(),
+        writable: true,
+        signer: false
+      }
+    ];
+
+    // params in BORSH format
+    const writer = new BinaryWriter();
+    writer.writeU8(3);
+    writer.writeU64(amount);
+
+    return createTransaction(
+      CURRENCY_CONTRACT_ADDR,
+      nonce,
+      wallet,
+      accounts,
+      [wallet],
+      writer.toArray()
+    );
+  }
 
   /**
    * Creates a new transaction that initiates a new coin type.

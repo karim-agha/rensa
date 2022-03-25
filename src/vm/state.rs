@@ -47,7 +47,7 @@ pub trait State {
   ) -> Result<Option<Account>>;
 
   /// Stores or overwrites an account object and its contents in the state.
-  fn remove(&mut self, address: Pubkey) -> Result<bool>;
+  fn remove(&mut self, address: Pubkey) -> Result<()>;
 
   /// Returns the CID or hash of the current state.
   ///
@@ -89,7 +89,7 @@ impl<'s1, 's2> State for Overlayed<'s1, 's2> {
     Err(StateError::WritesNotSupported)
   }
 
-  fn remove(&mut self, _: Pubkey) -> Result<bool> {
+  fn remove(&mut self, _: Pubkey) -> Result<()> {
     Err(StateError::WritesNotSupported)
   }
 
@@ -148,13 +148,13 @@ pub struct StateDiff {
 impl StateDiff {
   pub fn merge(self, newer: StateDiff) -> StateDiff {
     let mut data = self.data;
+    let mut deletes = self.deletes;
     for (addr, acc) in newer.data {
+      deletes.remove(&addr);
       data.insert(addr, acc);
     }
 
-    let mut deletes = self.deletes;
     for addr in newer.deletes {
-      data.remove(&addr);
       deletes.insert(addr);
     }
 
@@ -180,9 +180,9 @@ impl State for StateDiff {
     Ok(self.data.insert(address, account))
   }
 
-  fn remove(&mut self, address: Pubkey) -> Result<bool> {
+  fn remove(&mut self, address: Pubkey) -> Result<()> {
     self.deletes.insert(address);
-    Ok(self.data.remove(&address).is_some())
+    Ok(())
   }
 
   fn hash(&self) -> Multihash {

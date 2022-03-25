@@ -1,4 +1,4 @@
-const { Commitment, Currency, Keypair } = require('rensa-web3');
+const { Currency, Keypair } = require('rensa-web3');
 const web3 = require('rensa-web3');
 
 let host = process.argv[2];

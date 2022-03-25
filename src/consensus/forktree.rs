@@ -302,7 +302,7 @@ impl<'c, D: BlockData> State for CascadingState<'c, D> {
     Err(StateError::WritesNotSupported)
   }
 
-  fn remove(&mut self, _address: Pubkey) -> Result<bool, StateError> {
+  fn remove(&mut self, _address: Pubkey) -> Result<(), StateError> {
     Err(StateError::WritesNotSupported)
   }
 

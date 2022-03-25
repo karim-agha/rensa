@@ -258,15 +258,21 @@ impl<'s, 't, 'm> ExecutionUnit<'s, 't, 'm> {
   ) -> Result<StateDiff, ContractError> {
     for (addr, view) in &self.env.accounts {
       if addr == &address {
-        let is_owned = // allow deletion only on a contract-owned account
-          view.owner.map(|a| a == self.env.address).unwrap_or(false);
-        if view.writable && is_owned {
-          let mut output = StateDiff::default();
-          output.remove(address).unwrap();
-          return Ok(output);
-        } else {
+        if view.owner.is_none() {
+          return Err(ContractError::InvalidAccountOwner);
+        }
+
+        if view.owner.unwrap() != self.env.address {
+          return Err(ContractError::InvalidAccountOwner);
+        }
+
+        if !view.writable {
           return Err(ContractError::AccountNotWritable);
         }
+
+        let mut output = StateDiff::default();
+        output.remove(address).unwrap();
+        return Ok(output);
       }
     }
     Err(ContractError::InvalidOutputAccount)

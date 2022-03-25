@@ -43,16 +43,34 @@ export class Client {
     }
   }
 
-  async sendAndConfirmTransaction(transaction: Transaction): Promise<TransactionResult> {
-    let txhash = await this.sendTransaction(transaction);
+  async confirmTransaction(
+    txhash: String,
+    commitment: Commitment = Commitment.Confirmed
+  ): Promise<TransactionResult> {
+    const waitms = 500;
     while (true) {
       let txresult = await this.getTransaction(txhash);
       if (txresult !== null) {
-        return txresult;
+        if (commitment === Commitment.Finalized &&
+          txresult.commitment.toLocaleLowerCase() !== Commitment.Finalized) {
+          // the transaction is confirmed, but not finalized
+          // yet, wait for it to become finalized.
+          await new Promise(f => setTimeout(f, waitms));
+        } else {
+          return txresult;
+        }
       } else {
-        await new Promise(f => setTimeout(f, 500));
+        await new Promise(f => setTimeout(f, waitms));
       }
     }
+  }
+
+  async sendAndConfirmTransaction(
+    transaction: Transaction,
+    commitment: Commitment = Commitment.Confirmed
+  ): Promise<TransactionResult> {
+    return await this.confirmTransaction(
+      await this.sendTransaction(transaction), commitment);
   }
 
   async getTransaction(hash: TransactionHash): Promise<TransactionResult | null> {
@@ -82,8 +100,8 @@ export class Client {
     return await blockResult.json() as any;
   }
 
-  async getAccount(address: Pubkey, commitment: Commitment | null): Promise<Account | null> {
-    const commutmentQuery = commitment === null ? "" : `?commitment=${commitment}`;
+  async getAccount(address: Pubkey, commitment: Commitment = Commitment.Confirmed): Promise<Account | null> {
+    const commutmentQuery = `?commitment=${commitment}`;
     const result = await fetch(`${this.host}/account/${address.toString()}${commutmentQuery}`);
     if (result.status == 200) {
       let obj = await result.json() as any;

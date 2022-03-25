@@ -1,5 +1,6 @@
 import bs58 from "bs58";
 import SHA3 from "sha3";
+import { Commitment } from "./client";
 import { Keypair, Pubkey } from "./pubkey";
 
 export type TransactionHash = String;
@@ -60,4 +61,10 @@ export async function createTransaction(
   };
 }
 
-export interface TransactionResult { }
+export interface TransactionResult { 
+  block: number;
+  commitment: Commitment;
+  hash: string;
+  output: any;
+  transaction: Transaction;
+}

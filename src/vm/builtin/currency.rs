@@ -398,12 +398,17 @@ fn process_transfer(env: &Environment, amount: u64) -> contract::Result {
         recipient_wallet_addr.to_string(),
       ),
       contract::Output::LogEntry("amount".into(), amount.to_string()),
-      // store updated debited sender account
       contract::Output::ModifyAccountData(
         *sender_coin_addr,
         Some(sender_coin.try_to_vec()?),
       ),
     ];
+
+    if sender_coin.balance == 0 {
+      // collect dust coin account, that have zero balance after the
+      // transaction.
+      outputs.push(contract::Output::DeleteOwnedAccount(*sender_coin_addr));
+    }
 
     match read_coin_account(
       recipient_coin_addr,
@@ -435,12 +440,6 @@ fn process_transfer(env: &Environment, amount: u64) -> contract::Result {
           Some(coin.try_to_vec()?),
         ));
       }
-    }
-
-    if sender_coin.balance == 0 {
-      // collect dust coin account, that have zero balance after the
-      // transaction.
-      outputs.push(contract::Output::DeleteOwnedAccount(*sender_coin_addr));
     }
 
     // success, coins transfer completed
@@ -492,7 +491,7 @@ fn process_burn(env: &Environment, amount: u64) -> contract::Result {
     let mut outputs = vec![
       // logs for explorers and dApps
       contract::Output::LogEntry("action".into(), "burn".into()),
-      contract::Output::LogEntry("from".into(), wallet_addr.to_string()),
+      contract::Output::LogEntry("wallet".into(), wallet_addr.to_string()),
       contract::Output::LogEntry("amount".into(), amount.to_string()),
       contract::Output::LogEntry("coin".into(), mint_addr.to_string()),
       // store updated accounts
