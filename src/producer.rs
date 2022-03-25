@@ -58,7 +58,7 @@ impl MempoolState {
       .take(count)
       .map(|t| t.value().clone())
       .collect();
-    
+
     // remove from mempool the selected count
     output.iter().for_each(|tx| {
       self.txs.remove(tx.hash());
@@ -97,7 +97,7 @@ impl BlockProducer {
   pub fn new(genesis: &Genesis<Vec<Transaction>>, keypair: Keypair) -> Self {
     BlockProducer {
       keypair,
-      max_txs: genesis.max_block_transactions,
+      max_txs: genesis.limits.max_block_transactions,
       mempool: Arc::new(MempoolState::new(
         genesis.validators.iter().map(|v| v.pubkey).collect(),
       )),

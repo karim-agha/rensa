@@ -21,7 +21,7 @@ use {
 /// address doesn't have a corresponding private key. It can be manipulated
 /// only through instructions to the Currency contract.
 #[derive(Debug, Deserialize, BorshSerialize, BorshDeserialize)]
-pub struct Mint {
+struct Mint {
   /// Optional authority specifies the pubkey that is allowed to mint
   /// new tokens for this token. If set to None, then no more tokens
   /// of this type can be ever minted.
@@ -58,7 +58,7 @@ pub struct Mint {
 ///
 /// The owner of the token acconut is always the currency module
 #[derive(Debug, Deserialize, BorshSerialize, BorshDeserialize)]
-pub struct CoinAccount {
+struct CoinAccount {
   /// The token mint associated with this account
   pub mint: Pubkey,
 
@@ -71,11 +71,11 @@ pub struct CoinAccount {
 
 /// This is the instruction param to the currency contract
 #[derive(Debug, BorshSerialize, BorshDeserialize)]
-pub enum Instruction {
+enum Instruction {
   /// Creates new token mint
   ///
   /// Accounts expected by this instruction:
-  ///   0. [d-rw] Mint address
+  ///   0. [drw-] Mint address
   Create {
     /// A unique seed that is used to generate the mint address
     /// for an account. The mit address account will be the result

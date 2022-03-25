@@ -118,7 +118,7 @@ impl<D: BlockData> Network<D> {
     let vset: HashSet<_> = genesis
       .validators
       .iter()
-      .filter(|v| v.stake >= genesis.minimum_stake)
+      .filter(|v| v.stake >= genesis.limits.minimum_stake)
       .map(|v| v.pubkey)
       .collect();
 
@@ -135,7 +135,7 @@ impl<D: BlockData> Network<D> {
         authorizer,
         active_view_factor: 4,
         network_size: genesis.validators.len(),
-        max_transmit_size: genesis.max_block_size,
+        max_transmit_size: genesis.limits.max_block_size,
         history_window: genesis.slot_interval * 6,
         lazy_push_window: genesis.slot_interval * 4,
         shuffle_probability: 0.3, // shuffle only 30% of peers at once

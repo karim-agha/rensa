@@ -36,6 +36,7 @@ use {
     orphans::Orphans,
     validator::Validator,
     vote::Vote,
+    Genesis,
     Produced,
   },
   crate::{
@@ -97,7 +98,7 @@ pub struct Chain<'g, D: BlockData> {
   /// This comes from a configuration file, is always considered
   /// as finalized and has special fields not present in produced blocks
   /// that configure the behaviour of the chain.
-  genesis: &'g block::Genesis<D>,
+  genesis: &'g Genesis<D>,
 
   /// This is a dynamic collection of all known validators along
   /// with the amount of tokens they are staking (and their voting power).
@@ -167,7 +168,7 @@ pub struct Chain<'g, D: BlockData> {
 
 impl<'g, D: BlockData> Chain<'g, D> {
   pub fn new(
-    genesis: &'g block::Genesis<D>,
+    genesis: &'g Genesis<D>,
     machine: &'g vm::Machine,
     finalized: Finalized<'g, D>,
   ) -> Self {
@@ -244,7 +245,7 @@ impl<'g, D: BlockData> Chain<'g, D> {
       .genesis
       .validators
       .iter()
-      .filter(|v| v.stake < self.genesis.minimum_stake)
+      .filter(|v| v.stake < self.genesis.limits.minimum_stake)
   }
 
   /// The sum of all staked tokens that are taking part in
@@ -253,7 +254,7 @@ impl<'g, D: BlockData> Chain<'g, D> {
     self
       .stakes
       .iter()
-      .filter(|(_, s)| **s >= self.genesis.minimum_stake)
+      .filter(|(_, s)| **s >= self.genesis.limits.minimum_stake)
       .fold(0, |a, (_, s)| a + s)
   }
 
@@ -297,7 +298,7 @@ impl<'g, 'f, D: BlockData> Chain<'g, D> {
     &self.finalized.hash().unwrap() == hash
       || self.finalized_history.iter().any(|(_, e)| e.contains(hash))
       || (self.finalized_history.len()
-        < self.genesis.max_justification_age as usize
+        < self.genesis.limits.max_justification_age as usize
         && hash == &self.genesis.hash().unwrap())
   }
 
@@ -307,7 +308,7 @@ impl<'g, 'f, D: BlockData> Chain<'g, D> {
   /// and the target block must be one of its descendants.
   fn injest_vote(&mut self, vote: &Vote) {
     if let Some(stake) = self.stakes.get(&vote.validator) {
-      if *stake < self.genesis.minimum_stake {
+      if *stake < self.genesis.limits.minimum_stake {
         debug!(
           "Rejecting vote from {} because it has not enough stake",
           vote.validator
@@ -468,7 +469,7 @@ impl<'g, 'f, D: BlockData> Chain<'g, D> {
     }
 
     if *self.stakes.get(&block.signature.0).unwrap()
-      < self.genesis.minimum_stake
+      < self.genesis.limits.minimum_stake
     {
       warn!(
         "Rejecting block {block} from {} because it has not enough stake.",
@@ -766,7 +767,7 @@ impl<'g, D: BlockData> Chain<'g, D> {
     };
 
     // clear old epochs
-    let window = self.genesis.max_justification_age;
+    let window = self.genesis.limits.max_justification_age;
     self
       .finalized_history
       .retain(|e, _| e >= &epoch.saturating_sub(window));
@@ -816,8 +817,10 @@ mod test {
     super::Chain,
     crate::{
       consensus::{
-        block::{self, Block, Genesis},
+        block::{self, Block},
+        genesis::Limits,
         validator::Validator,
+        Genesis,
       },
       primitives::Keypair,
       storage::PersistentState,
@@ -849,17 +852,20 @@ mod test {
       chain_id: "1".to_owned(),
       epoch_blocks: 32,
       genesis_time: Utc::now(),
-      max_block_size: 100_000,
-      max_justification_age: 100,
       slot_interval: Duration::from_secs(2),
       state: BTreeMap::new(),
       builtins: vec![],
-      minimum_stake: 100,
-      max_log_size: 512,
-      max_logs_count: 32,
-      max_account_size: 65536,
-      max_input_accounts: 32,
-      max_block_transactions: 2000,
+      limits: Limits {
+        max_block_size: 100_000,
+        max_justification_age: 100,
+        minimum_stake: 100,
+        max_log_size: 512,
+        max_logs_count: 32,
+        max_account_size: 65536,
+        max_input_accounts: 32,
+        max_block_transactions: 2000,
+        max_contract_size: 614400,
+      },
       system_coin: "RensaToken1xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
         .parse()
         .unwrap(),
@@ -937,18 +943,21 @@ mod test {
     let genesis = Genesis {
       chain_id: "1".to_owned(),
       epoch_blocks: 32,
-      max_block_size: 100_000,
-      max_justification_age: 100,
       genesis_time: Utc::now(),
       slot_interval: Duration::from_secs(2),
       state: BTreeMap::new(),
       builtins: vec![],
-      minimum_stake: 100,
-      max_account_size: 65536,
-      max_log_size: 512,
-      max_logs_count: 32,
-      max_input_accounts: 32,
-      max_block_transactions: 2000,
+      limits: Limits {
+        max_block_size: 100_000,
+        max_justification_age: 100,
+        minimum_stake: 100,
+        max_log_size: 512,
+        max_logs_count: 32,
+        max_account_size: 65536,
+        max_input_accounts: 32,
+        max_block_transactions: 2000,
+        max_contract_size: 614400,
+      },
       system_coin: "RensaToken1xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
         .parse()
         .unwrap(),

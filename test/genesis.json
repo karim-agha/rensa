@@ -3,14 +3,17 @@
   "genesisTime": "2022-01-18T13:40:00Z",
   "slotInterval": "2s",
   "epochBlocks": 4,
-  "maxJustificationAge": 4,
-  "maxBlockSize": 5000000,
-  "minimumStake": 1000,
-  "maxInputAccounts": 32,
-  "maxAccountSize": 65536,
-  "maxLogSize": 256,
-  "maxLogsCount": 32,
-  "maxBlockTransactions": 2000,
+  "limits": {
+    "maxJustificationAge": 4,
+    "maxBlockSize": 5000000,
+    "minimumStake": 1000,
+    "maxInputAccounts": 32,
+    "maxAccountSize": 65536,
+    "maxLogSize": 256,
+    "maxLogsCount": 32,
+    "maxBlockTransactions": 2000,
+    "maxContractSize": 614400
+  },
   "systemCoin": "RensaToken1xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
   "state": {
     "CKDN1WjimfErkbgecnEfoPfs7CU1TknwMhpgbiXNknGC": {
@@ -30,7 +33,7 @@
     "Currency1xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
     "Sha3xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
     "Staking1xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
-    "ContractSetup1xxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+    "WasmVM1xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
   ],
   "validators": [
     {

@@ -58,7 +58,7 @@ impl<'g, D: BlockData> ValidatorSchedule<'g, D> {
     genesis
       .validators
       .iter()
-      .filter(|v| v.stake >= genesis.minimum_stake)
+      .filter(|v| v.stake >= genesis.limits.minimum_stake)
   }
 }
 

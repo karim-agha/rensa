@@ -10,7 +10,7 @@ use {
     Transaction,
   },
   crate::{
-    consensus::{BlockData, Genesis, Produced},
+    consensus::{BlockData, Genesis, Limits, Produced},
     primitives::{Account, Pubkey, ToBase58String},
   },
   std::collections::HashMap,
@@ -47,20 +47,6 @@ pub trait Executable {
   ) -> Result<BlockOutput, MachineError>;
 }
 
-/// Virtual machine execution limits.
-///
-/// Those limits ensure that a malicious contract would be able
-/// to halt validators during execution or DoS them. They keep all
-/// resources usage within a transaction bounded to limits defined
-/// in genesis.
-#[derive(Debug, Clone)]
-pub struct Limits {
-  pub max_log_size: usize,
-  pub max_logs_count: usize,
-  pub max_account_size: usize,
-  pub max_input_accounts: usize,
-}
-
 /// Represents a state machine that takes as an input a state
 /// and a block and outputs a new state. This is the API
 /// entry point to the virtual machine that runs contracts.
@@ -81,12 +67,7 @@ impl Machine {
     }
     Ok(Self {
       builtins,
-      limits: Limits {
-        max_log_size: genesis.max_log_size,
-        max_logs_count: genesis.max_logs_count,
-        max_account_size: genesis.max_account_size,
-        max_input_accounts: genesis.max_input_accounts,
-      },
+      limits: genesis.limits.clone(),
     })
   }
 

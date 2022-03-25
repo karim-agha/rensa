@@ -7,7 +7,7 @@
 mod currency;
 mod sha3;
 mod staking;
-mod setup;
+mod wasm;
 
 use {
   crate::{primitives::Pubkey, vm::contract::ContractEntrypoint},
@@ -20,7 +20,7 @@ lazy_static::lazy_static! {
     funcs.insert("Sha3xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx".parse().unwrap(), sha3::contract);
     funcs.insert("Currency1xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx".parse().unwrap(), currency::contract);
     funcs.insert("Staking1xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx".parse().unwrap(), staking::contract);
-    funcs.insert("ContractSetup1xxxxxxxxxxxxxxxxxxxxxxxxxxxxx".parse().unwrap(), setup::contract);
+    funcs.insert("WasmVM1xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx".parse().unwrap(), wasm::contract);
     funcs
   };
 }

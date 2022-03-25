@@ -314,6 +314,7 @@ mod tests {
     crate::{
       consensus::{
         block::{Block, BlockData, Produced},
+        genesis::Limits,
         validator::Validator,
         Genesis,
       },
@@ -370,17 +371,20 @@ mod tests {
       chain_id: "1".to_owned(),
       epoch_blocks: 32,
       genesis_time: Utc::now(),
-      max_block_size: 100_000,
-      max_justification_age: 100,
       slot_interval: Duration::from_secs(2),
       state: BTreeMap::new(),
       builtins: vec![],
-      minimum_stake: 100,
-      max_log_size: 512,
-      max_logs_count: 32,
-      max_account_size: 65536,
-      max_input_accounts: 32,
-      max_block_transactions: 2000,
+      limits: Limits {
+        max_block_size: 100_000,
+        max_justification_age: 100,
+        minimum_stake: 100,
+        max_log_size: 512,
+        max_logs_count: 32,
+        max_account_size: 65536,
+        max_input_accounts: 32,
+        max_block_transactions: 2000,
+        max_contract_size: 614400,
+      },
       system_coin: "RensaToken1xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
         .parse()
         .unwrap(),

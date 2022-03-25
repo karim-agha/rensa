@@ -5,14 +5,16 @@
 mod block;
 mod chain;
 mod forktree;
+mod genesis;
+mod orphans;
 mod schedule;
 mod validator;
 mod vote;
-mod orphans;
 
 pub use {
-  block::{Block, BlockData, Genesis, Produced},
+  block::{Block, BlockData, Produced},
   chain::{Chain, ChainEvent},
+  genesis::{Genesis, Limits},
   schedule::{ValidatorSchedule, ValidatorScheduleStream},
   vote::Vote,
 };

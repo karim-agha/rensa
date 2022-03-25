@@ -7,14 +7,17 @@ use {
       Environment,
       Output,
     },
-    machine::Limits,
     output::TransactionOutput,
+    AccountRef,
     Machine,
     State,
     StateDiff,
     Transaction,
   },
-  crate::primitives::{Account, Pubkey},
+  crate::{
+    consensus::Limits,
+    primitives::{Account, Pubkey},
+  },
 };
 
 /// Represents the execution context of a single transaction.
@@ -108,61 +111,66 @@ impl<'s, 't, 'm> ExecutionUnit<'s, 't, 'm> {
     state: &impl State,
     transaction: &Transaction,
   ) -> Result<Environment, ContractError> {
+    // creates an isolated copy of an account referenced
+    // by a transaction for local processing.
+    let create_account_view = |account: &AccountRef| {
+      let account_data = state.get(&account.address);
+      let mut writable = account.writable;
+
+      if writable {
+        // on-curve accounts are writable only if
+        // the private key of that account signs
+        // the transaction.
+        if account.address.has_private_key() {
+          if !account.signer {
+            writable = false;
+          }
+        }
+        // otherwise, we're dealing with a program owned
+        // account, if it already exists, check if
+        // it belongs to the called contract.
+        //
+        // if it does not exist, it may be created by the
+        // invoked contract, so it stays writable.
+        else if let Some(ref existing) = account_data {
+          // executable accounts are never writable
+          if existing.executable {
+            writable = false;
+          }
+
+          // an existing non-executable account that
+          // is not on the Ed25519 curve is writable
+          // only if its owner is the invoked contract.
+          if let Some(ref owner) = existing.owner {
+            if owner != &transaction.contract {
+              writable = false;
+            }
+          } else {
+            writable = false;
+          }
+        }
+      }
+
+      let account_view = AccountView {
+        signer: account.signer,
+        writable,
+        executable: account_data
+          .as_ref()
+          .map(|a| a.executable)
+          .unwrap_or(false),
+        owner: account_data.as_ref().and_then(|d| d.owner),
+        data: account_data.as_ref().and_then(|a| a.data.clone()),
+      };
+
+      (account.address, account_view)
+    };
+
     Ok(Environment {
       address: transaction.contract,
       accounts: transaction
         .accounts
         .iter()
-        .map(|a| {
-          let account_data = state.get(&a.address);
-          let mut writable = a.writable;
-
-          if writable {
-            // on-curve accounts are writable only if
-            // the private key of that account signs
-            // the transaction.
-            if a.address.has_private_key() {
-              if !a.signer {
-                writable = false;
-              }
-            }
-            // otherwise, we're dealing with a program owned
-            // account, if it already exists, check if
-            // it belongs to the called contract.
-            //
-            // if it does not exist, it may be created by the
-            // invoked contract, so it stays writable.
-            else if let Some(ref existing) = account_data {
-              // executable accounts are never writable
-              if existing.executable {
-                writable = false;
-              }
-
-              // an existing non-executable account that
-              // is not on the Ed25519 curve is writable
-              // only if its owner is the invoked contract.
-              if let Some(ref owner) = existing.owner {
-                if owner != &transaction.contract {
-                  writable = false;
-                }
-              } else {
-                writable = false;
-              }
-            }
-          }
-
-          let account_view = AccountView {
-            signer: a.signer,
-            writable,
-            executable: account_data
-              .as_ref()
-              .map(|a| a.executable)
-              .unwrap_or(false),
-            owner: account_data.as_ref().and_then(|d| d.owner),
-            data: account_data.as_ref().and_then(|a| a.data.clone()),
-          };
-          (a.address, account_view)
-        })
+        .map(create_account_view)
         .collect(),
     })
   }
