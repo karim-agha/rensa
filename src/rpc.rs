@@ -248,6 +248,16 @@ async fn serve_send_transaction(
   Json(transaction): Json<Transaction>,
   Extension(state): Extension<Arc<ServiceSharedState>>,
 ) -> impl IntoResponse {
+  // filter out outsized transactions at the RPC level.
+  if let Err(e) = transaction.verify_limits(&state.genesis.limits) {
+    return (
+      StatusCode::BAD_REQUEST,
+      ErasedJson::pretty(json! ({
+        "error": e,
+      })),
+    );
+  }
+
   // filter out invalid signatures and addresses at the
   // RPC level before bothering p2p and consensus and
   // other validators.

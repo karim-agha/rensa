@@ -1,6 +1,6 @@
 use {
   crate::{
-    consensus::{Block, Genesis, Produced, Vote},
+    consensus::{Block, Genesis, Limits, Produced, Vote},
     consumer::{BlockConsumer, Commitment},
     primitives::{Keypair, Pubkey, ToBase58String},
     vm::{self, Executable, State, Transaction},
@@ -77,7 +77,7 @@ impl MempoolState {
 /// other validators.
 pub struct BlockProducer {
   keypair: Keypair,
-  max_txs: usize,
+  limits: Limits,
   mempool: Arc<MempoolState>,
   pending: Option<Produced<Vec<Transaction>>>,
 }
@@ -87,7 +87,7 @@ impl Clone for BlockProducer {
     Self {
       keypair: self.keypair.clone(),
       mempool: Arc::clone(&self.mempool),
-      max_txs: self.max_txs,
+      limits: self.limits.clone(),
       pending: None,
     }
   }
@@ -97,7 +97,7 @@ impl BlockProducer {
   pub fn new(genesis: &Genesis<Vec<Transaction>>, keypair: Keypair) -> Self {
     BlockProducer {
       keypair,
-      max_txs: genesis.limits.max_block_transactions,
+      limits: genesis.limits.clone(),
       mempool: Arc::new(MempoolState::new(
         genesis.validators.iter().map(|v| v.pubkey).collect(),
       )),
@@ -115,7 +115,9 @@ impl BlockProducer {
     let prevhash = prev.hash().unwrap();
 
     let votes = self.mempool.take_votes();
-    let txs = self.mempool.take_transactions(self.max_txs);
+    let txs = self
+      .mempool
+      .take_transactions(self.limits.max_block_transactions);
 
     let blockoutput = txs.execute(vm, state).unwrap();
     let state_hash = blockoutput.hash();
@@ -154,7 +156,9 @@ impl BlockProducer {
   }
 
   pub fn record_transaction(&self, transaction: Transaction) {
-    self.mempool.add_transaction(transaction);
+    if transaction.verify_limits(&self.limits).is_ok() {
+      self.mempool.add_transaction(transaction);
+    }
   }
 }
 

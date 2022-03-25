@@ -74,6 +74,13 @@ pub struct Limits {
   /// Maximum size of a block or any other single transmission
   /// over p2p gossip network in bytes.
   pub max_block_size: usize,
+
+  /// Maximum size of the params byte array within for in a 
+  /// single transaction.
+  /// 
+  /// Transactions that need to transmit more data should be 
+  /// split up into smaller transactions.
+  pub max_transaction_params_size: usize,
 }
 
 /// The genesis block of the blockchain.

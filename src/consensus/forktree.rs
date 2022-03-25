@@ -384,6 +384,7 @@ mod tests {
         max_input_accounts: 32,
         max_block_transactions: 2000,
         max_contract_size: 614400,
+        max_transaction_params_size: 2048,
       },
       system_coin: "RensaToken1xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
         .parse()

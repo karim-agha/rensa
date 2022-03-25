@@ -1,6 +1,9 @@
 use {
   super::contract::ContractError,
-  crate::primitives::{Keypair, Pubkey, ToBase58String},
+  crate::{
+    consensus::Limits,
+    primitives::{Keypair, Pubkey, ToBase58String},
+  },
   ed25519_dalek::{PublicKey, Signature, Signer, Verifier},
   multihash::{
     Code as MultihashCode,
@@ -52,6 +55,15 @@ impl AccountRef {
       signer,
     })
   }
+}
+
+#[derive(Debug, Clone, Error, Serialize, Deserialize)]
+pub enum TransactionError {
+  #[error("The transaction is referencing too many accounts")]
+  TooManyAccounts,
+
+  #[error("The transaction's params blob is too big")]
+  ParamsTooBig,
 }
 
 #[derive(Debug, Clone, Error, Serialize, Deserialize)]
@@ -111,6 +123,18 @@ impl Transaction {
       signatures,
       hashcache: OnceCell::new(),
     }
+  }
+
+  pub fn verify_limits(&self, limits: &Limits) -> Result<(), TransactionError> {
+    if self.accounts.len() > limits.max_input_accounts {
+      return Err(TransactionError::TooManyAccounts);
+    }
+
+    if self.params.len() > limits.max_transaction_params_size {
+      return Err(TransactionError::ParamsTooBig);
+    }
+
+    Ok(())
   }
 
   pub fn verify_signatures(&self) -> Result<(), SignatureError> {
