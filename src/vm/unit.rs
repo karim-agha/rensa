@@ -200,7 +200,7 @@ impl<'s, 't, 'm> ExecutionUnit<'s, 't, 'm> {
           ..Default::default()
         })
       }
-      Output::ModifyAccountData(addr, data) => {
+      Output::WriteAccountData(addr, data) => {
         if let Some(ref data) = data {
           if data.len() > self.limits.max_account_size {
             return Err(ContractError::AccountTooLarge);

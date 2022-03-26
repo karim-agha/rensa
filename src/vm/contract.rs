@@ -95,12 +95,16 @@ pub enum Output {
   /// inputs, otherwise the transaction will fail.
   CreateOwnedAccount(Pubkey, Option<Vec<u8>>),
 
-  /// Represents a modification to the contents of an account owned
+  /// Represents an overrwrite to the contents of an account owned
   /// by the contract.
   ///
   /// The modified account should be set as writable in the transaction
   /// inputs, otherwise the transaction will fail.
-  ModifyAccountData(Pubkey, Option<Vec<u8>>),
+  /// 
+  /// To delete the data contents of an account without deleting the
+  /// account itself (for example to reset it to some initial state),
+  /// use [`None`] as the second parameter to this constructor.
+  WriteAccountData(Pubkey, Option<Vec<u8>>),
 
   /// Represents a deletion of an account that is owned by the contract.
   ///

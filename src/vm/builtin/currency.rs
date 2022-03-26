@@ -309,7 +309,7 @@ fn process_mint(env: &Environment, amount: u64) -> contract::Result {
   match read_coin_account(coin_addr, coin_acc, mint_addr, wallet_addr, env)? {
     Some(mut coin) => {
       coin.balance = coin.balance.saturating_add(amount);
-      outputs.push(contract::Output::ModifyAccountData(
+      outputs.push(contract::Output::WriteAccountData(
         *coin_addr,
         Some(coin.try_to_vec()?),
       ))
@@ -330,7 +330,7 @@ fn process_mint(env: &Environment, amount: u64) -> contract::Result {
 
   // update the global supply value
   mint.supply = mint.supply.saturating_add(amount);
-  outputs.push(contract::Output::ModifyAccountData(
+  outputs.push(contract::Output::WriteAccountData(
     *mint_addr,
     Some(mint.try_to_vec()?),
   ));
@@ -398,7 +398,7 @@ fn process_transfer(env: &Environment, amount: u64) -> contract::Result {
         recipient_wallet_addr.to_string(),
       ),
       contract::Output::LogEntry("amount".into(), amount.to_string()),
-      contract::Output::ModifyAccountData(
+      contract::Output::WriteAccountData(
         *sender_coin_addr,
         Some(sender_coin.try_to_vec()?),
       ),
@@ -420,7 +420,7 @@ fn process_transfer(env: &Environment, amount: u64) -> contract::Result {
       // the recipient already has a coin account for this coin type
       Some(mut recipient_coin) => {
         recipient_coin.balance = recipient_coin.balance.saturating_add(amount);
-        outputs.push(contract::Output::ModifyAccountData(
+        outputs.push(contract::Output::WriteAccountData(
           *recipient_coin_addr,
           Some(recipient_coin.try_to_vec()?),
         ));
@@ -495,8 +495,8 @@ fn process_burn(env: &Environment, amount: u64) -> contract::Result {
       contract::Output::LogEntry("amount".into(), amount.to_string()),
       contract::Output::LogEntry("coin".into(), mint_addr.to_string()),
       // store updated accounts
-      contract::Output::ModifyAccountData(*mint_addr, Some(mint.try_to_vec()?)),
-      contract::Output::ModifyAccountData(*coin_addr, Some(coin.try_to_vec()?)),
+      contract::Output::WriteAccountData(*mint_addr, Some(mint.try_to_vec()?)),
+      contract::Output::WriteAccountData(*coin_addr, Some(coin.try_to_vec()?)),
     ];
 
     if coin.balance == 0 {
@@ -558,7 +558,7 @@ fn process_set_authority(
         authority.map(|a| a.to_string()).unwrap_or_default(),
       ),
       // update mint storage value
-      contract::Output::ModifyAccountData(*mint_addr, Some(mint.try_to_vec()?)),
+      contract::Output::WriteAccountData(*mint_addr, Some(mint.try_to_vec()?)),
     ])
   } else {
     Err(ContractError::Other(

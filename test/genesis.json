@@ -11,7 +11,7 @@
     "maxAccountSize": 65536,
     "maxLogSize": 256,
     "maxLogsCount": 32,
-    "maxTransactionParamsSize": 614400,
+    "maxTransactionParamsSize": 2048,
     "maxBlockTransactions": 2000,
     "maxContractSize": 614400
   },
