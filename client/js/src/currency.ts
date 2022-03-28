@@ -3,7 +3,7 @@ import { BinaryReader, BinaryWriter } from "borsh";
 import { decode } from "bs58";
 import { Client, Commitment } from "./client";
 import { Keypair, Pubkey } from "./pubkey";
-import { createTransaction, Transaction } from "./transaction";
+import { TransactionCreationParams } from "./transaction";
 
 const CURRENCY_CONTRACT_ADDR = new Pubkey("Currency1xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx");
 
@@ -17,7 +17,7 @@ export class Currency {
   async balance(client: Client, wallet: Pubkey, commitment: Commitment = Commitment.Confirmed): Promise<BN> {
     let coinAddress = CURRENCY_CONTRACT_ADDR.derive([this.mintAddress, wallet]);
     let coinAccount = await client.getAccount(coinAddress, commitment);
-    
+
     if (coinAccount === null) {
       return new BN(0);
     } else {
@@ -43,9 +43,7 @@ export class Currency {
     }
   }
 
-  async mint(client: Client, to: Pubkey, authority: Keypair, amount: number): Promise<Transaction> {
-    let nonce = await client.getNextAccountNonce(authority.publicKey);
-
+  mint(to: Pubkey, authority: Keypair, amount: number): TransactionCreationParams {
     let accounts = [
       // mint address
       {
@@ -78,19 +76,16 @@ export class Currency {
     writer.writeU8(1);
     writer.writeU64(amount);
 
-    return createTransaction(
-      CURRENCY_CONTRACT_ADDR,
-      nonce,
-      authority,
-      accounts,
-      [authority],
-      writer.toArray()
-    );
+    return {
+      contract: CURRENCY_CONTRACT_ADDR,
+      payer: authority,
+      accounts: accounts,
+      signers: [authority],
+      params: writer.toArray()
+    };
   }
 
-  async transfer(client: Client, from: Keypair, to: Pubkey, amount: number): Promise<Transaction> {
-    let nonce = await client.getNextAccountNonce(from.publicKey);
-
+  transfer(from: Keypair, to: Pubkey, amount: number): TransactionCreationParams {
     let accounts = [
       // mint address
       {
@@ -129,19 +124,17 @@ export class Currency {
     writer.writeU8(2);
     writer.writeU64(amount);
 
-    return createTransaction(
-      CURRENCY_CONTRACT_ADDR,
-      nonce,
-      from,
-      accounts,
-      [from],
-      writer.toArray()
-    );
+    return {
+      contract: CURRENCY_CONTRACT_ADDR,
+      payer: from,
+      accounts: accounts,
+      signers: [from],
+      params: writer.toArray()
+    };
 
   }
 
-  async burn(client: Client, wallet: Keypair, amount: number): Promise<Transaction> {
-    let nonce = await client.getNextAccountNonce(wallet.publicKey);
+  burn(wallet: Keypair, amount: number): TransactionCreationParams {
 
     let accounts = [
       // mint address
@@ -169,14 +162,13 @@ export class Currency {
     writer.writeU8(3);
     writer.writeU64(amount);
 
-    return createTransaction(
-      CURRENCY_CONTRACT_ADDR,
-      nonce,
-      wallet,
-      accounts,
-      [wallet],
-      writer.toArray()
-    );
+    return {
+      contract: CURRENCY_CONTRACT_ADDR,
+      payer: wallet,
+      accounts: accounts,
+      signers: [wallet],
+      params: writer.toArray()
+    };
   }
 
   /**
@@ -188,16 +180,13 @@ export class Currency {
    * @param name optional human readable name of the coin
    * @param symbol optional human readable symbol of the coin
    */
-  static async create(
-    client: Client,
+  static create(
     seed: Uint8Array,
     authority: Keypair,
     decimals: number,
     name: string | null,
-    symbol: string | null): Promise<Transaction> {
+    symbol: string | null): TransactionCreationParams {
     let mintAddress = CURRENCY_CONTRACT_ADDR.derive([seed]);
-
-    let nonce = await client.getNextAccountNonce(authority.publicKey);
 
     // params in BORSH format
     const writer = new BinaryWriter();
@@ -230,18 +219,17 @@ export class Currency {
       writer.writeString(symbol);
     }
 
-    return createTransaction(
-      CURRENCY_CONTRACT_ADDR,
-      nonce,
-      authority,
-      [{
+    return {
+      contract: CURRENCY_CONTRACT_ADDR,
+      payer: authority,
+      accounts: [{
         address: mintAddress.toString(),
         signer: false,
         writable: true
       }],
-      [],
-      writer.toArray()
-    );
+      signers: [],
+      params: writer.toArray()
+    };
   }
 }
 

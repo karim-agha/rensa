@@ -107,6 +107,14 @@ pub trait Block<D: BlockData>: Debug {
   /// validators. A vote on a block is also implicitly a vote on
   /// all its ancestors.
   fn votes(&self) -> &[Vote];
+
+  /// Payload type specific verification logic that is implemented
+  /// on a per payload-type. For example on blocks that carry transactions,
+  /// this logic verifies that the transactions are in the correct sort
+  /// order.
+  fn verify_payload(&self) -> Result<(), StdIoError> {
+    Ok(())
+  }
 }
 
 /// A block produced by one of the validators after Genesis.

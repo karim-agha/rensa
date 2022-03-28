@@ -233,6 +233,7 @@ impl Transaction {
 impl std::fmt::Debug for Transaction {
   fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
     f.debug_struct("Transaction")
+      .field("nonce", &self.nonce)
       .field("contract", &self.contract)
       .field("payer", &self.payer)
       .field("accounts", &self.accounts)

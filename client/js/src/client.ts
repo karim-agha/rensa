@@ -26,25 +26,21 @@ export class Client {
     return account !== null ? account.nonce + 1 : 1;
   }
 
-  async sendTransaction(transaction: Transaction): Promise<TransactionHash> {
-    const result = await fetch(`${this.host}/transaction`, {
+  async sendTransactions(transaction: Transaction[]): Promise<Record<TransactionHash, string>[]> {
+    const result = await fetch(`${this.host}/transactions`, {
       method: 'POST',
       headers: { "content-type": "application/json" },
       body: JSON.stringify(transaction)
     });
-    if (result.status == 201) {
-      const res = await result.json() as any;
-      return res["transaction"] as TransactionHash;
-    } else if (result.status == 400) {
-      const res = await result.json() as any;
-      throw Error(res["error"]);
+    if (result.status == 202) {
+      return await result.json() as Record<TransactionHash, string>[];
     } else {
       throw Error(`server error: ${await result.text()}`);
     }
   }
 
   async confirmTransaction(
-    txhash: String,
+    txhash: string,
     commitment: Commitment = Commitment.Confirmed
   ): Promise<TransactionResult> {
     const waitms = 500;
@@ -65,12 +61,22 @@ export class Client {
     }
   }
 
-  async sendAndConfirmTransaction(
-    transaction: Transaction,
+  async sendAndConfirmTransactions(
+    transaction: Transaction[],
     commitment: Commitment = Commitment.Confirmed
-  ): Promise<TransactionResult> {
-    return await this.confirmTransaction(
-      await this.sendTransaction(transaction), commitment);
+  ): Promise<(string | TransactionResult)[]> {
+    let txs = await this.sendTransactions(transaction);
+    let output = [];
+    for (let tx of txs) {
+      for (const [txhash, result] of Object.entries(tx)) {
+        if (result === "ok") {
+          output.push(await this.confirmTransaction(txhash, commitment));
+        } else {
+          output.push(result)
+        }
+      }
+    }
+    return output;
   }
 
   async getTransaction(hash: TransactionHash): Promise<TransactionResult | null> {

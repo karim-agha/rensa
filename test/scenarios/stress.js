@@ -4,60 +4,75 @@ const web3 = require('rensa-web3');
 let host = process.argv[2];
 
 (async () => {
-  while (true) {
-    const payer = await web3.Keypair.random();
-    const client = new web3.Client(host);
+  const payer = await web3.Keypair.random();
+  const client = new web3.Client(host);
 
-    console.log("creating new coin...");
-    let mintTx = await Currency.create(client,
+  console.log("creating new coin...");
+  let mintTx = await web3.createTransaction(client,
+    Currency.create(
       await (await Keypair.random()).publicKey.bytes,
-      payer,
-      2,
-      null,
-      null);
+      payer, 2, null, null));
 
-    let result = await client.sendAndConfirmTransaction(mintTx);
-    console.log("new coin created", result);
+  let result = await client.sendAndConfirmTransactions([mintTx]);
+  console.dir(result, { depth: null });
 
-    let mintAddress = new web3.Pubkey(result["output"]["Ok"]["address"]);
-    let currency = new web3.Currency(mintAddress);
-    console.log("mint address", mintAddress.toString());
+  let mintAddress = new web3.Pubkey(result[0]["output"]["Ok"]["address"]);
+  let currency = new web3.Currency(mintAddress);
+  console.log("mint address", mintAddress.toString());
 
-    var walletsGen = [];
-    const walletsCount = 1000;
-    console.log("generating random wallets", walletsCount);
+  var walletsA = [];
+  var walletsB = [];
+  let alternate = false;
+  const walletsCount = 1000;
+  console.log("generating random wallets", walletsCount);
 
-    for (i = 0; i < walletsCount; i++) {
-      walletsGen.push(Keypair.random());
+  for (i = 0; i < walletsCount; i++) {
+    walletsA.push(await Keypair.random());
+    walletsB.push(await Keypair.random());
+  }
+
+  console.log("Minting first coins... (A)");
+
+  let mintTransactionsA = [];
+  for (let wallet of walletsA) {
+    mintTransactionsA.push(currency.mint(wallet.publicKey, payer, 1000000000));
+  }
+
+  console.dir(await client.sendAndConfirmTransactions(
+    await web3.createManyTransactions(client, mintTransactionsA)),
+    { depth: null, maxArrayLength: null });
+
+
+  console.log("Minting first coins... (B)");
+
+  let mintTransactionsB = [];
+  for (let wallet of walletsB) {
+    mintTransactionsB.push(currency.mint(wallet.publicKey, payer, 1000000000));
+  }
+
+  console.dir(await client.sendAndConfirmTransactions(
+    await web3.createManyTransactions(client, mintTransactionsB)),
+    { depth: null, maxArrayLength: null });
+
+  while (true) {
+    var fromW, toW;
+    if (alternate) {
+      fromW = walletsB;
+      toW = walletsA;
+    } else {
+      fromW = walletsA;
+      toW = walletsB;
     }
-    const wallets = await Promise.all(walletsGen);
 
-    console.log("Minting first coins...");
-
-    for (var i = 0; i < 10; ++i) {
-      console.dir(await client.sendAndConfirmTransaction(
-        await currency.mint(client, wallets[i].publicKey, payer, 1000000000)
-      ), { depth: null });
+    let txs = [];
+    for (var i = 0; i < fromW.length - Math.floor(Math.random() * 100); ++i) {
+      let amount = Math.floor(Math.random() * 1000);
+      txs.push(currency.transfer(fromW[i], toW[i].publicKey, amount));
     }
 
-    // sequencial, nonce-dependent batch
-    var factor = walletsCount;
-    const sqrt = Math.sqrt(walletsCount);
-    for (var iteration = 0; iteration < sqrt; ++iteration) {
-      var txs = [];
-      const count = Math.floor(Math.pow(iteration, 2) / 2);
-      console.log("sending transafers, interation, count:", iteration, count);
-      for (var i = 0; i < count; ++i) { // parallel batch
-        txs.push(client.sendAndConfirmTransaction(
-          await currency.transfer(
-            client,
-            wallets[i], // from
-            wallets[i + count].publicKey, // too
-            4000000 * factor) // amount
-        ));
-      }
-      factor /= 2;
-      console.dir(await (await Promise.all(txs)).map((tx) => tx.output), { depth: null });
-    }
+    client.sendAndConfirmTransactions(
+      await web3.createManyTransactions(client, txs))
+      .then((txs) => console.dir(txs, { depth: null, maxArrayLength: null }));
+    alternate = !alternate;
   }
 })();
