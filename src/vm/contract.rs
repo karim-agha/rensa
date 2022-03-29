@@ -13,8 +13,8 @@ use {
 
 #[derive(Debug, Error, Clone, Serialize, Deserialize)]
 pub enum ContractError {
-  #[error("Invalid transaction nonce value for this payer")]
-  InvalidTransactionNonce,
+  #[error("Invalid transaction nonce value for this payer, expected {0}")]
+  InvalidTransactionNonce(u64),
 
   #[error("Account already exists")]
   AccountAlreadyExists,

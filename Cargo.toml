@@ -23,6 +23,7 @@ bincode = "1.3.3"
 jemallocator = "0.3"
 axum = "0.4"
 dashmap = "5.1"
+itertools = "0.10"
 axum-extra = { version = "0.1", features = ["erased-json"] }
 sled = { version = "0.34", features = ["compression"] }
 lazy_static = "1.4"

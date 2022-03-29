@@ -7,8 +7,10 @@ use {
   },
   dashmap::{DashMap, DashSet},
   futures::Stream,
+  itertools::Itertools,
   multihash::Multihash,
   std::{
+    collections::BTreeMap,
     pin::Pin,
     sync::Arc,
     task::{Context, Poll},
@@ -51,18 +53,49 @@ impl MempoolState {
     output
   }
 
+  /// Moves out a number of transactions from the mempool.
+  ///
+  /// Here few things happen:
+  ///   1. All output transactions are ordered by the transaction hash,
+  ///      to minimize the impact of MEV and make the transaction ordering
+  ///      less predictable, to prevent frontrunning or sandwitch attacks.
+  ///   2. Transactions belonging to the same payer, are ordered ascendingly
+  ///      by the nonce value, to allow multiple transactions from the same
+  ///      payer within one block.
+  ///   3. per #3 the ordering by the transaction hash, excludes transactions
+  ///      issued by the same payer, and in that case only the first transaction
+  ///      hash in the sequence of increasing nonces is used during sorting by
+  /// hash.
   pub fn take_transactions(&self, count: usize) -> Vec<Transaction> {
-    let output: Vec<_> = self
-      .txs
-      .iter()
+    // keep all transactions sorted by ther hashes (MEV mitigation)
+    let mut output = BTreeMap::new();
+
+    // get all transactions groupped by their payer, to allow multiple
+    // transactions from the same payer within the same block, and insert them
+    // into a sorted list by the transaction hash, or the hash of the first
+    // transaction for a group of transaction by the same payer.
+    for (_, txs) in self.txs.iter().group_by(|t| t.payer).into_iter() {
+      let mut txs: Vec<_> = txs.collect(); // order by nonce for the same payer
+      txs.sort_by(|a, b| a.nonce.cmp(&b.nonce));
+      if let Some(first) = txs.first() {
+        output.insert(*first.hash(), txs);
+      }
+    }
+
+    // flatten the sorted transactions list
+    // and consume up to "count" transactions
+    let output: Vec<_> = output
+      .into_iter()
+      .flat_map(|(_, tx)| tx.into_iter())
+      .map(|kv| kv.value().clone())
       .take(count)
-      .map(|t| t.value().clone())
       .collect();
 
-    // remove from mempool the selected count
+    // remove from mempool the selected txs
     output.iter().for_each(|tx| {
       self.txs.remove(tx.hash());
     });
+    
     output
   }
 }

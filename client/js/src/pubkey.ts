@@ -151,7 +151,8 @@ export class Keypair {
   }
 
   public static async random(): Promise<Keypair> {
-    return Keypair.fromPrivateKey(utils.randomPrivateKey());
+    const { randomBytes } = await import('crypto');
+    return Keypair.fromPrivateKey(randomBytes(32));
   }
 
   public static async fromPrivateKey(prvkey: string | Uint8Array): Promise<Keypair> {

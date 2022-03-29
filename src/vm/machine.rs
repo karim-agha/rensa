@@ -13,7 +13,7 @@ use {
     consensus::{BlockData, Genesis, Limits, Produced},
     primitives::{Account, Pubkey, ToBase58String},
   },
-  std::collections::HashMap,
+  std::{cmp::Ordering, collections::HashMap},
   thiserror::Error,
   tracing::debug,
 };
@@ -34,6 +34,9 @@ pub enum MachineError {
 
   #[error("Invalid block height, expected a monotonically increasing value")]
   InvalidBlockHeight,
+
+  #[error("Transactions are not correctly ordered in this block")]
+  InvalidTransactionsOrder,
 
   #[error("Undefined builtin in genesis: {0}")]
   UndefinedBuiltin(Pubkey),
@@ -98,6 +101,14 @@ impl Executable for Vec<Transaction> {
     vm: &Machine,
     state: &dyn State,
   ) -> Result<BlockOutput, MachineError> {
+    // transactions order within a block must follow a known
+    // ordering algorithm described in more detail in the block
+    // producer module. Reject all blocks that don't follow that
+    // algorithm.
+    if !verify_transactions_order(self) {
+      return Err(MachineError::InvalidTransactionsOrder);
+    }
+
     // accumulates state across all txs
     let mut acclogs = LogsMap::new();
     let mut accerrors = ErrorsMap::new();
@@ -179,5 +190,39 @@ impl Executable for u8 {
     _state: &dyn State,
   ) -> Result<BlockOutput, MachineError> {
     Ok(BlockOutput::default())
+  }
+}
+
+/// All transactions must be sorted by their hashes (this makes some MEV attacks
+/// very difficult). With the exception of transactions coming from the same
+/// payer and having a monothonically increasing nonce
+fn verify_transactions_order(txs: &[Transaction]) -> bool {
+  if let Some(first) = txs.first() {
+    let is_within_payer_group = |tx: &Transaction, prev: &Transaction| {
+      tx.payer == prev.payer && tx.nonce == prev.nonce - 1
+    };
+
+    let mut prev = first;
+    
+    // the first transaction in a payer group
+    let mut group_head = None;
+
+    for tx in txs.iter().skip(1) {
+      if !is_within_payer_group(tx, prev) {
+        group_head = Some(tx);
+      }
+
+      if let Some(ghead) = group_head {
+        if let Ordering::Less = tx.hash().cmp(ghead.hash()) {  
+          return false;
+        }
+      }
+
+      prev = tx;
+    }
+
+    true // all txs sorted by hash
+  } else {
+    true // empty block
   }
 }
