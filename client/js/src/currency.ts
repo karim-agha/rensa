@@ -43,7 +43,7 @@ export class Currency {
     }
   }
 
-  mint(to: Pubkey, authority: Keypair, amount: number): TransactionCreationParams {
+  mint(to: Pubkey, authority: Keypair, payer: Keypair, amount: number): TransactionCreationParams {
     let accounts = [
       // mint address
       {
@@ -78,7 +78,7 @@ export class Currency {
 
     return {
       contract: CURRENCY_CONTRACT_ADDR,
-      payer: authority,
+      payer: payer,
       accounts: accounts,
       signers: [authority],
       params: writer.toArray()

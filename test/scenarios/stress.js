@@ -31,11 +31,17 @@ let host = process.argv[2];
     walletsB.push(await Keypair.random());
   }
 
+  await new Promise(f => setTimeout(f, 1000));
   console.log("Minting first coins... (A)");
 
   let mintTransactionsA = [];
   for (let wallet of walletsA) {
-    mintTransactionsA.push(currency.mint(wallet.publicKey, payer, 1000000000));
+    mintTransactionsA.push(
+      currency.mint(
+        wallet.publicKey,
+        payer,  // authority
+        await Keypair.random(), // payer
+        1000000000));
   }
 
   console.dir(await client.sendAndConfirmTransactions(
@@ -43,17 +49,24 @@ let host = process.argv[2];
     { depth: null, maxArrayLength: null });
 
 
+  await new Promise(f => setTimeout(f, 1000));
   console.log("Minting first coins... (B)");
 
   let mintTransactionsB = [];
   for (let wallet of walletsB) {
-    mintTransactionsB.push(currency.mint(wallet.publicKey, payer, 1000000000));
+    mintTransactionsB.push(
+      currency.mint(
+        wallet.publicKey,
+        payer,  // authority
+        await Keypair.random(), // payer
+        1000000000));
   }
 
   console.dir(await client.sendAndConfirmTransactions(
     await web3.createManyTransactions(client, mintTransactionsB)),
     { depth: null, maxArrayLength: null });
 
+  var num = 1;
   while (true) {
     var fromW, toW;
     if (alternate) {
@@ -65,14 +78,22 @@ let host = process.argv[2];
     }
 
     let txs = [];
-    for (var i = 0; i < fromW.length - Math.floor(Math.random() * 100); ++i) {
+    for (var i = 0; i < num; ++i) {
       let amount = Math.floor(Math.random() * 1000);
       txs.push(currency.transfer(fromW[i], toW[i].publicKey, amount));
     }
 
-    client.sendAndConfirmTransactions(
-      await web3.createManyTransactions(client, txs))
-      .then((txs) => console.dir(txs, { depth: null, maxArrayLength: null }));
+    web3.createManyTransactions(client, txs)
+      .then((txs) => client.sendAndConfirmTransactions(txs)
+        .then((txs) => console.dir(txs, { depth: null, maxArrayLength: null })))
+      .catch((e) => console.error(e));
     alternate = !alternate;
+    console.log("sent a batch", ++num);
+
+    if (num == walletsCount) {
+      num = 1;
+    }
+
+    await new Promise(f => setTimeout(f, 1000));
   }
 })();

@@ -79,7 +79,7 @@ impl<'s, 't, 'm> ExecutionUnit<'s, 't, 'm> {
       .unwrap_or(0);
 
     if self.transaction.nonce != payer_nonce {
-      return Err(ContractError::InvalidTransactionNonce);
+      return Err(ContractError::InvalidTransactionNonce(payer_nonce));
     }
 
     let entrypoint = self.entrypoint;
