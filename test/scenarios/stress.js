@@ -67,6 +67,7 @@ let host = process.argv[2];
     { depth: null, maxArrayLength: null });
 
   var num = 1;
+  
   while (true) {
     var fromW, toW;
     if (alternate) {
@@ -83,17 +84,15 @@ let host = process.argv[2];
       txs.push(currency.transfer(fromW[i], toW[i].publicKey, amount));
     }
 
-    web3.createManyTransactions(client, txs)
+    console.log("sending batch", ++num);
+    await web3.createManyTransactions(client, txs)
       .then((txs) => client.sendAndConfirmTransactions(txs)
         .then((txs) => console.dir(txs, { depth: null, maxArrayLength: null })))
       .catch((e) => console.error(e));
     alternate = !alternate;
-    console.log("sent a batch", ++num);
 
     if (num == walletsCount) {
       num = 1;
     }
-
-    await new Promise(f => setTimeout(f, 1000));
   }
 })();
