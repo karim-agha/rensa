@@ -5,7 +5,7 @@
 //! input and output data into and from the contract.
 
 use {
-  super::transaction::SignatureError,
+  super::{transaction::SignatureError, AccountRef},
   crate::primitives::Pubkey,
   serde::{Deserialize, Serialize},
   thiserror::Error,
@@ -58,6 +58,9 @@ pub enum ContractError {
   #[error("Invalid contract input paramters data")]
   InvalidInputParameters,
 
+  #[error("This contract is not allowed to perform this operation")]
+  UnauthorizedOperation,
+
   #[error("Contract error: {0}")]
   Other(String),
 
@@ -100,7 +103,7 @@ pub enum Output {
   ///
   /// The modified account should be set as writable in the transaction
   /// inputs, otherwise the transaction will fail.
-  /// 
+  ///
   /// To delete the data contents of an account without deleting the
   /// account itself (for example to reset it to some initial state),
   /// use [`None`] as the second parameter to this constructor.
@@ -111,6 +114,27 @@ pub enum Output {
   /// The modified account should be set as writable in the transaction
   /// inputs, and its owner should match the executing contract.
   DeleteOwnedAccount(Pubkey),
+
+  /// Represents a request for cross contract invocation to another contract.
+  ContractInvoke {
+    /// Address of the contract to be invoked
+    contract: Pubkey,
+    /// Input accounts to the contract to be invoked.
+    ///
+    /// Those accounts must already be referenced by the calling
+    /// contract, with the same or higher writability flags.
+    accounts: Vec<(Pubkey, AccountRef)>,
+
+    /// Input bytes to the invoked contract
+    params: Vec<u8>,
+  },
+
+  /// Represents creation of a new contract account.
+  ///
+  /// This output is only allowed to be emitted by the WASM_VM contract
+  /// during contract installation. Returning this value from any other
+  /// contract will fail the entire transaction.
+  CreateExecutableAccount(Pubkey, Vec<u8>),
 }
 
 /// Represents the output of invocing a smart contract by a transaction.

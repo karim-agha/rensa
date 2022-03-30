@@ -20,6 +20,14 @@ use {
   },
 };
 
+lazy_static::lazy_static! {
+  /// Address of the only contract that is allowed to create executable accounts.
+  pub static ref WASM_VM_BUILTIN_ADDR: Pubkey =
+    "WasmVM1xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+      .parse()
+      .unwrap();
+}
+
 /// Represents the execution context of a single transaction.
 ///
 /// This type is responsible for running the transaction logic
@@ -215,6 +223,20 @@ impl<'s, 't, 'm> ExecutionUnit<'s, 't, 'm> {
         state_diff: self.delete_account(addr)?,
         ..Default::default()
       }),
+      Output::ContractInvoke {
+        contract,
+        accounts,
+        params,
+      } => todo!("invoke {contract:?} {accounts:?} {params:?}"),
+      Output::CreateExecutableAccount(address, bytecode) => {
+        if bytecode.len() > self.limits.max_contract_size {
+          return Err(ContractError::AccountTooLarge);
+        }
+        Ok(TransactionOutput {
+          state_diff: self.create_executable_account(address, bytecode)?,
+          ..Default::default()
+        })
+      }
     }
   }
 
@@ -230,6 +252,31 @@ impl<'s, 't, 'm> ExecutionUnit<'s, 't, 'm> {
         executable: false,
         owner: Some(self.transaction.contract),
         data,
+      })
+    } else {
+      Err(ContractError::AccountAlreadyExists)
+    }
+  }
+
+  /// Creates a new executable contract account owned by the executing contract.
+  /// This operation is only permitted when emitted by the builtin contract address: 
+  /// WasmVM1xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+  fn create_executable_account(
+    &self,
+    address: Pubkey,
+    bytecode: Vec<u8>,
+  ) -> Result<StateDiff, ContractError> {
+    // special privilage gateway
+    if self.env.address != *WASM_VM_BUILTIN_ADDR {
+      return Err(ContractError::UnauthorizedOperation);
+    }
+
+    if self.state.get(&address).is_none() {
+      self.set_account(address, Account {
+        nonce: 0,
+        executable: true,
+        owner: Some(*WASM_VM_BUILTIN_ADDR),
+        data: Some(bytecode),
       })
     } else {
       Err(ContractError::AccountAlreadyExists)
