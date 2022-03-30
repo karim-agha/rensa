@@ -20,6 +20,12 @@ impl ToBase58String for &[u8] {
   }
 }
 
+impl<const N: usize> ToBase58String for [u8; N] {
+  fn to_b58(&self) -> String {
+    bs58::encode(self).into_string()
+  }
+}
+
 impl ToBase58String for Vec<u8> {
   fn to_b58(&self) -> String {
     bs58::encode(self).into_string()
