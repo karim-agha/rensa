@@ -10,13 +10,13 @@ mod staking;
 mod wasm;
 
 use {
-  crate::{primitives::Pubkey, vm::contract::ContractEntrypoint},
+  crate::{primitives::Pubkey, vm::contract::NativeContractEntrypoint},
   std::collections::HashMap,
 };
 
 lazy_static::lazy_static! {
-  pub static ref BUILTIN_CONTRACTS: HashMap<Pubkey, ContractEntrypoint> = {
-    let mut funcs = HashMap::<Pubkey, ContractEntrypoint>::new();
+  pub static ref BUILTIN_CONTRACTS: HashMap<Pubkey, NativeContractEntrypoint> = {
+    let mut funcs = HashMap::<Pubkey, NativeContractEntrypoint>::new();
     funcs.insert("Sha3xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx".parse().unwrap(), sha3::contract);
     funcs.insert("Currency1xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx".parse().unwrap(), currency::contract);
     funcs.insert("Staking1xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx".parse().unwrap(), staking::contract);

@@ -8,6 +8,7 @@ use {
     vm::{
       contract::{self, AccountView, ContractError, Environment},
       transaction::SignatureError,
+      Machine,
     },
   },
   borsh::{BorshDeserialize, BorshSerialize},
@@ -90,9 +91,13 @@ enum Instruction {
   /// This instruction will fail if:
   ///   - not all parts of the bytecode were uploaded.
   ///   - The uploaded bytecode is not a valid WASM.
+  ///   - The init instruction fails.
   ///
   /// Once the bytecode is installed as an executable, the bytecode
   /// buffer gets deleted and moved to the contract address.
+  ///
+  /// If this instruction fails because the init instruction failed,
+  /// the bytecode will be deleted too and will have to be reuploaded.
   Install {
     /// A seed value used to generate the contract address.
     /// The contract will be deployed at Wasm.derive(seed).
@@ -132,7 +137,11 @@ struct BytecodeAccount {
 
 /// This builtin contract allows external users of the blockchain to upload
 /// and deploy new contracts WASM bytecode.
-pub fn contract(env: &Environment, params: &[u8]) -> contract::Result {
+pub fn contract(
+  env: &Environment,
+  params: &[u8],
+  vm: &Machine,
+) -> contract::Result {
   let mut params = params;
   let instruction: Instruction = BorshDeserialize::deserialize(&mut params)
     .map_err(|_| ContractError::InvalidInputParameters)?;
@@ -147,7 +156,7 @@ pub fn contract(env: &Environment, params: &[u8]) -> contract::Result {
     Instruction::Upload { seed, index, bytes } => {
       process_upload(env, seed, index, bytes)
     }
-    Instruction::Install { seed, init } => process_install(env, seed, init),
+    Instruction::Install { seed, init } => process_install(env, seed, init, vm),
   }
 }
 
@@ -352,6 +361,7 @@ fn process_install(
   env: &Environment,
   seed: ContractSeed,
   _init: Option<Vec<u8>>,
+  _vm: &Machine,
 ) -> contract::Result {
   if env.address.len() < 3 {
     return Err(ContractError::InvalidInputAccounts);

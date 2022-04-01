@@ -9,6 +9,7 @@ use {
     vm::{
       contract::{self, AccountView, ContractError, Environment},
       transaction::SignatureError,
+      Machine,
     },
   },
   borsh::{BorshDeserialize, BorshSerialize},
@@ -155,7 +156,11 @@ enum Instruction {
   SetAuthority(Option<Pubkey>),
 }
 
-pub fn contract(env: &Environment, params: &[u8]) -> contract::Result {
+pub fn contract(
+  env: &Environment,
+  params: &[u8],
+  _: &Machine,
+) -> contract::Result {
   let mut params = params;
   let instruction: Instruction = BorshDeserialize::deserialize(&mut params)
     .map_err(|_| ContractError::InvalidInputParameters)?;

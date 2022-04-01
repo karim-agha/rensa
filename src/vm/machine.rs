@@ -1,7 +1,7 @@
 use {
   super::{
     builtin::BUILTIN_CONTRACTS,
-    contract::ContractEntrypoint,
+    contract::{ContractEntrypoint, NativeContractEntrypoint},
     output::{BlockOutput, ErrorsMap, LogsMap},
     unit::ExecutionUnit,
     Overlayed,
@@ -55,7 +55,7 @@ pub trait Executable {
 /// entry point to the virtual machine that runs contracts.
 pub struct Machine {
   limits: Limits,
-  builtins: HashMap<Pubkey, ContractEntrypoint>,
+  builtins: HashMap<Pubkey, NativeContractEntrypoint>,
 }
 
 impl Machine {
@@ -76,8 +76,13 @@ impl Machine {
 
   /// Gets a VM-native builtin contract.
   /// Those contracts have to be enabled in the genesis config.
-  pub fn builtin(&self, addr: &Pubkey) -> Option<&ContractEntrypoint> {
-    self.builtins.get(addr)
+  pub fn builtin(&self, addr: &Pubkey) -> Option<NativeContractEntrypoint> {
+    self.builtins.get(addr).cloned()
+  }
+
+  /// Gets a WASM contract deployed externally to the blockchain.
+  pub fn contract(&self, _addr: &Pubkey) -> Option<ContractEntrypoint> {
+    todo!()
   }
 
   /// Configured execution contraints.
@@ -203,7 +208,7 @@ fn verify_transactions_order(txs: &[Transaction]) -> bool {
     };
 
     let mut prev = first;
-    
+
     // the first transaction in a payer group
     let mut group_head = None;
 
@@ -213,7 +218,7 @@ fn verify_transactions_order(txs: &[Transaction]) -> bool {
       }
 
       if let Some(ghead) = group_head {
-        if let Ordering::Less = tx.hash().cmp(ghead.hash()) {  
+        if let Ordering::Less = tx.hash().cmp(ghead.hash()) {
           return false;
         }
       }

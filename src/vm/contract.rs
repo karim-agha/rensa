@@ -4,6 +4,8 @@
 //! invoke smart contracts by the virtual machine and carry
 //! input and output data into and from the contract.
 
+use super::Machine;
+
 use {
   super::{transaction::SignatureError, AccountRef},
   crate::primitives::Pubkey,
@@ -154,8 +156,13 @@ pub struct Environment {
   pub accounts: Vec<(Pubkey, AccountView)>,
 }
 
+/// This is the signature of a builtin contract entrypoint.
+/// 
+/// Builtin contracts have direct access to the virtual machine instance.
+pub type NativeContractEntrypoint = fn(&Environment, &[u8], &Machine) -> Result;
+
 /// This is the signature of a contract entrypoint.
 ///
-/// It is the same signature for builtin contracts and wasm contract
-/// and any futute contract runtimes.
+/// WASM contracts run in an isolated environment and have no direct access
+/// to any runtime facilities.
 pub type ContractEntrypoint = fn(&Environment, &[u8]) -> Result;

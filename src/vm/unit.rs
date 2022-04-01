@@ -5,6 +5,7 @@ use {
       ContractEntrypoint,
       ContractError,
       Environment,
+      NativeContractEntrypoint,
       Output,
     },
     output::TransactionOutput,
@@ -28,6 +29,11 @@ lazy_static::lazy_static! {
       .unwrap();
 }
 
+enum Entrypoint {
+  Native(NativeContractEntrypoint),
+  External(ContractEntrypoint),
+}
+
 /// Represents the execution context of a single transaction.
 ///
 /// This type is responsible for running the transaction logic
@@ -36,8 +42,9 @@ lazy_static::lazy_static! {
 /// any of the outputs will cause the entire transaction to fail
 /// and none of its changes will be persisted.
 pub struct ExecutionUnit<'s, 't, 'm> {
+  vm: &'m Machine,
   limits: &'m Limits,
-  entrypoint: ContractEntrypoint,
+  entrypoint: Entrypoint,
   env: Environment,
   state: &'s dyn State,
   transaction: &'t Transaction,
@@ -57,15 +64,21 @@ impl<'s, 't, 'm> ExecutionUnit<'s, 't, 'm> {
     // don't proceed unless all tx signatures are valid.
     transaction.verify_signatures()?;
 
-    // for now only builtin contracts are supported, later wasm
-    // contracts will be pulled here as well.
-    if let Some(entrypoint) = vm.builtin(&transaction.contract).cloned() {
+    // locate either a builtin or an external contract
+    let entrypoint = vm
+      .builtin(&transaction.contract)
+      .map(Entrypoint::Native)
+      .or_else(|| vm.contract(&transaction.contract).map(Entrypoint::External));
+
+    // construct an execution unit if the contract was found
+    if let Some(entrypoint) = entrypoint {
       Ok(Self {
         entrypoint,
         limits: vm.limits(),
         env: Self::create_environment(state, transaction)?,
         state,
         transaction,
+        vm,
       })
     } else {
       Err(ContractError::ContractDoesNotExit)
@@ -90,8 +103,15 @@ impl<'s, 't, 'm> ExecutionUnit<'s, 't, 'm> {
       return Err(ContractError::InvalidTransactionNonce(payer_nonce));
     }
 
-    let entrypoint = self.entrypoint;
-    match entrypoint(&self.env, &self.transaction.params) {
+    let outputs = match self.entrypoint {
+      Entrypoint::Native(native) => {
+        native(&self.env, &self.transaction.params, self.vm)
+      }
+      Entrypoint::External(external) => {
+        external(&self.env, &self.transaction.params)
+      }
+    };
+    match outputs {
       Ok(outputs) => {
         let mut txoutputs = TransactionOutput::default();
         // if the transaction execution successfully ran to
@@ -259,8 +279,8 @@ impl<'s, 't, 'm> ExecutionUnit<'s, 't, 'm> {
   }
 
   /// Creates a new executable contract account owned by the executing contract.
-  /// This operation is only permitted when emitted by the builtin contract address: 
-  /// WasmVM1xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+  /// This operation is only permitted when emitted by the builtin contract
+  /// address: WasmVM1xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
   fn create_executable_account(
     &self,
     address: Pubkey,

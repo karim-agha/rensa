@@ -1,12 +1,16 @@
 use {
   crate::vm::{
-    contract,
-    contract::{ContractError, Environment, Output},
+    contract::{self, ContractError, Environment, Output},
+    Machine,
   },
   multihash::{Hasher, Sha3_256},
 };
 
-pub fn contract(env: &Environment, params: &[u8]) -> contract::Result {
+pub fn contract(
+  env: &Environment,
+  params: &[u8],
+  _: &Machine,
+) -> contract::Result {
   let mut sha = Sha3_256::default();
 
   if env.accounts.len() != 1 {
