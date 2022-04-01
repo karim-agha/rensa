@@ -7,7 +7,11 @@ $ docker-compose up --build
 ```
 
 To run web3 tests that send transactions to the chain through RPC run:
-
+```
+$ cd client/js
+$ npx tsc
+```
+then 
 ```
 $ cd test/scenarios
 $ node index.js http://<public-ip>:8080
