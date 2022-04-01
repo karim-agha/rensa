@@ -97,7 +97,7 @@ enum Instruction {
   /// buffer gets deleted and moved to the contract address.
   ///
   /// If this instruction fails because the init instruction failed,
-  /// the bytecode will be deleted too and will have to be reuploaded.
+  /// the bytecode will not be deleted and install can be invoked again.
   Install {
     /// A seed value used to generate the contract address.
     /// The contract will be deployed at Wasm.derive(seed).
@@ -127,7 +127,7 @@ struct BytecodeAccount {
   /// A bitmask that specifies which 2kb slots of the bytecode
   /// has been already uploaded. Only when all slots were uploaded
   /// the bytecode is allowed to be installed.
-  mask: Vec<u8>,
+  mask: Vec<bool>,
 
   /// The actual bytecode of the wasm contract, uploaded in chunks
   /// of 2kb. Everytime a chunk is uploaded, its bit is set to 1 in
@@ -152,7 +152,7 @@ pub fn contract(
       checksum,
       authority,
       size,
-    } => process_allocate(env, seed, checksum, authority, size),
+    } => process_allocate(env, seed, checksum, authority, size, vm),
     Instruction::Upload { seed, index, bytes } => {
       process_upload(env, seed, index, bytes)
     }
@@ -170,9 +170,15 @@ fn process_allocate(
   checksum: BytecodeChecksum,
   authority: Pubkey,
   size: u32,
+  vm: &Machine,
 ) -> contract::Result {
   if env.address.len() != 2 {
     return Err(ContractError::InvalidInputAccounts);
+  }
+
+  // ensure that the contract is under the max contract limit
+  if size as usize > vm.limits().max_contract_size {
+    return Err(ContractError::AccountTooLarge);
   }
 
   // validate and get the destination account for the contract
@@ -207,7 +213,7 @@ fn process_allocate(
   }
 
   // each 2kb slot takes one bit
-  let masklen = f32::ceil(size as f32 / 8.0) as usize;
+  let masklen = f32::ceil(size as f32 / MAX_SLOT_SIZE as f32) as usize;
 
   // Stores the uploaded wasm chunks until everything is uploaded
   let contents = BytecodeAccount {
@@ -272,11 +278,7 @@ fn process_upload(
     return Err(ContractError::AccountNotWritable);
   }
 
-  if b_acc.owner.is_none() {
-    return Err(ContractError::InvalidAccountOwner);
-  }
-
-  if b_acc.owner.unwrap() != env.address {
+  if b_acc.owner.map(|o| o == env.address).unwrap_or(false) {
     return Err(ContractError::InvalidAccountOwner);
   }
 
@@ -303,23 +305,18 @@ fn process_upload(
   }
 
   // check if the index has already been uploaded
-  let byteindex = index / 8;
-  let byteoffset = index % 8;
-  let bytemask = 1 >> byteoffset;
-
-  if content.mask.len() >= byteindex as usize {
+  if content.mask.len() >= index as usize {
     return Err(ContractError::InvalidInputParameters);
   }
 
-  let byte = content.mask[byteindex as usize];
-  if byte & bytemask == bytemask {
+  if content.mask[index as usize] {
     return Err(ContractError::Other(format!(
       "slot {} is already uploaded",
       index
     )));
   } else {
     // mark the slot as uploaded
-    content.mask[byteindex as usize] |= bytemask;
+    content.mask[index as usize] = true;
 
     let start_offset = index as usize * MAX_SLOT_SIZE;
     if start_offset >= content.bytecode.len() {
@@ -360,20 +357,80 @@ fn process_upload(
 fn process_install(
   env: &Environment,
   seed: ContractSeed,
-  _init: Option<Vec<u8>>,
+  init: Option<Vec<u8>>,
   _vm: &Machine,
 ) -> contract::Result {
   if env.address.len() < 3 {
     return Err(ContractError::InvalidInputAccounts);
   }
 
-  // the destination account for the contract
-  let _contract_acc = contract_account(seed, env)?;
+  // validate and get the destination account for the contract
+  let (c_addr, c_acc) = contract_account(seed, env)?;
+
+  if !c_acc.writable {
+    return Err(ContractError::AccountNotWritable);
+  }
 
   // the bytecode storage account
-  let _bytecode_acc = bytecode_account(seed, env)?;
+  let (b_addr, b_acc) = bytecode_account(seed, env)?;
 
-  todo!();
+  if !b_acc.writable {
+    return Err(ContractError::AccountNotWritable);
+  }
+
+  if b_acc.owner.map(|o| o == env.address).unwrap_or(false) {
+    return Err(ContractError::InvalidAccountOwner);
+  }
+
+  // read the accumulated bytecode account
+  let content: BytecodeAccount = match b_acc.data {
+    Some(ref data) => BorshDeserialize::try_from_slice(data.as_slice())
+      .map_err(|_| ContractError::InvalidInputAccounts)?,
+    None => return Err(ContractError::AccountDoesNotExist),
+  };
+
+  // verify authority
+  let (a_addr, a_acc) = &env.accounts[2];
+
+  if content.authority != *a_addr {
+    return Err(ContractError::InvalidInputAccounts);
+  }
+
+  // make sure the install is triggered by the authorized
+  // authority that allocated the bytecode account and uploaded
+  // the bytecode.
+  if !a_acc.signer {
+    return Err(ContractError::SignatureError(
+      SignatureError::MissingSigners,
+    ));
+  }
+
+  if content.mask.iter().any(|s| !s) {
+    return Err(ContractError::Other(
+      "Not all bytecode slots are uploaded".to_owned(),
+    ));
+  }
+
+  let mut output = vec![
+    contract::Output::LogEntry("action".to_owned(), "install".to_owned()),
+    contract::Output::LogEntry("contract".to_owned(), c_addr.to_string()),
+    contract::Output::DeleteOwnedAccount(*b_addr), // delete bytecode account
+    contract::Output::CreateExecutableAccount(*c_addr, content.bytecode),
+  ];
+
+  // optionally invoke constructor instruction with the optional
+  // accounts passed to the instruction after the first mandatory
+  // 3 accounts.
+  if let Some(params) = init {
+    let accounts = env.accounts[2..].to_vec();
+    output.push(contract::Output::ContractInvoke {
+      contract: *c_addr,
+      accounts,
+      params,
+    });
+  }
+
+  Ok(output)
 }
 
 fn contract_account(

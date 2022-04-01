@@ -4,10 +4,8 @@
 //! invoke smart contracts by the virtual machine and carry
 //! input and output data into and from the contract.
 
-use super::Machine;
-
 use {
-  super::{transaction::SignatureError, AccountRef},
+  super::{transaction::SignatureError, Machine},
   crate::primitives::Pubkey,
   serde::{Deserialize, Serialize},
   thiserror::Error,
@@ -76,7 +74,7 @@ impl From<std::io::Error> for ContractError {
   }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct AccountView {
   pub signer: bool,
   pub writable: bool,
@@ -125,7 +123,7 @@ pub enum Output {
     ///
     /// Those accounts must already be referenced by the calling
     /// contract, with the same or higher writability flags.
-    accounts: Vec<(Pubkey, AccountRef)>,
+    accounts: Vec<(Pubkey, AccountView)>,
 
     /// Input bytes to the invoked contract
     params: Vec<u8>,
@@ -157,7 +155,7 @@ pub struct Environment {
 }
 
 /// This is the signature of a builtin contract entrypoint.
-/// 
+///
 /// Builtin contracts have direct access to the virtual machine instance.
 pub type NativeContractEntrypoint = fn(&Environment, &[u8], &Machine) -> Result;
 
