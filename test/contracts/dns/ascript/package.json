@@ -1,0 +1,25 @@
+{
+  "name": "name-service",
+  "version": "1.0.0",
+  "description": "Name Service smart contract for Rensa in AssemblyScript",
+  "main": "index.js",
+  "scripts": {
+    "test": "node tests",
+    "asbuild:debug": "asc contract.ts --target debug",
+    "asbuild:release": "asc contract.ts --target release",
+    "asbuild": "npm run asbuild:debug && npm run asbuild:release",
+    "start": "npx serve ."
+  },
+  "author": "Karim Agha <karim.dev@gmail.com>",
+  "license": "MIT",
+  "devDependencies": {
+    "assemblyscript": "^0.20.3"
+  },
+  "type": "module",
+  "exports": {
+    ".": {
+      "import": "./build/release.js",
+      "types": "./build/release.d.ts"
+    }
+  }
+}
