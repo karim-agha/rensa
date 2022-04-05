@@ -14,20 +14,13 @@ use {
     State,
     StateDiff,
     Transaction,
+    WASM_VM_BUILTIN_ADDR,
   },
   crate::{
     consensus::Limits,
     primitives::{Account, Pubkey},
   },
 };
-
-lazy_static::lazy_static! {
-  /// Address of the only contract that is allowed to create executable accounts.
-  pub static ref WASM_VM_BUILTIN_ADDR: Pubkey =
-    "WasmVM1xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
-      .parse()
-      .unwrap();
-}
 
 enum Entrypoint {
   Native(NativeContractEntrypoint),
@@ -64,16 +57,10 @@ impl<'s, 't, 'm> ExecutionUnit<'s, 't, 'm> {
     // don't proceed unless all tx signatures are valid.
     transaction.verify_signatures()?;
 
-    // locate either a builtin or an external contract
-    let entrypoint = vm
-      .builtin(&transaction.contract)
-      .map(Entrypoint::Native)
-      .or_else(|| vm.contract(&transaction.contract).map(Entrypoint::External));
-
     // construct an execution unit if the contract was found
-    if let Some(entrypoint) = entrypoint {
+    if let Some(entrypoint) = vm.builtin(&transaction.contract) {
       Ok(Self {
-        entrypoint,
+        entrypoint: Entrypoint::Native(entrypoint),
         limits: vm.limits(),
         env: Self::create_environment(state, transaction)?,
         state,
@@ -81,7 +68,16 @@ impl<'s, 't, 'm> ExecutionUnit<'s, 't, 'm> {
         vm,
       })
     } else {
-      Err(ContractError::ContractDoesNotExit)
+      Ok(Self {
+        entrypoint: Entrypoint::External(
+          vm.contract(&transaction.contract, state)?,
+        ),
+        limits: vm.limits(),
+        env: Self::create_environment(state, transaction)?,
+        state,
+        transaction,
+        vm,
+      })
     }
   }
 
@@ -107,7 +103,7 @@ impl<'s, 't, 'm> ExecutionUnit<'s, 't, 'm> {
       Entrypoint::Native(native) => {
         native(&self.env, &self.transaction.params, self.vm)
       }
-      Entrypoint::External(external) => {
+      Entrypoint::External(ref external) => {
         external(&self.env, &self.transaction.params)
       }
     };

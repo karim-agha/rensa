@@ -52,6 +52,9 @@ pub enum ContractError {
   #[error("Contract does not exit")]
   ContractDoesNotExit,
 
+  #[error("The called account is not executable")]
+  AccountIsNotExecutable,
+
   #[error("Signature Error: {0}")]
   SignatureError(#[from] SignatureError),
 
@@ -60,6 +63,9 @@ pub enum ContractError {
 
   #[error("This contract is not allowed to perform this operation")]
   UnauthorizedOperation,
+
+  #[error("Runtime Error: {0}")]
+  Runtime(String),
 
   #[error("Contract error: {0}")]
   Other(String),
@@ -163,4 +169,4 @@ pub type NativeContractEntrypoint = fn(&Environment, &[u8], &Machine) -> Result;
 ///
 /// WASM contracts run in an isolated environment and have no direct access
 /// to any runtime facilities.
-pub type ContractEntrypoint = fn(&Environment, &[u8]) -> Result;
+pub type ContractEntrypoint = Box<dyn Fn(&Environment, &[u8]) -> Result>;
