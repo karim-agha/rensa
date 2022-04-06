@@ -4,13 +4,12 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-wee_alloc = { version = "0.4", default-features = false }
 
 [lib]
 crate-type = ["cdylib"]
 
 
-# [profile.release]
-# strip = true
-# opt-level = "z"
-# lto = true
+[profile.release]
+strip = true
+opt-level = "z"
+lto = true

@@ -1,4 +1,4 @@
-use std::alloc::GlobalAlloc;
+use std::{ffi::CString, os::raw::c_char};
 
 #[repr(C)]
 struct Region {
@@ -9,16 +9,27 @@ pub struct Environemnt {
   val: u32,
 }
 
-#[global_allocator]
-static ALLOC: wee_alloc::WeeAlloc = wee_alloc::WeeAlloc::INIT;
+#[link(wasm_import_module = "env")]
+extern "C" {
+  fn log(message: *const c_char);
+}
 
-#[no_mangle]
-pub unsafe extern "C" fn allocate(size: u32) -> *mut u8 {
-  ALLOC.alloc(std::alloc::Layout::from_size_align_unchecked(size as usize, 1))
+fn log_message(msg: &str) {
+  let msg = CString::new(msg).unwrap();
+  unsafe { log(msg.as_ptr()) };
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn environment(_ptr: *const u8) -> *const Environemnt {
+pub extern "C" fn allocate(size: u32) -> *mut u8 {
+  log_message(&format!("will allocate {size} bytes"));
+  let mut buf = Vec::with_capacity(size as usize);
+  let ptr = buf.as_mut_ptr();
+  core::mem::forget(buf);
+  ptr
+}
+
+#[no_mangle]
+pub extern "C" fn environment(_ptr: *const u8) -> *const Environemnt {
   let out = Environemnt { val: 18 };
   let outptr = &out as *const Environemnt;
   core::mem::forget(out);

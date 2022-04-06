@@ -41,9 +41,9 @@ impl Runtime {
   pub fn new(bytecode: &[u8]) -> Result<Self, ContractError> {
     let store = {
       let compiler = Cranelift::default();
-      let base = BaseTunables::for_target(&Target::default());
-      let tunables = LimitingTunables::new(base, Pages(4));
       let engine = Universal::new(compiler).engine();
+      let base = BaseTunables::for_target(&Target::default());
+      let tunables = LimitingTunables::new(base, Pages(4)); // 256 KB of memory
       Store::new_with_tunables(&engine, tunables)
     };
 
@@ -78,10 +78,14 @@ impl Runtime {
       .map_err(|e| ContractError::Runtime(e.to_string()))?;
 
     let env_ptr = alloc_func
+      .call(1024)
+      .map_err(|e| ContractError::Runtime(e.to_string()))?;
+    println!("first alloc: {env_ptr:?}");
+
+    let env_ptr = alloc_func
       .call(10)
       .map_err(|e| ContractError::Runtime(e.to_string()))?;
-
-    println!("envptr: {env_ptr:?}");
+    println!("second alloc: {env_ptr:?}");
 
     Ok(vec![])
   }
@@ -144,7 +148,6 @@ impl<T: Tunables> LimitingTunables<T> {
   /// validate_memory must be called before creating the memory.
   fn adjust_memory(&self, requested: &MemoryType) -> MemoryType {
     let mut adjusted = *requested;
-    adjusted.minimum = self.limit;
     adjusted.maximum = Some(self.limit);
     adjusted
   }
