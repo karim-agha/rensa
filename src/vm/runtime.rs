@@ -27,7 +27,6 @@ use {
     Target,
     Tunables,
     Universal,
-    Value,
     WasmPtr,
     WasmerEnv,
   },
@@ -43,7 +42,7 @@ impl Runtime {
     let store = {
       let compiler = Cranelift::default();
       let base = BaseTunables::for_target(&Target::default());
-      let tunables = LimitingTunables::new(base, Pages(1));
+      let tunables = LimitingTunables::new(base, Pages(4));
       let engine = Universal::new(compiler).engine();
       Store::new_with_tunables(&engine, tunables)
     };
@@ -74,18 +73,15 @@ impl Runtime {
       .instance
       .exports
       .get_function("allocate")
+      .map_err(|e| ContractError::Runtime(e.to_string()))?
+      .native::<u32, WasmPtr<u8, Array>>()
       .map_err(|e| ContractError::Runtime(e.to_string()))?;
 
     let env_ptr = alloc_func
-      .call(&[Value::I32(10)])
+      .call(10)
       .map_err(|e| ContractError::Runtime(e.to_string()))?;
 
-    if let [Value::I32(v)] = *env_ptr {
-      println!("v: {v:?}");
-      let uv: u32 = unsafe { std::mem::transmute(v) };
-      println!("uv: {uv:?}");
-    }
-    println!("{env_ptr:?}");
+    println!("envptr: {env_ptr:?}");
 
     Ok(vec![])
   }
@@ -148,6 +144,7 @@ impl<T: Tunables> LimitingTunables<T> {
   /// validate_memory must be called before creating the memory.
   fn adjust_memory(&self, requested: &MemoryType) -> MemoryType {
     let mut adjusted = *requested;
+    adjusted.minimum = self.limit;
     adjusted.maximum = Some(self.limit);
     adjusted
   }
@@ -156,9 +153,10 @@ impl<T: Tunables> LimitingTunables<T> {
   /// Call this after adjusting the memory.
   fn validate_memory(&self, ty: &MemoryType) -> Result<(), MemoryError> {
     if ty.minimum > self.limit {
-      return Err(MemoryError::Generic(
-        "Minimum exceeds the allowed memory limit".to_string(),
-      ));
+      return Err(MemoryError::Generic(format!(
+        "Minimum {} exceeds the allowed memory limit {}",
+        ty.minimum.0, self.limit.0
+      )));
     }
 
     if let Some(max) = ty.maximum {
@@ -183,7 +181,7 @@ impl<T: Tunables> Tunables for LimitingTunables<T> {
     // let adjusted = self.adjust_memory(memory);
     // self.base.memory_style(&adjusted)
     MemoryStyle::Static {
-      bound: Pages(1),
+      bound: self.limit,
       offset_guard_size: 0x8000_0000,
     }
   }
@@ -256,11 +254,8 @@ impl<T: Tunables> Tunables for LimitingTunables<T> {
 mod test {
   use {super::Runtime, crate::vm::contract::Environment, anyhow::Result};
 
-  #[test]
-  fn dns_create_name() -> Result<()> {
-    let runtime = Runtime::new(include_bytes!(
-      "../../test/contracts/dns/ascript/build/release.wasm"
-    ))?;
+  fn dns_create_name(bytecode: &[u8]) -> Result<()> {
+    let runtime = Runtime::new(bytecode)?;
 
     let env = Environment {
       address: "".parse()?,
@@ -272,6 +267,20 @@ mod test {
     let output = runtime.invoke(&env, &params)?;
     println!("output from dns test: {output:?}");
     Ok(())
+  }
+
+  #[test]
+  fn dns_create_name_ascript() -> Result<()> {
+    dns_create_name(include_bytes!(
+      "../../test/contracts/dns/ascript/build/release.wasm"
+    ))
+  }
+
+  #[test]
+  fn dns_create_name_rust() -> Result<()> {
+    dns_create_name(include_bytes!(
+      "../../test/contracts/dns/rust/out/name_service.wasm"
+    ))
   }
 
   #[test]

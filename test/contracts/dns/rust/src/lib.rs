@@ -1,3 +1,5 @@
+use std::alloc::GlobalAlloc;
+
 #[repr(C)]
 struct Region {
   len: u32,
@@ -7,12 +9,12 @@ pub struct Environemnt {
   val: u32,
 }
 
+#[global_allocator]
+static ALLOC: wee_alloc::WeeAlloc = wee_alloc::WeeAlloc::INIT;
+
 #[no_mangle]
 pub unsafe extern "C" fn allocate(size: u32) -> *mut u8 {
-  let mut buf = Vec::with_capacity(size as usize);
-  let ptr = buf.as_mut_ptr();
-  core::mem::forget(buf);
-  ptr
+  ALLOC.alloc(std::alloc::Layout::from_size_align_unchecked(size as usize, 1))
 }
 
 #[no_mangle]
