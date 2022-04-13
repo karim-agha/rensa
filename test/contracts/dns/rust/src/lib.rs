@@ -1,12 +1,24 @@
-use std::{ffi::CString, os::raw::c_char};
+use {
+  borsh::BorshDeserialize,
+  std::{ffi::CString, os::raw::c_char},
+};
 
-#[repr(C)]
-struct Region {
-  len: u32,
+#[derive(Debug, Clone, BorshDeserialize)]
+pub struct Pubkey([u8; 32]);
+
+#[derive(Debug, Clone, BorshDeserialize)]
+pub struct AccountView {
+  pub signer: bool,
+  pub writable: bool,
+  pub executable: bool,
+  pub owner: Option<Pubkey>,
+  pub data: Option<Vec<u8>>,
 }
 
-pub struct Environemnt {
-  val: u32,
+#[derive(Debug, BorshDeserialize)]
+pub struct Environment {
+  pub address: Pubkey,
+  pub accounts: Vec<(Pubkey, AccountView)>,
 }
 
 #[link(wasm_import_module = "env")]
@@ -29,16 +41,14 @@ pub extern "C" fn allocate(size: u32) -> *mut u8 {
 }
 
 #[no_mangle]
-pub extern "C" fn environment(_ptr: *const u8) -> *const Environemnt {
-  let out = Environemnt { val: 18 };
-  let outptr = &out as *const Environemnt;
-  core::mem::forget(out);
-  outptr
+pub extern "C" fn environment(ptr: *mut u8, len: usize) -> *const Environment {
+  let bytes = unsafe { Vec::from_raw_parts(ptr, len, len) };
+  let env = Box::new(Environment::try_from_slice(&bytes[..]).unwrap());
+  Box::leak(env)
 }
 
 #[no_mangle]
-pub extern "C" fn contract(env: &Environemnt, params: *const u8) -> u32 {
-  let region: *const Region = params as *const Region;
-  let region: &Region = unsafe { &*region as &_ };
-  env.val + 18 + region.len
+pub extern "C" fn main(env: &Environment, _params: *const u8, _params_len: u32) -> u32 {
+  log_message(&format!("environment object: {env:?}"));
+  10
 }

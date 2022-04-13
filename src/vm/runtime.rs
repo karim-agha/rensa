@@ -70,28 +70,58 @@ impl Runtime {
   }
 
   pub fn invoke(&self, env: &Environment, params: &[u8]) -> contract::Result {
-    let serialized_env = env
-      .try_to_vec()
+    // get a function pointer to contract's exported entrypoint
+    let main_func = self
+      .instance
+      .exports
+      .get_function("main")
+      .map_err(|e| ContractError::Runtime(e.to_string()))?
+      .native::<(WasmPtr<u8>, WasmPtr<u8>, u32), WasmPtr<u8>>()
       .map_err(|e| ContractError::Runtime(e.to_string()))?;
 
-    let alloc_func = self
+    // deliver contract inputs:
+    let env_ptr = self.deliver_environment(env)?;
+    let params_ptr = self.deliver_params(params)?;
+
+    // invoke the contract with the instanciated environment
+    // object and the raw parameters bytes
+    let output_ptr = main_func
+      .call(env_ptr, params_ptr, params.len() as u32)
+      .map_err(|e| ContractError::Runtime(e.to_string()))?;
+    println!("main output: {output_ptr:?}");
+
+    Ok(vec![])
+  }
+
+  fn allocate(&self, size: usize) -> Result<WasmPtr<u8>, ContractError> {
+    self
       .instance
       .exports
       .get_function("allocate")
       .map_err(|e| ContractError::Runtime(e.to_string()))?
-      .native::<u32, WasmPtr<u8, Array>>()
+      .native::<u32, WasmPtr<u8>>()
+      .map_err(|e| ContractError::Runtime(e.to_string()))?
+      .call(size as u32)
+      .map_err(|e| ContractError::Runtime(e.to_string()))
+  }
+
+  /// This method copies environment inputs to contract's memory and
+  /// instanciates it into SDK-specific object. The output of this
+  /// method is a pointer in contract's memory space to an object
+  /// that is passed to the entrypoint as the environment.
+  fn deliver_environment(
+    &self,
+    env: &Environment,
+  ) -> Result<WasmPtr<u8>, ContractError> {
+    // to borsh format
+    let serialized_env = env
+      .try_to_vec()
       .map_err(|e| ContractError::Runtime(e.to_string()))?;
 
-    let env_ptr = alloc_func
-      .call(serialized_env.len() as u32)
-      .map_err(|e| ContractError::Runtime(e.to_string()))?;
-    println!("env alloc: {env_ptr:?}");
+    // allocate in contract address space
+    let env_ptr = self.allocate(serialized_env.len())?;
 
-    let params_ptr = alloc_func
-      .call(params.len() as u32)
-      .map_err(|e| ContractError::Runtime(e.to_string()))?;
-    println!("params alloc: {params_ptr:?}");
-
+    // get access to contract memory space
     let memory = self
       .instance
       .exports
@@ -105,7 +135,43 @@ impl Runtime {
       let env_to = env_from + serialized_env.len();
       memory.data_unchecked_mut()[env_from..env_to]
         .copy_from_slice(&serialized_env[..]);
+    }
 
+    // get the function that instantiates the environment from
+    // a raw borsh-serialized byte sequence to SDK-specific object.
+    let env_func = self
+      .instance
+      .exports
+      .get_function("environment")
+      .map_err(|e| ContractError::Runtime(e.to_string()))?
+      .native::<(u32, u32), WasmPtr<u8>>()
+      .map_err(|e| ContractError::Runtime(e.to_string()))?;
+
+    // let the contract translate raw borsh env to its native
+    // representation. This translation is most likely implemented
+    // by the SDK for the target high-level language before it gets
+    // compiled to WASM.
+    env_func
+      .call(env_ptr.offset(), serialized_env.len() as u32)
+      .map_err(|e| ContractError::Runtime(e.to_string()))
+  }
+
+  /// Allocates memory inside the contract address space and
+  /// copies the input parameter bytes as is then returns a
+  /// pointer (offset in wasm memory space) to the params.
+  fn deliver_params(
+    &self,
+    params: &[u8],
+  ) -> Result<WasmPtr<u8>, ContractError> {
+    let params_ptr = self.allocate(params.len())?;
+    // get access to contract memory space
+    let memory = self
+      .instance
+      .exports
+      .get_memory("memory")
+      .map_err(|e| ContractError::Runtime(e.to_string()))?;
+
+    unsafe {
       // copy parameter bytes to the allocated
       // memory inside the contract.
       let params_from = params_ptr.offset() as usize;
@@ -114,7 +180,7 @@ impl Runtime {
         .copy_from_slice(params);
     }
 
-    Ok(vec![])
+    Ok(params_ptr)
   }
 }
 
@@ -292,7 +358,7 @@ mod test {
       accounts: vec![],
     };
 
-    let params = [6u8; 5];
+    let params = [0u8; 0];
 
     let output = runtime.invoke(&env, &params)?;
     println!("output from dns test: {output:?}");

@@ -23,10 +23,10 @@ export function allocate(size: u32): u32 {
   return changetype<u32>(heap.alloc(changetype<usize>(size)));
 }
 
-export function environment(ptr: u32): Environment {
+export function environment(ptr: u32, len: u32): Environment {
   return new Environment();
 }
 
-export function contract(env: Environment, params: u8[]): u32 {
+export function main(env: Environment, params: u32, params_len: u32): u32 {
   return createOutput(new Output());
 }
