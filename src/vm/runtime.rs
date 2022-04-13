@@ -83,7 +83,7 @@ impl Runtime {
     let env_ptr = self.deliver_environment(env)?;
     let params_ptr = self.deliver_params(params)?;
 
-    // invoke the contract with the instanciated environment
+    // invoke the contract with the instansiated environment
     // object and the raw parameters bytes
     let output_ptr = main_func
       .call(env_ptr, params_ptr, params.len() as u32)
@@ -118,24 +118,9 @@ impl Runtime {
       .try_to_vec()
       .map_err(|e| ContractError::Runtime(e.to_string()))?;
 
-    // allocate in contract address space
+    // allocate and copy to contract address space
     let env_ptr = self.allocate(serialized_env.len())?;
-
-    // get access to contract memory space
-    let memory = self
-      .instance
-      .exports
-      .get_memory("memory")
-      .map_err(|e| ContractError::Runtime(e.to_string()))?;
-
-    unsafe {
-      // copy borsh-serialized memory bytes to the allocated
-      // memory inside the contract.
-      let env_from = env_ptr.offset() as usize;
-      let env_to = env_from + serialized_env.len();
-      memory.data_unchecked_mut()[env_from..env_to]
-        .copy_from_slice(&serialized_env[..]);
-    }
+    self.copy_to_contract_memory(env_ptr, &serialized_env[..])?;
 
     // get the function that instantiates the environment from
     // a raw borsh-serialized byte sequence to SDK-specific object.
@@ -164,6 +149,15 @@ impl Runtime {
     params: &[u8],
   ) -> Result<WasmPtr<u8>, ContractError> {
     let params_ptr = self.allocate(params.len())?;
+    self.copy_to_contract_memory(params_ptr, params)?;
+    Ok(params_ptr)
+  }
+
+  fn copy_to_contract_memory(
+    &self,
+    dst: WasmPtr<u8>,
+    src: &[u8],
+  ) -> Result<(), ContractError> {
     // get access to contract memory space
     let memory = self
       .instance
@@ -171,16 +165,17 @@ impl Runtime {
       .get_memory("memory")
       .map_err(|e| ContractError::Runtime(e.to_string()))?;
 
+    // copy borsh-serialized memory bytes to the allocated
+    // memory inside the contract.
+    let offset_from = dst.offset() as usize;
+    let offset_to = offset_from + src.len();
+
     unsafe {
-      // copy parameter bytes to the allocated
-      // memory inside the contract.
-      let params_from = params_ptr.offset() as usize;
-      let params_to = params_from + params.len();
-      memory.data_unchecked_mut()[params_from..params_to]
-        .copy_from_slice(params);
+      memory.data_unchecked_mut()[offset_from..offset_to] // inside wasm addr space
+        .copy_from_slice(src); // copy contents of src from host to contract
     }
 
-    Ok(params_ptr)
+    Ok(())
   }
 }
 
