@@ -7,6 +7,7 @@
 use {
   super::{transaction::SignatureError, Machine},
   crate::primitives::Pubkey,
+  borsh::BorshSerialize,
   serde::{Deserialize, Serialize},
   thiserror::Error,
 };
@@ -80,7 +81,7 @@ impl From<std::io::Error> for ContractError {
   }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, BorshSerialize)]
 pub struct AccountView {
   pub signer: bool,
   pub writable: bool,
@@ -151,7 +152,7 @@ pub type Result = std::result::Result<Vec<Output>, ContractError>;
 /// This is the self-cointained input type that is passed to the
 /// contract code containing all accounts data referenced by the
 /// transaction.
-#[derive(Debug)]
+#[derive(Debug, BorshSerialize)]
 pub struct Environment {
   /// Address of the contract that is being invoked
   pub address: Pubkey,

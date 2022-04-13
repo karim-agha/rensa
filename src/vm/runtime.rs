@@ -1,5 +1,6 @@
 use {
   super::contract::{self, ContractError, Environment},
+  borsh::BorshSerialize,
   loupe::MemoryUsage,
   std::{ptr::NonNull, sync::Arc},
   wasmer::{
@@ -68,7 +69,11 @@ impl Runtime {
     Ok(Self { instance })
   }
 
-  pub fn invoke(&self, _env: &Environment, _params: &[u8]) -> contract::Result {
+  pub fn invoke(&self, env: &Environment, params: &[u8]) -> contract::Result {
+    let serialized_env = env
+      .try_to_vec()
+      .map_err(|e| ContractError::Runtime(e.to_string()))?;
+
     let alloc_func = self
       .instance
       .exports
@@ -78,14 +83,36 @@ impl Runtime {
       .map_err(|e| ContractError::Runtime(e.to_string()))?;
 
     let env_ptr = alloc_func
-      .call(1024)
+      .call(serialized_env.len() as u32)
       .map_err(|e| ContractError::Runtime(e.to_string()))?;
-    println!("first alloc: {env_ptr:?}");
+    println!("env alloc: {env_ptr:?}");
 
-    let env_ptr = alloc_func
-      .call(10)
+    let params_ptr = alloc_func
+      .call(params.len() as u32)
       .map_err(|e| ContractError::Runtime(e.to_string()))?;
-    println!("second alloc: {env_ptr:?}");
+    println!("params alloc: {params_ptr:?}");
+
+    let memory = self
+      .instance
+      .exports
+      .get_memory("memory")
+      .map_err(|e| ContractError::Runtime(e.to_string()))?;
+
+    unsafe {
+      // copy borsh-serialized memory bytes to the allocated
+      // memory inside the contract.
+      let env_from = env_ptr.offset() as usize;
+      let env_to = env_from + serialized_env.len();
+      memory.data_unchecked_mut()[env_from..env_to]
+        .copy_from_slice(&serialized_env[..]);
+
+      // copy parameter bytes to the allocated
+      // memory inside the contract.
+      let params_from = params_ptr.offset() as usize;
+      let params_to = params_from + params.len();
+      memory.data_unchecked_mut()[params_from..params_to]
+        .copy_from_slice(params);
+    }
 
     Ok(vec![])
   }
@@ -261,11 +288,11 @@ mod test {
     let runtime = Runtime::new(bytecode)?;
 
     let env = Environment {
-      address: "".parse()?,
+      address: "TestContract1xxxxxxxxxxxxxxxxxxxxxxxxxxxxxx".parse()?,
       accounts: vec![],
     };
 
-    let params = [0u8; 0];
+    let params = [6u8; 5];
 
     let output = runtime.invoke(&env, &params)?;
     println!("output from dns test: {output:?}");
