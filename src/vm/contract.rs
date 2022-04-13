@@ -7,12 +7,12 @@
 use {
   super::{transaction::SignatureError, Machine},
   crate::primitives::Pubkey,
-  borsh::BorshSerialize,
+  borsh::{BorshDeserialize, BorshSerialize},
   serde::{Deserialize, Serialize},
   thiserror::Error,
 };
 
-#[derive(Debug, Error, Clone, Serialize, Deserialize)]
+#[derive(Debug, Error, Clone, Serialize, Deserialize, BorshDeserialize)]
 pub enum ContractError {
   #[error("Invalid transaction nonce value for this payer, expected {0}")]
   InvalidTransactionNonce(u64),
@@ -81,7 +81,7 @@ impl From<std::io::Error> for ContractError {
   }
 }
 
-#[derive(Debug, Clone, BorshSerialize)]
+#[derive(Debug, Clone, BorshSerialize, BorshDeserialize)]
 pub struct AccountView {
   pub signer: bool,
   pub writable: bool,
@@ -90,7 +90,7 @@ pub struct AccountView {
   pub data: Option<Vec<u8>>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, BorshDeserialize)]
 pub enum Output {
   /// This type represents a log entry emitted by a smart contract.
   ///

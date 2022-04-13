@@ -4,6 +4,7 @@ use {
     consensus::Limits,
     primitives::{Keypair, Pubkey, ToBase58String},
   },
+  borsh::BorshDeserialize,
   ed25519_dalek::{PublicKey, Signature, Signer, Verifier},
   multihash::{
     Code as MultihashCode,
@@ -66,7 +67,7 @@ pub enum TransactionError {
   ParamsTooBig,
 }
 
-#[derive(Debug, Clone, Error, Serialize, Deserialize)]
+#[derive(Debug, Clone, Error, Serialize, Deserialize, BorshDeserialize)]
 pub enum SignatureError {
   #[error("Signature verification failed")]
   InvalidSignature,

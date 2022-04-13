@@ -1,6 +1,6 @@
 use {
   super::contract::{self, ContractError, Environment},
-  borsh::BorshSerialize,
+  borsh::{BorshDeserialize, BorshSerialize},
   loupe::MemoryUsage,
   std::{ptr::NonNull, sync::Arc},
   wasmer::{
@@ -89,6 +89,9 @@ impl Runtime {
       .call(env_ptr, params_ptr)
       .map_err(|e| ContractError::Runtime(e.to_string()))?;
     println!("main output: {output_ptr:?}");
+
+    let outputs = self.collect_output(output_ptr)?;
+    println!("output object: {outputs:?}");
 
     Ok(vec![])
   }
@@ -190,6 +193,53 @@ impl Runtime {
     }
 
     Ok(())
+  }
+
+  fn collect_output(
+    &self,
+    ptr: WasmPtr<u8>,
+  ) -> Result<Vec<contract::Output>, ContractError> {
+    let output_func = self
+      .instance
+      .exports
+      .get_function("output")
+      .map_err(|e| ContractError::Runtime(e.to_string()))?
+      .native::<u32, u64>()
+      .map_err(|e| ContractError::Runtime(e.to_string()))?;
+
+    // let the SDK convert from SDK's representation of an
+    // output to VM representation of an output
+    let output_region = output_func
+      .call(ptr.offset())
+      .map_err(|e| ContractError::Runtime(e.to_string()))?;
+
+    // decode "Region"
+    let addr = output_region >> 32;
+    let len = (output_region << 32) >> 32;
+    println!("addr: {addr}, len: {len}");
+
+    // get access to contract memory space
+    let memory = self
+      .instance
+      .exports
+      .get_memory("memory")
+      .map_err(|e| ContractError::Runtime(e.to_string()))?;
+
+    let start = addr as usize;
+    let end = start + len as usize;
+
+    if end >= memory.data_size() as usize {
+      return Err(ContractError::Runtime("Invalid outputs format".to_string()));
+    }
+
+    // deserialize borsh output representation
+    // into VM output objects
+    unsafe {
+      Vec::<contract::Output>::try_from_slice(
+        &memory.data_unchecked()[start..end],
+      )
+      .map_err(|e| ContractError::Runtime(e.to_string()))
+    }
   }
 }
 

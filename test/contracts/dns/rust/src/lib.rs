@@ -1,9 +1,13 @@
 use {
-  borsh::BorshDeserialize,
+  borsh::{BorshDeserialize, BorshSerialize},
   std::{ffi::CString, fmt::Debug, os::raw::c_char},
 };
 
-#[derive(Clone, BorshDeserialize)]
+//--------------------------------------------------------------------
+// SDK
+//--------------------------------------------------------------------
+
+#[derive(Clone, BorshSerialize, BorshDeserialize)]
 pub struct Pubkey([u8; 32]);
 
 impl Debug for Pubkey {
@@ -12,7 +16,7 @@ impl Debug for Pubkey {
   }
 }
 
-#[derive(Debug, Clone, BorshDeserialize)]
+#[derive(Debug, Clone, BorshSerialize, BorshDeserialize)]
 pub struct AccountView {
   pub signer: bool,
   pub writable: bool,
@@ -27,21 +31,75 @@ pub struct Environment {
   pub accounts: Vec<(Pubkey, AccountView)>,
 }
 
-#[derive(Debug, BorshDeserialize)]
-pub enum Instruction {
-  Register { name: String, owner: Pubkey },
-  Update { name: String, owner: Pubkey },
-  Release { name: String },
+#[derive(Debug, BorshSerialize)]
+pub enum SignatureError {
+  InvalidSignature,
+  MissingSigners,
+}
+
+#[derive(Debug, BorshSerialize)]
+pub enum ContractError {
+  InvalidTransactionNonce(u64),
+  AccountAlreadyExists,
+  AccountDoesNotExist,
+  TooManyInputAccounts,
+  AccountTooLarge,
+  LogTooLarge,
+  TooManyLogs,
+  InvalidInputAccounts,
+  InvalidAccountOwner,
+  InvalidOutputAccount,
+  AccountNotWritable,
+  ContractDoesNotExit,
+  AccountIsNotExecutable,
+  SignatureError(SignatureError),
+  InvalidInputParameters,
+  UnauthorizedOperation,
+  Runtime(String),
+  Other(String),
+  _ComputationalBudgetExhausted,
+}
+
+#[derive(Debug, BorshSerialize)]
+pub enum Output {
+  LogEntry(String, String),
+  CreateOwnedAccount(Pubkey, Option<Vec<u8>>),
+  WriteAccountData(Pubkey, Option<Vec<u8>>),
+  DeleteOwnedAccount(Pubkey),
+  ContractInvoke {
+    contract: Pubkey,
+    accounts: Vec<(Pubkey, AccountView)>,
+    params: Vec<u8>,
+  },
+  CreateExecutableAccount(Pubkey, Vec<u8>),
+}
+
+#[repr(C)]
+pub struct Region {
+  offset: u32,
+  length: u32,
 }
 
 #[link(wasm_import_module = "env")]
 extern "C" {
   fn log(message: *const c_char);
+  fn abort(
+    message: *const c_char,
+    filename: *const c_char,
+    line: u32,
+    col: u32,
+  );
 }
 
 fn log_message(msg: &str) {
   let msg = CString::new(msg).unwrap();
   unsafe { log(msg.as_ptr()) };
+}
+
+fn abort_contract(msg: &str) {
+  let msg = CString::new(msg).unwrap();
+  let filename = CString::new(file!()).unwrap();
+  unsafe { abort(msg.as_ptr(), filename.as_ptr(), line!(), column!()) };
 }
 
 #[no_mangle]
@@ -68,10 +126,40 @@ pub extern "C" fn params(ptr: *mut u8, len: usize) -> *const Vec<u8> {
 }
 
 #[no_mangle]
-pub extern "C" fn main(env: &Environment, params: &Vec<u8>) -> u32 {
+pub extern "C" fn output(obj: &Vec<Output>) -> u64 {
+  let bytes = Box::new(obj.try_to_vec().unwrap());
+  let len = bytes.len() as u64;
+  let addr = Box::leak(bytes).as_ptr() as u64;
+  (addr << 32) | len
+}
+
+//--------------------------------------------------------------------
+// Developer Experience
+//--------------------------------------------------------------------
+
+#[derive(Debug, BorshDeserialize)]
+pub enum Instruction {
+  Register { name: String, owner: Pubkey },
+  Update { name: String, owner: Pubkey },
+  Release { name: String },
+}
+
+#[no_mangle]
+pub extern "C" fn main(
+  env: &Environment,
+  params: &Vec<u8>,
+) -> Box<Vec<Output>> {
   log_message(&format!("environment object: {env:?}"));
+
+  if params.len() == 0 {
+    abort_contract("Invalid input params");
+  }
+
   let instruction = Instruction::try_from_slice(&params).unwrap();
   log_message(&format!("instruction: {instruction:?}"));
 
-  10
+  Box::new(vec![
+    Output::LogEntry("test-key".into(), "test-value".into()),
+    Output::CreateOwnedAccount(env.address.clone(), Some(vec![1, 2, 3])),
+  ])
 }
