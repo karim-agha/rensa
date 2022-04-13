@@ -27,6 +27,10 @@ export function environment(ptr: u32, len: u32): Environment {
   return new Environment();
 }
 
-export function main(env: Environment, params: u32, params_len: u32): u32 {
+export function params(ptr: u32, len: u32): Uint8Array {
+  return new Uint8Array(len);
+}
+
+export function main(env: Environment, params: Uint8Array): u32 {
   return createOutput(new Output());
 }

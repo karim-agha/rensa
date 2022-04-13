@@ -1,10 +1,16 @@
 use {
   borsh::BorshDeserialize,
-  std::{ffi::CString, os::raw::c_char},
+  std::{ffi::CString, fmt::Debug, os::raw::c_char},
 };
 
-#[derive(Debug, Clone, BorshDeserialize)]
+#[derive(Clone, BorshDeserialize)]
 pub struct Pubkey([u8; 32]);
+
+impl Debug for Pubkey {
+  fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    write!(f, "Pubkey({})", bs58::encode(self.0).into_string())
+  }
+}
 
 #[derive(Debug, Clone, BorshDeserialize)]
 pub struct AccountView {
@@ -19,6 +25,13 @@ pub struct AccountView {
 pub struct Environment {
   pub address: Pubkey,
   pub accounts: Vec<(Pubkey, AccountView)>,
+}
+
+#[derive(Debug, BorshDeserialize)]
+pub enum Instruction {
+  Register { name: String, owner: Pubkey },
+  Update { name: String, owner: Pubkey },
+  Release { name: String },
 }
 
 #[link(wasm_import_module = "env")]
@@ -48,7 +61,17 @@ pub extern "C" fn environment(ptr: *mut u8, len: usize) -> *const Environment {
 }
 
 #[no_mangle]
-pub extern "C" fn main(env: &Environment, _params: *const u8, _params_len: u32) -> u32 {
+pub extern "C" fn params(ptr: *mut u8, len: usize) -> *const Vec<u8> {
+  let bytes = unsafe { Vec::from_raw_parts(ptr, len, len) };
+  let env = Box::new(Vec::<u8>::try_from_slice(&bytes[..]).unwrap());
+  Box::leak(env)
+}
+
+#[no_mangle]
+pub extern "C" fn main(env: &Environment, params: &Vec<u8>) -> u32 {
   log_message(&format!("environment object: {env:?}"));
+  let instruction = Instruction::try_from_slice(&params).unwrap();
+  log_message(&format!("instruction: {instruction:?}"));
+
   10
 }

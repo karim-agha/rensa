@@ -76,7 +76,7 @@ impl Runtime {
       .exports
       .get_function("main")
       .map_err(|e| ContractError::Runtime(e.to_string()))?
-      .native::<(WasmPtr<u8>, WasmPtr<u8>, u32), WasmPtr<u8>>()
+      .native::<(WasmPtr<u8>, WasmPtr<u8>), WasmPtr<u8>>()
       .map_err(|e| ContractError::Runtime(e.to_string()))?;
 
     // deliver contract inputs:
@@ -86,7 +86,7 @@ impl Runtime {
     // invoke the contract with the instansiated environment
     // object and the raw parameters bytes
     let output_ptr = main_func
-      .call(env_ptr, params_ptr, params.len() as u32)
+      .call(env_ptr, params_ptr)
       .map_err(|e| ContractError::Runtime(e.to_string()))?;
     println!("main output: {output_ptr:?}");
 
@@ -142,15 +142,29 @@ impl Runtime {
   }
 
   /// Allocates memory inside the contract address space and
-  /// copies the input parameter bytes as is then returns a
-  /// pointer (offset in wasm memory space) to the params.
+  /// copies the input parameter bytes then returns a
+  /// pointer (offset in wasm memory space) to the params
+  /// instantiated in the format of the target sdk.
   fn deliver_params(
     &self,
     params: &[u8],
   ) -> Result<WasmPtr<u8>, ContractError> {
-    let params_ptr = self.allocate(params.len())?;
-    self.copy_to_contract_memory(params_ptr, params)?;
-    Ok(params_ptr)
+    // get the function that instantiates the params array from
+    // a raw borsh-serialized byte sequence to SDK-specific object.
+    let params_func = self
+      .instance
+      .exports
+      .get_function("params")
+      .map_err(|e| ContractError::Runtime(e.to_string()))?
+      .native::<(u32, u32), WasmPtr<u8>>()
+      .map_err(|e| ContractError::Runtime(e.to_string()))?;
+
+    let serialized = params.try_to_vec()?;
+    let params_ptr = self.allocate(serialized.len())?;
+    self.copy_to_contract_memory(params_ptr, &serialized)?;
+    params_func
+      .call(params_ptr.offset(), serialized.len() as u32)
+      .map_err(|e| ContractError::Runtime(e.to_string()))
   }
 
   fn copy_to_contract_memory(
@@ -343,7 +357,20 @@ impl<T: Tunables> Tunables for LimitingTunables<T> {
 
 #[cfg(test)]
 mod test {
-  use {super::Runtime, crate::vm::contract::Environment, anyhow::Result};
+  use {
+    super::Runtime,
+    crate::{primitives::Pubkey, vm::contract::Environment},
+    anyhow::Result,
+    borsh::BorshSerialize,
+    std::str::FromStr,
+  };
+
+  #[derive(Debug, BorshSerialize)]
+  enum Instruction {
+    Register { name: String, owner: Pubkey },
+    Update { name: String, owner: Pubkey },
+    Release { name: String },
+  }
 
   fn dns_create_name(bytecode: &[u8]) -> Result<()> {
     let runtime = Runtime::new(bytecode)?;
@@ -353,10 +380,54 @@ mod test {
       accounts: vec![],
     };
 
-    let params = [0u8; 0];
+    let params = Instruction::Register {
+      name: "example.com".to_owned(),
+      owner: crate::primitives::Pubkey::from_str(
+        "TestAccount1xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+      )
+      .unwrap(),
+    };
 
-    let output = runtime.invoke(&env, &params)?;
+    let output = runtime.invoke(&env, &params.try_to_vec().unwrap())?;
     println!("output from dns test: {output:?}");
+    Ok(())
+  }
+
+  fn dns_release_name(bytecode: &[u8]) -> Result<()> {
+    let runtime = Runtime::new(bytecode)?;
+
+    let env = Environment {
+      address: "TestContract1xxxxxxxxxxxxxxxxxxxxxxxxxxxxxx".parse()?,
+      accounts: vec![],
+    };
+
+    let params = Instruction::Release {
+      name: "example.com".to_owned(),
+    };
+
+    let output = runtime.invoke(&env, &params.try_to_vec().unwrap())?;
+    println!("output from release test: {output:?}");
+    Ok(())
+  }
+
+  fn dns_update_name(bytecode: &[u8]) -> Result<()> {
+    let runtime = Runtime::new(bytecode)?;
+
+    let env = Environment {
+      address: "TestContract1xxxxxxxxxxxxxxxxxxxxxxxxxxxxxx".parse()?,
+      accounts: vec![],
+    };
+
+    let params = Instruction::Update {
+      name: "example.com".to_owned(),
+      owner: crate::primitives::Pubkey::from_str(
+        "TestAccount2xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+      )
+      .unwrap(),
+    };
+
+    let output = runtime.invoke(&env, &params.try_to_vec().unwrap())?;
+    println!("output from dns update test: {output:?}");
     Ok(())
   }
 
@@ -375,12 +446,30 @@ mod test {
   }
 
   #[test]
-  fn dns_release_name() -> Result<()> {
-    Ok(())
+  fn dns_release_name_ascript() -> Result<()> {
+    dns_release_name(include_bytes!(
+      "../../test/contracts/dns/ascript/build/release.wasm"
+    ))
   }
 
   #[test]
-  fn dns_update_name() -> Result<()> {
-    Ok(())
+  fn dns_release_name_rust() -> Result<()> {
+    dns_release_name(include_bytes!(
+      "../../test/contracts/dns/rust/out/name_service.wasm"
+    ))
+  }
+
+  #[test]
+  fn dns_update_name_ascript() -> Result<()> {
+    dns_update_name(include_bytes!(
+      "../../test/contracts/dns/ascript/build/release.wasm"
+    ))
+  }
+
+  #[test]
+  fn dns_update_name_rust() -> Result<()> {
+    dns_update_name(include_bytes!(
+      "../../test/contracts/dns/rust/out/name_service.wasm"
+    ))
   }
 }
