@@ -249,22 +249,25 @@ struct CallContext {
   memory: LazyInit<Memory>,
 }
 
-fn abort(
-  cx: &CallContext,
-  message: WasmPtr<u8, Array>,
-  filename: WasmPtr<u8, Array>,
-  line: u32,
-  column: u32,
-) {
+fn abort(cx: &CallContext, region: u64) -> Result<(), ContractError> {
+  let addr = region >> 32;
+  let len = (region << 32) >> 32;
+
+  let start = addr as usize;
+  let end = start + len as usize;
+
   if let Some(memory) = cx.memory.get_ref() {
-    println!(
-      "abort called: '{:?}' in {:?} line: {}, column: {}",
-      message.get_utf8_string_with_nul(memory),
-      filename.get_utf8_string_with_nul(memory),
-      line,
-      column
-    );
+    if end >= memory.data_size() as usize {
+      return Err(ContractError::Runtime("Invalid error format".to_string()));
+    }
+
+    return Err(unsafe {
+      ContractError::try_from_slice(&memory.data_unchecked()[start..end])
+        .map_err(|e| ContractError::Runtime(e.to_string()))
+    }?);
   }
+
+  Err(ContractError::Runtime("inaccessible memory".into()))
 }
 
 fn log(cx: &CallContext, str: WasmPtr<u8, Array>) {
