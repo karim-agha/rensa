@@ -5,7 +5,7 @@
 //! input and output data into and from the contract.
 
 use {
-  super::{transaction::SignatureError, Machine},
+  super::{transaction::SignatureError, AccountRef, Machine},
   crate::primitives::Pubkey,
   borsh::{BorshDeserialize, BorshSerialize},
   serde::{Deserialize, Serialize},
@@ -14,8 +14,8 @@ use {
 
 #[derive(Debug, Error, Clone, Serialize, Deserialize, BorshDeserialize)]
 pub enum ContractError {
-  #[error("Invalid transaction nonce value for this payer, expected {0}")]
-  InvalidTransactionNonce(u64),
+  #[error("Invalid transaction nonce value for this payer")]
+  InvalidTransactionNonce,
 
   #[error("Account already exists")]
   AccountAlreadyExists,
@@ -130,7 +130,7 @@ pub enum Output {
     ///
     /// Those accounts must already be referenced by the calling
     /// contract, with the same or higher writability flags.
-    accounts: Vec<(Pubkey, AccountView)>,
+    accounts: Vec<AccountRef>,
 
     /// Input bytes to the invoked contract
     params: Vec<u8>,
@@ -154,6 +154,17 @@ pub type Result = std::result::Result<Vec<Output>, ContractError>;
 /// transaction.
 #[derive(Debug, BorshSerialize)]
 pub struct Environment {
+  /// Address of the contract invoking this contract.
+  ///
+  /// For top-level contracts, that are invoked by the transaction
+  /// directly this value is None.
+  ///
+  /// This value is used in contracts to ensure that certain
+  /// instructions are internal and not permitted to be called
+  /// by external contracts, or explicitly specify access policy
+  /// to those instructions based on the caller address.
+  pub caller: Option<Pubkey>,
+
   /// Address of the contract that is being invoked
   pub address: Pubkey,
 

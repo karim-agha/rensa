@@ -85,7 +85,7 @@ impl Machine {
   pub fn contract(
     &self,
     addr: &Pubkey,
-    state: &impl State,
+    state: &dyn State,
   ) -> Result<ContractEntrypoint, ContractError> {
     if let Some(account) = state.get(addr) {
       if let Some(owner) = account.owner {

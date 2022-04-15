@@ -429,14 +429,14 @@ mod test {
     let runtime = Runtime::new(bytecode)?;
 
     let env = Environment {
-      address: "TestContract1xxxxxxxxxxxxxxxxxxxxxxxxxxxxxx".parse()?,
+      address: "TestDns1xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx".parse()?,
       accounts: vec![],
     };
 
     let params = Instruction::Register {
       name: "example.com".to_owned(),
       owner: crate::primitives::Pubkey::from_str(
-        "TestAccount1xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+        "TestDns1xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
       )
       .unwrap(),
     };
@@ -450,7 +450,7 @@ mod test {
     let runtime = Runtime::new(bytecode)?;
 
     let env = Environment {
-      address: "TestContract1xxxxxxxxxxxxxxxxxxxxxxxxxxxxxx".parse()?,
+      address: "TestDns1xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx".parse()?,
       accounts: vec![],
     };
 
@@ -467,7 +467,7 @@ mod test {
     let runtime = Runtime::new(bytecode)?;
 
     let env = Environment {
-      address: "TestContract1xxxxxxxxxxxxxxxxxxxxxxxxxxxxxx".parse()?,
+      address: "TestDns1xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx".parse()?,
       accounts: vec![],
     };
 

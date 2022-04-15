@@ -23,7 +23,9 @@ use {
 /// a contract is going to touch this account. Only accounts
 /// speciefied in the accounts list in a transaction can be
 /// accessed by smart contracts.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(
+  Debug, Clone, PartialEq, Eq, Serialize, Deserialize, BorshDeserialize,
+)]
 pub struct AccountRef {
   pub address: Pubkey,
   pub writable: bool,

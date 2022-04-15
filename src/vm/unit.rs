@@ -16,10 +16,7 @@ use {
     Transaction,
     WASM_VM_BUILTIN_ADDR,
   },
-  crate::{
-    consensus::Limits,
-    primitives::{Account, Pubkey},
-  },
+  crate::primitives::{Account, Pubkey},
 };
 
 enum Entrypoint {
@@ -34,18 +31,18 @@ enum Entrypoint {
 /// blockchain state. Any failure in the contract logic or in
 /// any of the outputs will cause the entire transaction to fail
 /// and none of its changes will be persisted.
-pub struct ExecutionUnit<'s, 't, 'm> {
+pub struct ExecutionUnit<'s, 'm> {
   vm: &'m Machine,
-  limits: &'m Limits,
   entrypoint: Entrypoint,
   env: Environment,
   state: &'s dyn State,
-  transaction: &'t Transaction,
+  contract: Pubkey,
+  params: Vec<u8>,
 }
 
-impl<'s, 't, 'm> ExecutionUnit<'s, 't, 'm> {
+impl<'s, 'm> ExecutionUnit<'s, 'm> {
   pub fn new(
-    transaction: &'t Transaction,
+    transaction: &Transaction,
     state: &'s impl State,
     vm: &'m Machine,
   ) -> Result<Self, ContractError> {
@@ -57,55 +54,82 @@ impl<'s, 't, 'm> ExecutionUnit<'s, 't, 'm> {
     // don't proceed unless all tx signatures are valid.
     transaction.verify_signatures()?;
 
-    // construct an execution unit if the contract was found
-    if let Some(entrypoint) = vm.builtin(&transaction.contract) {
-      Ok(Self {
-        entrypoint: Entrypoint::Native(entrypoint),
-        limits: vm.limits(),
-        env: Self::create_environment(state, transaction)?,
-        state,
-        transaction,
-        vm,
-      })
-    } else {
-      Ok(Self {
-        entrypoint: Entrypoint::External(
-          vm.contract(&transaction.contract, state)?,
-        ),
-        limits: vm.limits(),
-        env: Self::create_environment(state, transaction)?,
-        state,
-        transaction,
-        vm,
-      })
-    }
-  }
-
-  /// Consumes the execution unit and returns the state difference
-  /// that is caused by running this transaction and all its outputs.
-  pub fn execute(self) -> Result<TransactionOutput, ContractError> {
     // to prevent transaction reply, the payer account has a
     // nonce field that is incremented with every transaction
     // that it is paying for. Fail the transaction if it is not
     // if the transaction nonce value does not match the current
     // account nonce.
-    let payer_nonce = self
-      .state
-      .get(&self.transaction.payer)
-      .map(|a| a.nonce)
-      .unwrap_or(0);
-
-    if self.transaction.nonce != payer_nonce {
-      return Err(ContractError::InvalidTransactionNonce(payer_nonce));
+    if transaction.nonce
+      != state.get(&transaction.payer).map(|a| a.nonce).unwrap_or(0)
+    {
+      return Err(ContractError::InvalidTransactionNonce);
     }
 
+    // construct an execution unit for a native or external contract
+    Ok(Self {
+      entrypoint: {
+        if let Some(entrypoint) = vm.builtin(&transaction.contract) {
+          Entrypoint::Native(entrypoint)
+        } else {
+          Entrypoint::External(vm.contract(&transaction.contract, state)?)
+        }
+      },
+      env: Self::create_environment(
+        state,
+        &transaction.accounts,
+        transaction.contract,
+        None, // top-level contract, caller is None
+      )?,
+      state,
+      contract: transaction.contract,
+      params: transaction.params.clone(),
+      vm,
+    })
+  }
+
+  fn new_nested(
+    &self,
+    contract: Pubkey,
+    accounts: Vec<AccountRef>,
+    params: Vec<u8>,
+  ) -> Result<Self, ContractError> {
+    // tx signatures are already validated by the top-level
+    // execution unit, no need to verify them again for
+    // nested calls. Nonce verification also applies only
+
+    // this value is defined in genesis
+    if accounts.len() > self.vm.limits().max_input_accounts {
+      return Err(ContractError::TooManyInputAccounts);
+    }
+
+    // construct an execution unit for a native or external contract
+    Ok(Self {
+      entrypoint: {
+        if let Some(entrypoint) = self.vm.builtin(&contract) {
+          Entrypoint::Native(entrypoint)
+        } else {
+          Entrypoint::External(self.vm.contract(&contract, self.state)?)
+        }
+      },
+      env: Self::create_environment(
+        self.state,
+        &accounts,
+        contract,
+        Some(self.contract), // caller is incoking contract
+      )?,
+      state: self.state,
+      contract,
+      params,
+      vm: self.vm,
+    })
+  }
+
+  /// Consumes the execution unit and returns the state difference
+  /// that is caused by running this transaction and all its outputs.
+  pub fn execute(self) -> Result<TransactionOutput, ContractError> {
     let outputs = match self.entrypoint {
-      Entrypoint::Native(native) => {
-        native(&self.env, &self.transaction.params, self.vm)
-      }
-      Entrypoint::External(ref external) => {
-        external(&self.env, &self.transaction.params)
-      }
+      Entrypoint::Native(native) => native(&self.env, &self.params, self.vm),
+      Entrypoint::External(ref external) => external(&self.env, &self.params),
     };
     match outputs {
       Ok(outputs) => {
@@ -119,7 +143,7 @@ impl<'s, 't, 'm> ExecutionUnit<'s, 't, 'm> {
           txoutputs = txoutputs.merge(self.process_output(output)?);
 
           // ensure its bounded
-          if txoutputs.log_entries.len() > self.limits.max_logs_count {
+          if txoutputs.log_entries.len() > self.vm.limits().max_logs_count {
             return Err(ContractError::TooManyLogs);
           }
         }
@@ -132,8 +156,10 @@ impl<'s, 't, 'm> ExecutionUnit<'s, 't, 'm> {
   /// Creates a self-contained environment object that can be used to
   /// invoke a contract at a given version of the blockchain state.
   fn create_environment(
-    state: &impl State,
-    transaction: &Transaction,
+    state: &dyn State,
+    accounts: &[AccountRef],
+    address: Pubkey,
+    caller: Option<Pubkey>,
   ) -> Result<Environment, ContractError> {
     // creates an isolated copy of an account referenced
     // by a transaction for local processing.
@@ -166,7 +192,7 @@ impl<'s, 't, 'm> ExecutionUnit<'s, 't, 'm> {
           // is not on the Ed25519 curve is writable
           // only if its owner is the invoked contract.
           if let Some(ref owner) = existing.owner {
-            if owner != &transaction.contract {
+            if owner != &address {
               writable = false;
             }
           } else {
@@ -190,12 +216,9 @@ impl<'s, 't, 'm> ExecutionUnit<'s, 't, 'm> {
     };
 
     Ok(Environment {
-      address: transaction.contract,
-      accounts: transaction
-        .accounts
-        .iter()
-        .map(create_account_view)
-        .collect(),
+      caller,
+      address,
+      accounts: accounts.iter().map(create_account_view).collect(),
     })
   }
 
@@ -205,7 +228,7 @@ impl<'s, 't, 'm> ExecutionUnit<'s, 't, 'm> {
   ) -> Result<TransactionOutput, ContractError> {
     match output {
       Output::LogEntry(key, value) => {
-        if key.len() + value.len() > self.limits.max_log_size {
+        if key.len() + value.len() > self.vm.limits().max_log_size {
           return Err(ContractError::LogTooLarge);
         }
         Ok(TransactionOutput {
@@ -215,7 +238,7 @@ impl<'s, 't, 'm> ExecutionUnit<'s, 't, 'm> {
       }
       Output::CreateOwnedAccount(addr, data) => {
         if let Some(ref data) = data {
-          if data.len() > self.limits.max_account_size {
+          if data.len() > self.vm.limits().max_account_size {
             return Err(ContractError::AccountTooLarge);
           }
         }
@@ -226,7 +249,7 @@ impl<'s, 't, 'm> ExecutionUnit<'s, 't, 'm> {
       }
       Output::WriteAccountData(addr, data) => {
         if let Some(ref data) = data {
-          if data.len() > self.limits.max_account_size {
+          if data.len() > self.vm.limits().max_account_size {
             return Err(ContractError::AccountTooLarge);
           }
         }
@@ -243,9 +266,9 @@ impl<'s, 't, 'm> ExecutionUnit<'s, 't, 'm> {
         contract,
         accounts,
         params,
-      } => todo!("invoke {contract:?} {accounts:?} {params:?}"),
+      } => self.new_nested(contract, accounts, params)?.execute(),
       Output::CreateExecutableAccount(address, bytecode) => {
-        if bytecode.len() > self.limits.max_contract_size {
+        if bytecode.len() > self.vm.limits().max_contract_size {
           return Err(ContractError::AccountTooLarge);
         }
         Ok(TransactionOutput {
@@ -266,7 +289,7 @@ impl<'s, 't, 'm> ExecutionUnit<'s, 't, 'm> {
       self.set_account(address, Account {
         nonce: 0,
         executable: false,
-        owner: Some(self.transaction.contract),
+        owner: Some(self.contract),
         data,
       })
     } else {
