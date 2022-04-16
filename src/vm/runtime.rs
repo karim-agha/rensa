@@ -88,12 +88,13 @@ impl Runtime {
     let output_ptr = main_func
       .call(env_ptr, params_ptr)
       .map_err(|e| ContractError::Runtime(e.to_string()))?;
-    println!("main output: {output_ptr:?}");
 
-    let outputs = self.collect_output(output_ptr)?;
-    println!("output object: {outputs:?}");
-
-    Ok(vec![])
+    // convert outputs from SDK-format to VM ABI format
+    // and return them to the caller. If at any point the
+    // contract fails, or returns an error, it is expected
+    // to call abort(), and that is already taken care of
+    // in the SDK syntatic sugar.
+    self.collect_output(output_ptr)
   }
 
   fn allocate(&self, size: usize) -> Result<WasmPtr<u8>, ContractError> {
@@ -216,7 +217,6 @@ impl Runtime {
     // decode "Region"
     let addr = output_region >> 32;
     let len = (output_region << 32) >> 32;
-    println!("addr: {addr}, len: {len}");
 
     // get access to contract memory space
     let memory = self
@@ -497,7 +497,7 @@ mod test {
   #[test]
   fn dns_create_name_rust() -> Result<()> {
     dns_create_name(include_bytes!(
-      "../../test/contracts/dns/rust/out/name_service.wasm"
+      "../../test/contracts/dns/rust/out/release.wasm"
     ))
   }
 
@@ -511,7 +511,7 @@ mod test {
   #[test]
   fn dns_release_name_rust() -> Result<()> {
     dns_release_name(include_bytes!(
-      "../../test/contracts/dns/rust/out/name_service.wasm"
+      "../../test/contracts/dns/rust/out/release.wasm"
     ))
   }
 
@@ -525,7 +525,7 @@ mod test {
   #[test]
   fn dns_update_name_rust() -> Result<()> {
     dns_update_name(include_bytes!(
-      "../../test/contracts/dns/rust/out/name_service.wasm"
+      "../../test/contracts/dns/rust/out/release.wasm"
     ))
   }
 }

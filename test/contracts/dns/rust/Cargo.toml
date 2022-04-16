@@ -4,14 +4,15 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-bs58 = "0.4.0"
 borsh = "0.9.3"
+rensa-sdk = { path = "../../../../sdk/rust" }
 
 [lib]
 crate-type = ["cdylib"]
-
 
 [profile.release]
 strip = true
 opt-level = "z"
 lto = true
+
+[workspace]
