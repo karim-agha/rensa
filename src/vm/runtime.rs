@@ -429,6 +429,7 @@ mod test {
     let runtime = Runtime::new(bytecode)?;
 
     let env = Environment {
+      caller: None,
       address: "TestDns1xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx".parse()?,
       accounts: vec![],
     };
@@ -450,6 +451,7 @@ mod test {
     let runtime = Runtime::new(bytecode)?;
 
     let env = Environment {
+      caller: None,
       address: "TestDns1xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx".parse()?,
       accounts: vec![],
     };
@@ -467,6 +469,7 @@ mod test {
     let runtime = Runtime::new(bytecode)?;
 
     let env = Environment {
+      caller: None,
       address: "TestDns1xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx".parse()?,
       accounts: vec![],
     };
