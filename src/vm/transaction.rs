@@ -4,6 +4,7 @@ use {
     consensus::Limits,
     primitives::{Keypair, Pubkey, ToBase58String},
   },
+  borsh::BorshDeserialize,
   ed25519_dalek::{PublicKey, Signature, Signer, Verifier},
   multihash::{
     Code as MultihashCode,
@@ -22,7 +23,9 @@ use {
 /// a contract is going to touch this account. Only accounts
 /// speciefied in the accounts list in a transaction can be
 /// accessed by smart contracts.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(
+  Debug, Clone, PartialEq, Eq, Serialize, Deserialize, BorshDeserialize,
+)]
 pub struct AccountRef {
   pub address: Pubkey,
   pub writable: bool,
@@ -66,7 +69,7 @@ pub enum TransactionError {
   ParamsTooBig,
 }
 
-#[derive(Debug, Clone, Error, Serialize, Deserialize)]
+#[derive(Debug, Clone, Error, Serialize, Deserialize, BorshDeserialize)]
 pub enum SignatureError {
   #[error("Signature verification failed")]
   InvalidSignature,

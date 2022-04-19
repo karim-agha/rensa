@@ -1,7 +1,7 @@
 use {
   super::{
     builtin::BUILTIN_CONTRACTS,
-    contract::{ContractEntrypoint, NativeContractEntrypoint},
+    contract::{ContractEntrypoint, ContractError, NativeContractEntrypoint},
     output::{BlockOutput, ErrorsMap, LogsMap},
     unit::ExecutionUnit,
     Overlayed,
@@ -12,6 +12,7 @@ use {
   crate::{
     consensus::{BlockData, Genesis, Limits, Produced},
     primitives::{Account, Pubkey, ToBase58String},
+    vm::{contract::Environment, runtime::Runtime, WASM_VM_BUILTIN_ADDR},
   },
   std::{cmp::Ordering, collections::HashMap},
   thiserror::Error,
@@ -81,8 +82,28 @@ impl Machine {
   }
 
   /// Gets a WASM contract deployed externally to the blockchain.
-  pub fn contract(&self, _addr: &Pubkey) -> Option<ContractEntrypoint> {
-    todo!()
+  pub fn contract(
+    &self,
+    addr: &Pubkey,
+    state: &dyn State,
+  ) -> Result<ContractEntrypoint, ContractError> {
+    if let Some(account) = state.get(addr) {
+      if let Some(owner) = account.owner {
+        if owner == *WASM_VM_BUILTIN_ADDR
+          && account.executable
+          && account.data.is_some()
+        {
+          let runtime = Runtime::new(account.data.unwrap().as_ref())?;
+          return Ok(Box::new(move |env: &Environment, params: &[u8]| {
+            runtime.invoke(env, params)
+          }));
+        }
+      }
+
+      Err(ContractError::AccountIsNotExecutable)
+    } else {
+      Err(ContractError::ContractDoesNotExit)
+    }
   }
 
   /// Configured execution contraints.
