@@ -78,25 +78,17 @@ impl<D: BlockData> TestCtx<D> {
 pub struct TestValidator<'g, D: BlockData> {
   ctx: &'g TestCtx<D>,
   chain: Chain<'g, D>,
-  state: Finalized<'g, D>,
   height: u64,
 }
 
 impl<'g, D: BlockData> TestValidator<'g, D> {
   pub fn new(ctx: &'g TestCtx<D>) -> Self {
-    // state is based on Finalized
-    let state = Finalized::new(Arc::new(ctx.genesis.clone()), &ctx.store);
-
     let finalized = Finalized::new(Arc::new(ctx.genesis.clone()), &ctx.store);
     let chain = Chain::new(&ctx.genesis, &ctx.vm, finalized);
-
-    // producer: we dont need a producer we can call chain.include_block
-    // schedule: we dont need a schedule as we have only one validator
 
     Self {
       ctx: &ctx,
       chain,
-      state,
       height: 0,
     }
   }
@@ -122,7 +114,7 @@ impl<'g, D: BlockData> TestValidator<'g, D> {
     self.ctx.store.apply(diff).unwrap();
   }
 
-  pub fn process_transaction(&mut self, tx: D) {
+  pub fn process_transaction(&mut self, tx: D) -> Produced<D> {
     let (parent, statehash) = self.chain.with_head(|s, b| {
       (
         b.hash().unwrap().clone(),
@@ -177,15 +169,22 @@ impl<'g, D: BlockData> TestValidator<'g, D> {
 
     // downcast block headblock in the forktree to a cloned concrete
     // type.
+    // TODO: ask karim if we could also just return the produced
+    // block from before?
     let block = self
       .chain
       .with_head(|_, b| b.as_any().downcast_ref::<Produced<D>>().cloned())
       .expect("headblock is not a produced, add some more options here?");
 
-    dbg!(&block);
+    // now we are on an interesting part of the system. The head block
+    // is stored in memory, and the finalized is actually finalized
+    // in the persistent store. For testing we want access to the state
+    // and we want to get for erample the value of an account.
 
-    dbg!(block.state_hash());
-    // self.ctx.vm.execute(state, block)
+    // dependable on the fact we want finalized or not finalized we
+    // can have a unique accesssor
+
+    block
   }
 }
 
@@ -306,7 +305,8 @@ mod tests {
     let tx_create =
       Currency::create(payer.clone(), &[0; 32], payer.public(), 9, None, None);
 
-    validator.process_transaction(vec![tx_create]);
+    let block = validator.process_transaction(vec![tx_create]);
+    dbg!(&block);
   }
 
   // TODO: this has to be tested in a unit test
