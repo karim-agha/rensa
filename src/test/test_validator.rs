@@ -2,22 +2,20 @@ use {
   crate::{
     consensus::{
       block::{Block, BlockData, Produced},
-      forktree::{TreeNode, VolatileBlock},
-      genesis::Limits,
-      validator::Validator,
       Chain,
       Genesis,
       Vote,
     },
-    primitives::{Account, Keypair, Pubkey},
+    primitives::{b58::ToBase58String, Account, Keypair, Pubkey},
     storage::PersistentState,
+    test::{
+      currency::create_pq_token_tx,
+      utils::{genesis_default, keypair_default},
+    },
     vm::{
       self,
-      AccountRef,
       BlockOutput,
       ContractError,
-      Executable,
-      Executed,
       Finalized,
       MachineError,
       State,
@@ -25,23 +23,13 @@ use {
       Transaction,
     },
   },
-  borsh::BorshSerialize,
-  chrono::Utc,
-  ed25519_dalek::{PublicKey, SecretKey},
-  futures::StreamExt,
-  indexmap::{map::Values, IndexMap},
-  multihash::{Multihash, MultihashGeneric},
+  indexmap::IndexMap,
+  multihash::Multihash,
   rand::{distributions::Alphanumeric, thread_rng, Rng},
-  std::{
-    any::Any,
-    collections::BTreeMap,
-    marker::PhantomData,
-    sync::Arc,
-    time::Duration,
-  },
+  std::sync::Arc,
 };
 
-/// Implements TestCtx
+/// Construct a TestCtx based on a Genesis
 pub struct TestCtx<D: BlockData> {
   genesis: Genesis<D>,
   store: PersistentState,
@@ -56,6 +44,9 @@ impl<D: BlockData> TestCtx<D> {
 
     // build persistent state, we generate a random dir
     // for each instance of TestCtx
+    //
+    // TODO(bmaas): create a test double for PersistState, an in
+    // memory storage. This will remove the need for this randomdir
     let mut randomdir = std::env::temp_dir();
     randomdir.push(
       &thread_rng()
@@ -77,10 +68,11 @@ impl<D: BlockData> TestCtx<D> {
   }
 }
 
+/// Result of a process_transactions call
 pub struct ProcessTransactionsResult<D: BlockData> {
-  block: Produced<D>,
-  block_output: BlockOutput,
-  transactions: D,
+  pub block: Produced<D>,
+  pub block_output: BlockOutput,
+  pub transactions: D,
 }
 
 impl<D: BlockData> ProcessTransactionsResult<D> {
@@ -100,8 +92,8 @@ impl<D: BlockData> ProcessTransactionsResult<D> {
   }
 }
 
-/// Implements the result of processing a single transaction
-/// thus has easier accessors to log and error
+/// Result of processing a single transaction
+/// provides easier accessors to get to log, error, and state.
 pub struct ProcessTransactionResult<D: BlockData> {
   inner: ProcessTransactionsResult<D>,
 }
@@ -124,7 +116,7 @@ impl<D: BlockData> ProcessTransactionResult<D> {
 }
 
 /// Implements a TestValidator
-/// it will generate a executed block on each transaction and will vote for it
+/// processes a block per transaction.
 pub struct TestValidator<'g, D: BlockData> {
   ctx: &'g TestCtx<D>,
   chain: Chain<'g, D>,
@@ -148,8 +140,8 @@ impl<'g, D: BlockData> TestValidator<'g, D> {
     self.height
   }
 
-  pub fn get_account(&self, pubkey: &Pubkey) -> Option<Account> {
-    self.chain.with_head(|s, _| s.get(pubkey))
+  pub fn get_account(&self, pubkey: Pubkey) -> Option<Account> {
+    self.chain.with_head(|s, _| s.get(&pubkey))
   }
 
   pub fn add_account(&self, pubkey: Pubkey, account: Account) {
@@ -200,6 +192,9 @@ impl<'g, D: BlockData> TestValidator<'g, D> {
     )
     .unwrap();
 
+    // TODO: insert blocks for 2 times epoch length
+    // two events, one is confirmed and one is finalized
+
     // produce a new vote block, to be able to finalize
     // the previous block
     let _produced_vote_block = Produced::new(
@@ -217,8 +212,13 @@ impl<'g, D: BlockData> TestValidator<'g, D> {
     .unwrap();
 
     // include the block, and ensure our single validator
-    // votes on the block
+    // votes on the block. If its rejected its ignored
+
+    // the only way this can fail is the transaction
+    // ordering is wrong. MEV protection
     self.chain.include(produced);
+
+    // TODO: how to check if its included?
 
     // we are now not including the produced vote block
     // which will mean we will never finalize blocks. And
@@ -233,6 +233,8 @@ impl<'g, D: BlockData> TestValidator<'g, D> {
       .with_head(|_, b| b.as_any().downcast_ref::<Produced<D>>().cloned())
       .expect("headblock is not a produced, add some more options here?");
 
+    // TODO: if the hash is not the same as the one we created before
+    // we know something went wrong.
     // Return our result
     Ok(ProcessTransactionsResult {
       block_output,
@@ -240,111 +242,6 @@ impl<'g, D: BlockData> TestValidator<'g, D> {
       transactions,
     })
   }
-}
-
-lazy_static::lazy_static! {
-    static ref CURRENCY_CONTRACT_ADDR: Pubkey = "Currency1xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx".parse().unwrap();
-}
-
-pub fn genesis_default<D: BlockData>(keypair: &Keypair) -> Genesis<D> {
-  let genesis = Genesis::<D> {
-    chain_id: "1".to_owned(),
-    epoch_blocks: 32,
-    genesis_time: Utc::now(),
-    slot_interval: Duration::from_secs(2),
-    state: BTreeMap::new(),
-    builtins: vec![*CURRENCY_CONTRACT_ADDR],
-    limits: Limits {
-      max_block_size: 100_000,
-      max_justification_age: 100,
-      minimum_stake: 100,
-      max_log_size: 512,
-      max_logs_count: 32,
-      max_account_size: 65536,
-      max_input_accounts: 32,
-      max_block_transactions: 2000,
-      max_contract_size: 614400,
-      max_transaction_params_size: 2048,
-    },
-    system_coin: "RensaToken1xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
-      .parse()
-      .unwrap(),
-    validators: vec![Validator {
-      pubkey: keypair.public(),
-      stake: 200000,
-    }],
-    _marker: PhantomData,
-  };
-  genesis
-}
-
-pub fn keypair_default() -> Keypair {
-  let secret = SecretKey::from_bytes(&[
-    157, 97, 177, 157, 239, 253, 90, 96, 186, 132, 74, 244, 146, 236, 44, 196,
-    68, 73, 197, 105, 123, 50, 105, 25, 112, 59, 172, 3, 28, 174, 127, 96,
-  ])
-  .unwrap();
-  let public: PublicKey = (&secret).into();
-  let keypair: Keypair = ed25519_dalek::Keypair { secret, public }.into();
-  keypair
-}
-
-/// Abstract class to generate a currency
-struct Currency {
-  mint: Pubkey,
-}
-
-impl Currency {
-  fn create(
-    payer: Keypair,
-    nonce: u64,
-    seed: &[u8; 32],
-    authority: Pubkey,
-    decimals: u8,
-    name: Option<String>,
-    symbol: Option<String>,
-  ) -> Transaction {
-    let ix = crate::vm::builtin::currency::Instruction::Create {
-      seed: seed.clone(),
-      authority,
-      decimals,
-      name,
-      symbol,
-    };
-
-    let params = ix.try_to_vec().unwrap();
-
-    let mint_address = CURRENCY_CONTRACT_ADDR.derive(&[seed]);
-
-    let accounts = vec![AccountRef {
-      address: mint_address,
-      signer: false,
-      writable: true,
-    }];
-
-    return Transaction::new(
-      *CURRENCY_CONTRACT_ADDR,
-      nonce,
-      &payer,
-      accounts,
-      params,
-      &[&payer],
-    );
-  }
-
-  fn mint(&self, authority: Keypair, payer: Keypair, amount: u64) {}
-}
-
-fn create_pq_token_tx(payer: &Keypair) -> Transaction {
-  Currency::create(
-    payer.clone(),
-    1,
-    &[0; 32],
-    payer.public(),
-    9,
-    Some(String::from("PQ Token")),
-    Some(String::from("PQ")),
-  )
 }
 
 #[cfg(test)]
@@ -364,18 +261,18 @@ mod tests {
     let ctx: TestCtx<Vec<Transaction>> = TestCtx::new();
     let mut validator = TestValidator::new(&ctx);
 
-    // NOTE: a way to generate a random keypair
     let payer = keypair_default();
 
-    // TODO: client/js/src/currency.ts implement currency transfers
-    // TODO: can we have tokens without any symbol?
     let tx_create = create_pq_token_tx(&payer);
 
     let result = validator.process_transactions(vec![tx_create]).unwrap();
 
-    dbg!(&result.logs().values());
-    dbg!(&result.errors().values());
-    dbg!(&result.state());
+    assert_eq!(result.logs().values().len(), 1);
+    assert_eq!(result.errors().values().len(), 0);
+    assert_eq!(
+      &result.state().hash().to_b58(),
+      "W1biVagiHrDbkdaP2qQ5ktft82yppTfpL1kbGek7xGUiKS"
+    );
   }
 
   #[test]
@@ -383,27 +280,43 @@ mod tests {
     let ctx: TestCtx<Vec<Transaction>> = TestCtx::new();
     let mut validator = TestValidator::new(&ctx);
 
-    // NOTE: a way to generate a random keypair
     let payer = keypair_default();
 
-    // TODO: client/js/src/currency.ts implement currency transfers
-    // TODO: can we have tokens without any symbol?
     let tx_create = create_pq_token_tx(&payer);
 
     let result = validator.process_transaction(vec![tx_create]).unwrap();
 
-    dbg!(&result.log());
-    dbg!(&result.error());
-    dbg!(&result.state());
+    assert_eq!(result.log().is_some(), true);
+    assert_eq!(result.error().is_some(), false);
+    assert_eq!(
+      &result.state().hash().to_b58(),
+      "W1biVagiHrDbkdaP2qQ5ktft82yppTfpL1kbGek7xGUiKS"
+    );
   }
 
-  // TODO: this has to be tested in a unit test
-  // assert!(statehash.is_valid_ipfs_cid());
-  // assert!(statehash.decode_cid().parent == parent);
-  // assert that inline data < 256KB
-  // assert if data > 256KB, CID links sum of links == size of Data
-  // Cid
-  // Multiformat
-  // Multibase
-  // PB-DAG (Protobuf-DAG)0
+  #[test]
+  fn add_account_test() {
+    let ctx: TestCtx<Vec<Transaction>> = TestCtx::new();
+    let validator = TestValidator::new(&ctx);
+
+    let pubkey = Pubkey::unique();
+    validator.add_account(pubkey, Account::default());
+
+    let account = validator.get_account(pubkey).unwrap();
+
+    assert_eq!(account, Account::default());
+  }
+
+  #[test]
+  fn delete_account() {
+    let ctx: TestCtx<Vec<Transaction>> = TestCtx::new();
+    let validator = TestValidator::new(&ctx);
+
+    let pubkey = Pubkey::unique();
+    validator.add_account(pubkey, Account::default());
+
+    assert!(validator.get_account(pubkey).is_some());
+    validator.delete_account(pubkey);
+    assert!(!validator.get_account(pubkey).is_some());
+  }
 }

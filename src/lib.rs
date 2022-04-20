@@ -9,5 +9,5 @@ mod rpc;
 mod storage;
 mod vm;
 
-// #[cfg(test)]
+#[cfg(test)]
 pub mod test;
