@@ -331,8 +331,8 @@ mod tests {
       &[0; 32],
       payer.public(),
       9,
-      None,
-      None,
+      Some(String::from("PQ Token")),
+      Some(String::from("PQ")),
     );
 
     let result = validator.process_transactions(vec![tx_create]).unwrap();
