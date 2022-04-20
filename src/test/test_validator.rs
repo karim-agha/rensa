@@ -216,7 +216,7 @@ impl<'g, D: BlockData> TestValidator<'g, D> {
 
     // the only way this can fail is the transaction
     // ordering is wrong. MEV protection
-    self.chain.include(produced);
+    self.chain.include(produced.clone());
 
     // we are now not including the produced vote block
     // which will mean we will never finalize blocks. And
