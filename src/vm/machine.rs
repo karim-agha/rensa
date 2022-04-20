@@ -144,6 +144,8 @@ impl Executable for Vec<Transaction> {
       // on execution of a tranasction, increment payer's nonce value
       // so the same transaction could not be replayed in the future,
       // regardless of its execution outcome.
+      // TODO(karim): why has is this an Overlayed and not just directly the
+      // state?
       match Overlayed::new(state, &accstate).get(&transaction.payer) {
         Some(mut payer) => {
           payer.nonce += 1;
@@ -164,9 +166,8 @@ impl Executable for Vec<Transaction> {
       let state = Overlayed::new(state, &accstate);
 
       // try instantiating the contract, construct its
-      // isolated environment and execute it then injest
+      // isolated environment and execute it then ingest
       // all its outputs if ran successfully to completion.
-
       match ExecutionUnit::new(transaction, &state, vm)
         .and_then(|exec_unit| exec_unit.execute())
       {
@@ -191,6 +192,8 @@ impl Executable for Vec<Transaction> {
       };
     }
 
+    // NOTE(bmaas): this blockoutput would be perfect
+    // to ease our testing
     Ok(BlockOutput::new(accstate, acclogs, accerrors))
   }
 }

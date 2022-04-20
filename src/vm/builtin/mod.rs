@@ -4,7 +4,7 @@
 //! and are exposed to the users of the chain. The invocation semantics are
 //! identical to invoking a regular user-uploaded contract.
 
-mod currency;
+pub mod currency;
 mod sha3;
 mod staking;
 mod wasm;

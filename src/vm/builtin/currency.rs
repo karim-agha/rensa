@@ -72,14 +72,14 @@ struct CoinAccount {
 
 /// This is the instruction param to the currency contract
 #[derive(Debug, BorshSerialize, BorshDeserialize)]
-enum Instruction {
+pub enum Instruction {
   /// Creates new token mint
   ///
   /// Accounts expected by this instruction:
   ///   0. [drw-] Mint address
   Create {
     /// A unique seed that is used to generate the mint address
-    /// for an account. The mit address account will be the result
+    /// for an account. The mint address account will be the result
     /// of running: `Pubkey(Currency).derive(seed)`. it must be a
     /// non-existing account, the currencly module will create it
     /// and configure it according to the spec.   
