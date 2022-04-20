@@ -12,8 +12,8 @@ pub struct Currency {
   // pub mint: Pubkey,
 }
 
-// TODO: client/js/src/currency.ts implement currency transfers
-// TODO: can we have tokens without any symbol?
+// TODO(bmaas): client/js/src/currency.ts implement currency transfers
+// TODO(bmaas): finish implementing
 
 impl Currency {
   pub fn create(

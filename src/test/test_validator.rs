@@ -218,24 +218,22 @@ impl<'g, D: BlockData> TestValidator<'g, D> {
     // ordering is wrong. MEV protection
     self.chain.include(produced);
 
-    // TODO: how to check if its included?
-
     // we are now not including the produced vote block
     // which will mean we will never finalize blocks. And
     // thus also never storing the state into peristen state.
 
     // self.chain.include(produced_vote_block); <== enable this to finalize
 
-    // TODO: ask karim if we could also just return the produced
-    // block from before?
+    // get our expected block out of the forktree
     let block = self
       .chain
       .with_head(|_, b| b.as_any().downcast_ref::<Produced<D>>().cloned())
       .expect("headblock is not a produced, add some more options here?");
 
-    // TODO: if the hash is not the same as the one we created before
-    // we know something went wrong.
-    // Return our result
+    // make sure we got the same block back we produced
+    // before. If not, something went wrong on chain.include(produced)
+    assert_eq!(produced, block);
+
     Ok(ProcessTransactionsResult {
       block_output,
       block,
