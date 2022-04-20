@@ -100,6 +100,29 @@ impl<D: BlockData> ProcessTransactionsResult<D> {
   }
 }
 
+/// Implements the result of processing a single transaction
+/// thus has easier accessors to log and error
+pub struct ProcessTransactionResult<D: BlockData> {
+  inner: ProcessTransactionsResult<D>,
+}
+
+impl<D: BlockData> ProcessTransactionResult<D> {
+  /// returns the resulting logs after processing the transaction
+  fn log(&self) -> Option<&Vec<(String, String)>> {
+    self.inner.logs().values().next() // as there is only one
+  }
+
+  /// returns the resulting errors after executing transactions
+  fn error(&self) -> Option<&ContractError> {
+    self.inner.errors().values().next()
+  }
+
+  /// returns the resulting StateDiff after processing the transactions
+  fn state(&self) -> &StateDiff {
+    self.inner.state()
+  }
+}
+
 /// Implements a TestValidator
 /// it will generate a executed block on each transaction and will vote for it
 pub struct TestValidator<'g, D: BlockData> {
@@ -139,6 +162,15 @@ impl<'g, D: BlockData> TestValidator<'g, D> {
     let mut diff = StateDiff::default();
     diff.remove(pubkey).unwrap();
     self.ctx.store.apply(diff).unwrap();
+  }
+
+  pub fn process_transaction(
+    &mut self,
+    transaction: D,
+  ) -> Result<ProcessTransactionResult<D>, MachineError> {
+    self
+      .process_transactions(transaction)
+      .map(|r| ProcessTransactionResult { inner: r })
   }
 
   pub fn process_transactions(
@@ -303,6 +335,18 @@ impl Currency {
   fn mint(&self, authority: Keypair, payer: Keypair, amount: u64) {}
 }
 
+fn create_pq_token_tx(payer: &Keypair) -> Transaction {
+  Currency::create(
+    payer.clone(),
+    1,
+    &[0; 32],
+    payer.public(),
+    9,
+    Some(String::from("PQ Token")),
+    Some(String::from("PQ")),
+  )
+}
+
 #[cfg(test)]
 mod tests {
   use super::*;
@@ -325,24 +369,32 @@ mod tests {
 
     // TODO: client/js/src/currency.ts implement currency transfers
     // TODO: can we have tokens without any symbol?
-    let tx_create = Currency::create(
-      payer.clone(),
-      1,
-      &[0; 32],
-      payer.public(),
-      9,
-      Some(String::from("PQ Token")),
-      Some(String::from("PQ")),
-    );
+    let tx_create = create_pq_token_tx(&payer);
 
     let result = validator.process_transactions(vec![tx_create]).unwrap();
 
     dbg!(&result.logs().values());
     dbg!(&result.errors().values());
     dbg!(&result.state());
-    // dbg!(&block_output.state);
-    // dbg!(&*block_output.logs);
-    // dbg!(&*block_output.errors);
+  }
+
+  #[test]
+  fn process_transaction_test() {
+    let ctx: TestCtx<Vec<Transaction>> = TestCtx::new();
+    let mut validator = TestValidator::new(&ctx);
+
+    // NOTE: a way to generate a random keypair
+    let payer = keypair_default();
+
+    // TODO: client/js/src/currency.ts implement currency transfers
+    // TODO: can we have tokens without any symbol?
+    let tx_create = create_pq_token_tx(&payer);
+
+    let result = validator.process_transaction(vec![tx_create]).unwrap();
+
+    dbg!(&result.log());
+    dbg!(&result.error());
+    dbg!(&result.state());
   }
 
   // TODO: this has to be tested in a unit test
