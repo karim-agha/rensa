@@ -71,3 +71,6 @@ debug = true
 [workspace]
 members = [".", "./sdk/rust", "./sdk/rust/macros"]
 default-members = [".", "./sdk/rust", "./sdk/rust/macros"]
+
+[lib]
+doctest = false
