@@ -152,7 +152,7 @@ services:
       dockerfile: Dockerfile
     environment:
       - RUST_BACKTRACE=1
-    command: ./rensa --keypair 6y7wHcUD1j1AQymapHkKaQ6fEMEFakBXY9xhdxh2AiCN --genesis genesis.json --peer 172.29.1.2:44668 --blocks-history 30
+    command: ./rensa --keypair 6y7wHcUD1j1AQymapHkKaQ6fEMEFakBXY9xhdxh2AiCN --genesis genesis.json --peer 172.29.1.2:44668 --blocks-history 30 --dbsync 'mysql://rensa:rensapwd@rensa-t1.cluster-cziy1rqqj0jj.eu-central-1.rds.amazonaws.com/rensa_t1'
     depends_on:
       validator_0:
         condition: service_started
