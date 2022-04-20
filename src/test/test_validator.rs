@@ -14,9 +14,12 @@ use {
     vm::{
       self,
       AccountRef,
+      BlockOutput,
+      ContractError,
       Executable,
       Executed,
       Finalized,
+      MachineError,
       State,
       StateDiff,
       Transaction,
@@ -26,7 +29,8 @@ use {
   chrono::Utc,
   ed25519_dalek::{PublicKey, SecretKey},
   futures::StreamExt,
-  multihash::Multihash,
+  indexmap::{map::Values, IndexMap},
+  multihash::{Multihash, MultihashGeneric},
   rand::{distributions::Alphanumeric, thread_rng, Rng},
   std::{
     any::Any,
@@ -73,6 +77,29 @@ impl<D: BlockData> TestCtx<D> {
   }
 }
 
+pub struct ProcessTransactionsResult<D: BlockData> {
+  block: Produced<D>,
+  block_output: BlockOutput,
+  transactions: D,
+}
+
+impl<D: BlockData> ProcessTransactionsResult<D> {
+  /// returns the resulting logs after processing the transaction
+  fn logs(&self) -> &IndexMap<Multihash, Vec<(String, String)>> {
+    &*self.block_output.logs
+  }
+
+  /// returns the resulting errors after executing transactions
+  fn errors(&self) -> &IndexMap<Multihash, ContractError> {
+    &*self.block_output.errors
+  }
+
+  /// returns the resulting StateDiff after processing the transactions
+  fn state(&self) -> &StateDiff {
+    &self.block_output.state
+  }
+}
+
 /// Implements a TestValidator
 /// it will generate a executed block on each transaction and will vote for it
 pub struct TestValidator<'g, D: BlockData> {
@@ -114,32 +141,40 @@ impl<'g, D: BlockData> TestValidator<'g, D> {
     self.ctx.store.apply(diff).unwrap();
   }
 
-  pub fn process_transaction(&mut self, tx: D) -> Produced<D> {
-    let (parent, statehash) = self.chain.with_head(|s, b| {
+  pub fn process_transactions(
+    &mut self,
+    transactions: D,
+  ) -> Result<ProcessTransactionsResult<D>, MachineError> {
+    // execute our transaction on the head state and return the
+    // parents hash
+    let (parent, execution_result) = self.chain.with_head(|s, b| {
       (
         b.hash().unwrap().clone(),
-        tx.execute(&self.ctx.vm, s).unwrap().hash().clone(),
+        transactions.execute(&self.ctx.vm, s),
       )
     });
 
+    let block_output = execution_result?;
+    let statehash = block_output.hash().clone();
+
+    // produce a new new block
     let produced = Produced::new(
       &self.ctx.keypair,
       self.inc_height(),
       parent,
-      tx,
+      transactions.clone(),
       statehash,
       vec![],
     )
     .unwrap();
 
-    // NOTE: we vote on a block hash thats why
-    // we need an extra block
+    // produce a new vote block, to be able to finalize
+    // the previous block
     let _produced_vote_block = Produced::new(
       &self.ctx.keypair,
       self.inc_height(),
       produced.hash().unwrap(),
-      // StateDiff::default(),
-      D::default(),
+      D::default(), // StateDiff::default(),
       statehash,
       vec![Vote::new(
         &self.ctx.keypair,
@@ -153,22 +188,12 @@ impl<'g, D: BlockData> TestValidator<'g, D> {
     // votes on the block
     self.chain.include(produced);
 
-    // NOTE: since we are always adding from one validator
-    // we do not have. The impact is we will never finalized
-    // blocks will be in the blocktree. The blocks will in this case be in the
-    // head of the forktree.
+    // we are now not including the produced vote block
+    // which will mean we will never finalize blocks. And
+    // thus also never storing the state into peristen state.
 
-    // self.chain.include(produced_vote_block);
+    // self.chain.include(produced_vote_block); <== enable this to finalize
 
-    // NOTE: one solution will be to listen to events
-    // in this case ChainEvent(BlockIncluded)
-    // let next_event = self.chain.next().await;
-    //
-    // TODO: downcast function on Block
-    // https://bennetthardwick.com/rust/downcast-trait-object/
-
-    // downcast block headblock in the forktree to a cloned concrete
-    // type.
     // TODO: ask karim if we could also just return the produced
     // block from before?
     let block = self
@@ -176,15 +201,12 @@ impl<'g, D: BlockData> TestValidator<'g, D> {
       .with_head(|_, b| b.as_any().downcast_ref::<Produced<D>>().cloned())
       .expect("headblock is not a produced, add some more options here?");
 
-    // now we are on an interesting part of the system. The head block
-    // is stored in memory, and the finalized is actually finalized
-    // in the persistent store. For testing we want access to the state
-    // and we want to get for erample the value of an account.
-
-    // dependable on the fact we want finalized or not finalized we
-    // can have a unique accesssor
-
-    block
+    // Return our result
+    Ok(ProcessTransactionsResult {
+      block_output,
+      block,
+      transactions,
+    })
   }
 }
 
@@ -243,6 +265,7 @@ struct Currency {
 impl Currency {
   fn create(
     payer: Keypair,
+    nonce: u64,
     seed: &[u8; 32],
     authority: Pubkey,
     decimals: u8,
@@ -269,7 +292,7 @@ impl Currency {
 
     return Transaction::new(
       *CURRENCY_CONTRACT_ADDR,
-      0,
+      nonce,
       &payer,
       accounts,
       params,
@@ -289,11 +312,11 @@ mod tests {
     let ctx: TestCtx<Vec<Transaction>> = TestCtx::new();
     let mut validator = TestValidator::new(&ctx);
 
-    validator.process_transaction(vec![]);
+    validator.process_transactions(vec![]).unwrap();
   }
 
   #[test]
-  fn process_transaction_test() {
+  fn process_transactions_test() {
     let ctx: TestCtx<Vec<Transaction>> = TestCtx::new();
     let mut validator = TestValidator::new(&ctx);
 
@@ -302,11 +325,24 @@ mod tests {
 
     // TODO: client/js/src/currency.ts implement currency transfers
     // TODO: can we have tokens without any symbol?
-    let tx_create =
-      Currency::create(payer.clone(), &[0; 32], payer.public(), 9, None, None);
+    let tx_create = Currency::create(
+      payer.clone(),
+      1,
+      &[0; 32],
+      payer.public(),
+      9,
+      None,
+      None,
+    );
 
-    let block = validator.process_transaction(vec![tx_create]);
-    dbg!(&block);
+    let result = validator.process_transactions(vec![tx_create]).unwrap();
+
+    dbg!(&result.logs().values());
+    dbg!(&result.errors().values());
+    dbg!(&result.state());
+    // dbg!(&block_output.state);
+    // dbg!(&*block_output.logs);
+    // dbg!(&*block_output.errors);
   }
 
   // TODO: this has to be tested in a unit test
