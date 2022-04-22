@@ -41,7 +41,15 @@ use {
   },
   crate::{
     primitives::{Pubkey, ToBase58String},
-    vm::{self, Executed, Finalized, MachineError, Overlayed, State},
+    vm::{
+      self,
+      Executed,
+      Finalized,
+      MachineError,
+      Overlayed,
+      State,
+      StateStore,
+    },
   },
   futures::Stream,
   multihash::Multihash,
@@ -92,7 +100,7 @@ pub enum ChainEvent<D: BlockData> {
 }
 
 /// Represents the state of the consensus protocol
-pub struct Chain<'g, D: BlockData> {
+pub struct Chain<'g, D: BlockData, S: StateStore> {
   /// The very first block in the chain.
   ///
   /// This comes from a configuration file, is always considered
@@ -110,7 +118,7 @@ pub struct Chain<'g, D: BlockData> {
   /// at the last finalized block. Archiving historical blocks
   /// can be delegated to an external interface for explorers
   /// and other use cases if an archiver is specified.
-  finalized: Finalized<'g, D>,
+  finalized: Finalized<'g, D, S>,
 
   /// This forrest represents all chains (forks) that were created
   /// since the last finalized block. None of those blocks are
@@ -166,11 +174,11 @@ pub struct Chain<'g, D: BlockData> {
   virtual_machine: &'g vm::Machine,
 }
 
-impl<'g, D: BlockData> Chain<'g, D> {
+impl<'g, D: BlockData, S: StateStore> Chain<'g, D, S> {
   pub fn new(
     genesis: &'g Genesis<D>,
     machine: &'g vm::Machine,
-    finalized: Finalized<'g, D>,
+    finalized: Finalized<'g, D, S>,
   ) -> Self {
     let epoch_duration = genesis.slot_interval * genesis.epoch_blocks as u32;
     Self {
@@ -270,7 +278,7 @@ impl<'g, D: BlockData> Chain<'g, D> {
   }
 }
 
-impl<'g, 'f, D: BlockData> Chain<'g, D> {
+impl<'g, 'f, D: BlockData, S: StateStore> Chain<'g, D, S> {
   /// checks if a block has received at least 2/3 of stake votes
   fn confirmed(&self, block: &VolatileBlock<D>) -> bool {
     block.votes >= self.minimum_majority_stake()
@@ -732,7 +740,7 @@ impl<'g, 'f, D: BlockData> Chain<'g, D> {
   }
 }
 
-impl<'g, D: BlockData> Chain<'g, D> {
+impl<'g, D: BlockData, S: StateStore> Chain<'g, D, S> {
   /// Invoked whenever a block is successfully included in the forktree
   fn post_block_included(&mut self, block: &Produced<D>) {
     self.count_votes(block.votes());
@@ -774,7 +782,7 @@ impl<'g, D: BlockData> Chain<'g, D> {
   }
 }
 
-impl<'g, D: BlockData> Chain<'g, D> {
+impl<'g, D: BlockData, S: StateStore> Chain<'g, D, S> {
   /// Attempts to retreive a non-finalized block that is still
   /// going through the consensus algorithm.
   pub fn get(&self, hash: &Multihash) -> Option<&Executed<D>> {
@@ -787,8 +795,8 @@ impl<'g, D: BlockData> Chain<'g, D> {
   }
 }
 
-impl<D: BlockData> Unpin for Chain<'_, D> {}
-impl<D: BlockData> Stream for Chain<'_, D> {
+impl<D: BlockData, S: StateStore> Unpin for Chain<'_, D, S> {}
+impl<D: BlockData, S: StateStore> Stream for Chain<'_, D, S> {
   type Item = ChainEvent<D>;
 
   fn poll_next(

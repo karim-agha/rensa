@@ -408,124 +408,124 @@ impl<T: Tunables> Tunables for LimitingTunables<T> {
   }
 }
 
-#[cfg(test)]
-mod test {
-  use {
-    super::Runtime,
-    crate::{primitives::Pubkey, vm::contract::Environment},
-    anyhow::Result,
-    borsh::BorshSerialize,
-    std::str::FromStr,
-  };
-
-  #[derive(Debug, BorshSerialize)]
-  enum Instruction {
-    Register { name: String, owner: Pubkey },
-    Update { name: String, owner: Pubkey },
-    Release { name: String },
-  }
-
-  fn dns_create_name(bytecode: &[u8]) -> Result<()> {
-    let runtime = Runtime::new(bytecode)?;
-
-    let env = Environment {
-      caller: None,
-      address: "TestDns1xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx".parse()?,
-      accounts: vec![],
-    };
-
-    let params = Instruction::Register {
-      name: "example.com".to_owned(),
-      owner: crate::primitives::Pubkey::from_str(
-        "TestDns1xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
-      )
-      .unwrap(),
-    };
-
-    let output = runtime.invoke(&env, &params.try_to_vec().unwrap())?;
-    println!("output from dns test: {output:?}");
-    Ok(())
-  }
-
-  fn dns_release_name(bytecode: &[u8]) -> Result<()> {
-    let runtime = Runtime::new(bytecode)?;
-
-    let env = Environment {
-      caller: None,
-      address: "TestDns1xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx".parse()?,
-      accounts: vec![],
-    };
-
-    let params = Instruction::Release {
-      name: "example.com".to_owned(),
-    };
-
-    let output = runtime.invoke(&env, &params.try_to_vec().unwrap())?;
-    println!("output from release test: {output:?}");
-    Ok(())
-  }
-
-  fn dns_update_name(bytecode: &[u8]) -> Result<()> {
-    let runtime = Runtime::new(bytecode)?;
-
-    let env = Environment {
-      caller: None,
-      address: "TestDns1xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx".parse()?,
-      accounts: vec![],
-    };
-
-    let params = Instruction::Update {
-      name: "example.com".to_owned(),
-      owner: crate::primitives::Pubkey::from_str(
-        "TestAccount2xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
-      )
-      .unwrap(),
-    };
-
-    let output = runtime.invoke(&env, &params.try_to_vec().unwrap())?;
-    println!("output from dns update test: {output:?}");
-    Ok(())
-  }
-
-  #[test]
-  fn dns_create_name_ascript() -> Result<()> {
-    dns_create_name(include_bytes!(
-      "../../test/contracts/dns/ascript/build/release.wasm"
-    ))
-  }
-
-  #[test]
-  fn dns_create_name_rust() -> Result<()> {
-    dns_create_name(include_bytes!(
-      "../../test/contracts/dns/rust/out/release.wasm"
-    ))
-  }
-
-  #[test]
-  fn dns_release_name_ascript() -> Result<()> {
-    dns_release_name(include_bytes!(
-      "../../test/contracts/dns/ascript/build/release.wasm"
-    ))
-  }
-
-  #[test]
-  fn dns_release_name_rust() -> Result<()> {
-    dns_release_name(include_bytes!(
-      "../../test/contracts/dns/rust/out/release.wasm"
-    ))
-  }
-
-  #[test]
-  fn dns_update_name_ascript() -> Result<()> {
-    dns_update_name(include_bytes!(
-      "../../test/contracts/dns/ascript/build/release.wasm"
-    ))
-  }
-
-  #[test]
-  fn dns_update_name_rust() -> Result<()> {
-    dns_update_name(include_bytes!(
-      "../../test/contracts/dns/rust/out/release.wasm"
-    ))
-  }
-}
+// #[cfg(test)]
+// mod test {
+//   use {
+//     super::Runtime,
+//     crate::{primitives::Pubkey, vm::contract::Environment},
+//     anyhow::Result,
+//     borsh::BorshSerialize,
+//     std::str::FromStr,
+//   };
+//
+//   #[derive(Debug, BorshSerialize)]
+//   enum Instruction {
+//     Register { name: String, owner: Pubkey },
+//     Update { name: String, owner: Pubkey },
+//     Release { name: String },
+//   }
+//
+//   fn dns_create_name(bytecode: &[u8]) -> Result<()> {
+//     let runtime = Runtime::new(bytecode)?;
+//
+//     let env = Environment {
+//       caller: None,
+//       address: "TestDns1xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx".parse()?,
+//       accounts: vec![],
+//     };
+//
+//     let params = Instruction::Register {
+//       name: "example.com".to_owned(),
+//       owner: crate::primitives::Pubkey::from_str(
+//         "TestDns1xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+//       )
+//       .unwrap(),
+//     };
+//
+//     let output = runtime.invoke(&env, &params.try_to_vec().unwrap())?;
+//     println!("output from dns test: {output:?}");
+//     Ok(())
+//   }
+//
+//   fn dns_release_name(bytecode: &[u8]) -> Result<()> {
+//     let runtime = Runtime::new(bytecode)?;
+//
+//     let env = Environment {
+//       caller: None,
+//       address: "TestDns1xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx".parse()?,
+//       accounts: vec![],
+//     };
+//
+//     let params = Instruction::Release {
+//       name: "example.com".to_owned(),
+//     };
+//
+//     let output = runtime.invoke(&env, &params.try_to_vec().unwrap())?;
+//     println!("output from release test: {output:?}");
+//     Ok(())
+//   }
+//
+//   fn dns_update_name(bytecode: &[u8]) -> Result<()> {
+//     let runtime = Runtime::new(bytecode)?;
+//
+//     let env = Environment {
+//       caller: None,
+//       address: "TestDns1xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx".parse()?,
+//       accounts: vec![],
+//     };
+//
+//     let params = Instruction::Update {
+//       name: "example.com".to_owned(),
+//       owner: crate::primitives::Pubkey::from_str(
+//         "TestAccount2xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+//       )
+//       .unwrap(),
+//     };
+//
+//     let output = runtime.invoke(&env, &params.try_to_vec().unwrap())?;
+//     println!("output from dns update test: {output:?}");
+//     Ok(())
+//   }
+//
+//   #[test]
+//   fn dns_create_name_ascript() -> Result<()> {
+//     dns_create_name(include_bytes!(
+//       "../../test/contracts/dns/ascript/build/release.wasm"
+//     ))
+//   }
+//
+//   #[test]
+//   fn dns_create_name_rust() -> Result<()> {
+//     dns_create_name(include_bytes!(
+//       "../../test/contracts/dns/rust/out/release.wasm"
+//     ))
+//   }
+//
+//   #[test]
+//   fn dns_release_name_ascript() -> Result<()> {
+//     dns_release_name(include_bytes!(
+//       "../../test/contracts/dns/ascript/build/release.wasm"
+//     ))
+//   }
+//
+//   #[test]
+//   fn dns_release_name_rust() -> Result<()> {
+//     dns_release_name(include_bytes!(
+//       "../../test/contracts/dns/rust/out/release.wasm"
+//     ))
+//   }
+//
+//   #[test]
+//   fn dns_update_name_ascript() -> Result<()> {
+//     dns_update_name(include_bytes!(
+//       "../../test/contracts/dns/ascript/build/release.wasm"
+//     ))
+//   }
+//
+//   #[test]
+//   fn dns_update_name_rust() -> Result<()> {
+//     dns_update_name(include_bytes!(
+//       "../../test/contracts/dns/rust/out/release.wasm"
+//     ))
+//   }
+// }

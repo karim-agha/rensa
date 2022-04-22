@@ -3,7 +3,7 @@ use {
   crate::{
     consensus::{Block, BlockData},
     primitives::{Account, Pubkey},
-    storage::PersistentState,
+    storage::Error as StorageError,
   },
   multihash::{
     Code as MultihashCode,
@@ -31,7 +31,8 @@ pub enum StateError {
   StorageEngineError(#[from] crate::storage::Error),
 }
 
-type Result<T> = std::result::Result<T, StateError>;
+type StateResult<T> = std::result::Result<T, StateError>;
+type StorageResult<T> = std::result::Result<T, StorageError>;
 
 /// Represents the state of the blockchain that is the result
 /// of running the replicated state machine.
@@ -44,10 +45,10 @@ pub trait State {
     &mut self,
     address: Pubkey,
     account: Account,
-  ) -> Result<Option<Account>>;
+  ) -> StateResult<Option<Account>>;
 
   /// Stores or overwrites an account object and its contents in the state.
-  fn remove(&mut self, address: Pubkey) -> Result<()>;
+  fn remove(&mut self, address: Pubkey) -> StateResult<()>;
 
   /// Returns the CID or hash of the current state.
   ///
@@ -56,6 +57,11 @@ pub trait State {
   /// object that also points to the previous state that this
   /// state was built upon.
   fn hash(&self) -> Multihash;
+}
+
+pub trait StateStore: State {
+  /// Applies a state diff from a finalized block
+  fn apply(&self, diff: &StateDiff) -> StorageResult<()>;
 }
 
 /// Represents a view of two overlayed states without modifying any of them.
@@ -85,11 +91,11 @@ impl<'s1, 's2> State for Overlayed<'s1, 's2> {
     }
   }
 
-  fn set(&mut self, _: Pubkey, _: Account) -> Result<Option<Account>> {
+  fn set(&mut self, _: Pubkey, _: Account) -> StateResult<Option<Account>> {
     Err(StateError::WritesNotSupported)
   }
 
-  fn remove(&mut self, _: Pubkey) -> Result<()> {
+  fn remove(&mut self, _: Pubkey) -> StateResult<()> {
     Err(StateError::WritesNotSupported)
   }
 
@@ -101,13 +107,13 @@ impl<'s1, 's2> State for Overlayed<'s1, 's2> {
 /// Represents a block that has been finalized and is guaranteed
 /// to never be reverted. It contains the global blockchain state.
 #[derive(Debug)]
-pub struct Finalized<'f, D: BlockData> {
+pub struct Finalized<'f, D: BlockData, S: StateStore> {
   underlying: Arc<dyn Block<D>>,
-  state: &'f PersistentState,
+  state: &'f S,
 }
 
-impl<'f, D: BlockData> Finalized<'f, D> {
-  pub fn new(block: Arc<dyn Block<D>>, storage: &'f PersistentState) -> Self {
+impl<'f, D: BlockData, S: State + StateStore> Finalized<'f, D, S> {
+  pub fn new(block: Arc<dyn Block<D>>, storage: &'f S) -> Self {
     Self {
       underlying: block,
       state: storage,
@@ -128,7 +134,7 @@ impl<'f, D: BlockData> Finalized<'f, D> {
   }
 }
 
-impl<D: BlockData> Deref for Finalized<'_, D> {
+impl<D: BlockData, S: StateStore> Deref for Finalized<'_, D, S> {
   type Target = Arc<dyn Block<D>>;
 
   fn deref(&self) -> &Self::Target {
@@ -202,12 +208,12 @@ impl State for StateDiff {
     &mut self,
     address: Pubkey,
     account: Account,
-  ) -> Result<Option<Account>> {
+  ) -> StateResult<Option<Account>> {
     self.deletes.remove(&address);
     Ok(self.data.insert(address, account))
   }
 
-  fn remove(&mut self, address: Pubkey) -> Result<()> {
+  fn remove(&mut self, address: Pubkey) -> StateResult<()> {
     self.deletes.insert(address);
     Ok(())
   }

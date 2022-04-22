@@ -75,10 +75,10 @@ pub struct Limits {
   /// over p2p gossip network in bytes.
   pub max_block_size: usize,
 
-  /// Maximum size of the params byte array within for in a 
+  /// Maximum size of the params byte array within for in a
   /// single transaction.
-  /// 
-  /// Transactions that need to transmit more data should be 
+  ///
+  /// Transactions that need to transmit more data should be
   /// split up into smaller transactions.
   pub max_transaction_params_size: usize,
 }
@@ -251,6 +251,10 @@ impl<D: BlockData> Block<D> for Genesis<D> {
   /// process startup.
   fn votes(&self) -> &[Vote] {
     &[]
+  }
+
+  fn as_any(&self) -> &dyn std::any::Any {
+    self
   }
 }
 

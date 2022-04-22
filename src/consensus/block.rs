@@ -15,6 +15,7 @@ use {
   once_cell::sync::OnceCell,
   serde::{Deserialize, Serialize},
   std::{
+    any::Any,
     fmt::Debug,
     io::{Error as StdIoError, ErrorKind},
   },
@@ -32,6 +33,7 @@ pub trait BlockData:
   Eq
   + Clone
   + Debug
+  + Default
   + Executable
   + Serialize
   + Send
@@ -48,6 +50,7 @@ where
   T: Eq
     + Clone
     + Debug
+    + Default
     + Executable
     + Serialize
     + Send
@@ -107,6 +110,9 @@ pub trait Block<D: BlockData>: Debug {
   /// validators. A vote on a block is also implicitly a vote on
   /// all its ancestors.
   fn votes(&self) -> &[Vote];
+
+  /// Downcasting on block type
+  fn as_any(&self) -> &dyn Any;
 }
 
 /// A block produced by one of the validators after Genesis.
@@ -172,6 +178,7 @@ impl<D: BlockData> Debug for Produced<D> {
       .field("data", &self.data)
       .field("votes", &self.votes)
       .field("hash", &self.hash().unwrap().to_b58())
+      .field("state_hash", &self.state_hash().to_b58())
       .finish()
   }
 }
@@ -264,6 +271,10 @@ impl<D: BlockData> Block<D> for Produced<D> {
   /// Greedy Heaviest Observed Subtree (GHOST) fork choice algo.
   fn votes(&self) -> &[Vote] {
     &self.votes
+  }
+
+  fn as_any(&self) -> &dyn Any {
+    self
   }
 }
 

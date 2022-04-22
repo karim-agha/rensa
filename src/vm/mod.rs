@@ -9,9 +9,11 @@ mod transaction;
 mod unit;
 
 pub use {
+  contract::ContractError,
   executed::Executed,
   machine::{Executable, Machine, MachineError},
-  state::{Finalized, Overlayed, State, StateDiff, StateError},
+  output::BlockOutput,
+  state::{Finalized, Overlayed, State, StateDiff, StateError, StateStore},
   transaction::{AccountRef, ExecutedTransaction, Transaction},
 };
 
