@@ -9,6 +9,9 @@ mod rpc;
 mod storage;
 mod vm;
 
+#[cfg(test)]
+mod test;
+
 use {
   crate::{
     consumer::Commitment,
