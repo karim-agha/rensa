@@ -63,7 +63,7 @@ pub struct CliOpts {
 
   #[clap(
     long,
-    help = "A connection string to a SQL database for uploading blocking data"
+    help = "A connection string to a SQL database for uploading blockchain data"
   )]
   dbsync: Option<String>,
 }
