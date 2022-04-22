@@ -59,7 +59,7 @@ pub trait State {
   fn hash(&self) -> Multihash;
 }
 
-pub trait ApplicableState: State {
+pub trait StateStore: State {
   /// Applies a state diff from a finalized block
   fn apply(&self, diff: StateDiff) -> StorageResult<()>;
 }
@@ -107,12 +107,12 @@ impl<'s1, 's2> State for Overlayed<'s1, 's2> {
 /// Represents a block that has been finalized and is guaranteed
 /// to never be reverted. It contains the global blockchain state.
 #[derive(Debug)]
-pub struct Finalized<'f, D: BlockData, S: ApplicableState> {
+pub struct Finalized<'f, D: BlockData, S: StateStore> {
   underlying: Arc<dyn Block<D>>,
   state: &'f S,
 }
 
-impl<'f, D: BlockData, S: State + ApplicableState> Finalized<'f, D, S> {
+impl<'f, D: BlockData, S: State + StateStore> Finalized<'f, D, S> {
   pub fn new(block: Arc<dyn Block<D>>, storage: &'f S) -> Self {
     Self {
       underlying: block,
@@ -134,7 +134,7 @@ impl<'f, D: BlockData, S: State + ApplicableState> Finalized<'f, D, S> {
   }
 }
 
-impl<D: BlockData, S: ApplicableState> Deref for Finalized<'_, D, S> {
+impl<D: BlockData, S: StateStore> Deref for Finalized<'_, D, S> {
   type Target = Arc<dyn Block<D>>;
 
   fn deref(&self) -> &Self::Target {

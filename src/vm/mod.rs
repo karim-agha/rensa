@@ -13,14 +13,7 @@ pub use {
   executed::Executed,
   machine::{Executable, Machine, MachineError},
   output::BlockOutput,
-  state::{
-    ApplicableState,
-    Finalized,
-    Overlayed,
-    State,
-    StateDiff,
-    StateError,
-  },
+  state::{Finalized, Overlayed, State, StateDiff, StateError, StateStore},
   transaction::{AccountRef, ExecutedTransaction, Transaction},
 };
 

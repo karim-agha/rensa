@@ -43,12 +43,12 @@ use {
     primitives::{Pubkey, ToBase58String},
     vm::{
       self,
-      ApplicableState,
       Executed,
       Finalized,
       MachineError,
       Overlayed,
       State,
+      StateStore,
     },
   },
   futures::Stream,
@@ -100,7 +100,7 @@ pub enum ChainEvent<D: BlockData> {
 }
 
 /// Represents the state of the consensus protocol
-pub struct Chain<'g, D: BlockData, S: ApplicableState> {
+pub struct Chain<'g, D: BlockData, S: StateStore> {
   /// The very first block in the chain.
   ///
   /// This comes from a configuration file, is always considered
@@ -174,7 +174,7 @@ pub struct Chain<'g, D: BlockData, S: ApplicableState> {
   virtual_machine: &'g vm::Machine,
 }
 
-impl<'g, D: BlockData, S: ApplicableState> Chain<'g, D, S> {
+impl<'g, D: BlockData, S: StateStore> Chain<'g, D, S> {
   pub fn new(
     genesis: &'g Genesis<D>,
     machine: &'g vm::Machine,
@@ -278,7 +278,7 @@ impl<'g, D: BlockData, S: ApplicableState> Chain<'g, D, S> {
   }
 }
 
-impl<'g, 'f, D: BlockData, S: ApplicableState> Chain<'g, D, S> {
+impl<'g, 'f, D: BlockData, S: StateStore> Chain<'g, D, S> {
   /// checks if a block has received at least 2/3 of stake votes
   fn confirmed(&self, block: &VolatileBlock<D>) -> bool {
     block.votes >= self.minimum_majority_stake()
@@ -740,7 +740,7 @@ impl<'g, 'f, D: BlockData, S: ApplicableState> Chain<'g, D, S> {
   }
 }
 
-impl<'g, D: BlockData, S: ApplicableState> Chain<'g, D, S> {
+impl<'g, D: BlockData, S: StateStore> Chain<'g, D, S> {
   /// Invoked whenever a block is successfully included in the forktree
   fn post_block_included(&mut self, block: &Produced<D>) {
     self.count_votes(block.votes());
@@ -782,7 +782,7 @@ impl<'g, D: BlockData, S: ApplicableState> Chain<'g, D, S> {
   }
 }
 
-impl<'g, D: BlockData, S: ApplicableState> Chain<'g, D, S> {
+impl<'g, D: BlockData, S: StateStore> Chain<'g, D, S> {
   /// Attempts to retreive a non-finalized block that is still
   /// going through the consensus algorithm.
   pub fn get(&self, hash: &Multihash) -> Option<&Executed<D>> {
@@ -795,8 +795,8 @@ impl<'g, D: BlockData, S: ApplicableState> Chain<'g, D, S> {
   }
 }
 
-impl<D: BlockData, S: ApplicableState> Unpin for Chain<'_, D, S> {}
-impl<D: BlockData, S: ApplicableState> Stream for Chain<'_, D, S> {
+impl<D: BlockData, S: StateStore> Unpin for Chain<'_, D, S> {}
+impl<D: BlockData, S: StateStore> Stream for Chain<'_, D, S> {
   type Item = ChainEvent<D>;
 
   fn poll_next(

@@ -14,7 +14,6 @@ use {
     },
     vm::{
       self,
-      ApplicableState,
       BlockOutput,
       ContractError,
       Finalized,
@@ -22,6 +21,7 @@ use {
       State,
       StateDiff,
       StateError,
+      StateStore,
       Transaction,
     },
   },
@@ -60,7 +60,7 @@ impl State for InMemState {
   }
 }
 
-impl ApplicableState for InMemState {
+impl StateStore for InMemState {
   fn apply(&self, diff: StateDiff) -> std::result::Result<(), StorageError> {
     let mut db = self.db.borrow_mut();
     for (addr, account) in diff.into_iter() {
