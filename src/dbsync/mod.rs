@@ -237,7 +237,7 @@ fn state_diff_stmt(
 ) -> String {
   match data {
     Some(acc) => format!(
-      "INSERT INTO state_diff VALUES ({}, '{}', {}, {}, {}, 1, 0, {})",
+      "INSERT INTO state_diff VALUES ({}, '{}', {}, {}, {}, {}, 0, {})",
       block.height,
       account,
       match acc.data {
@@ -248,6 +248,10 @@ fn state_diff_stmt(
       match acc.owner {
         None => "NULL".to_string(),
         Some(ref owner) => format!("'{}'", owner),
+      },
+      match acc.executable {
+        true => 1,
+        false => 0,
       },
       pos
     ),

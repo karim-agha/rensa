@@ -9,9 +9,6 @@ mod rpc;
 mod storage;
 mod vm;
 
-#[cfg(test)]
-mod test;
-
 use {
   crate::{
     consumer::Commitment,
@@ -266,7 +263,7 @@ async fn main() -> anyhow::Result<()> {
           }
           ChainEvent::BlockIncluded(block) => {
             info!(
-              "included block {} [height {}] [state hash: {}]",
+              "included block {} [epoch {}] [state hash: {}]",
               *block, block.height() / genesis.epoch_blocks,
               block.state().hash().to_bytes().to_b58()
             );
