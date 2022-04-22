@@ -51,9 +51,9 @@ impl PersistentState {
   }
 
   /// Applies a state diff from a finalized block
-  pub fn apply(&self, diff: StateDiff) -> Result<(), Error> {
+  pub fn apply(&self, diff: &StateDiff) -> Result<(), Error> {
     let mut batch = Batch::default();
-    for (addr, account) in diff.into_iter() {
+    for (addr, account) in diff.iter() {
       match account {
         Some(account) => {
           batch.insert(addr.as_ref(), bincode::serialize(&account)?)

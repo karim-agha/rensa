@@ -2,9 +2,10 @@ use {
   crate::{
     consensus::{Block, Vote},
     consumer::{BlockConsumer, Commitment},
-    primitives::ToBase58String,
-    vm::{Executed, Transaction},
+    primitives::{Account, Pubkey, ToBase58String},
+    vm::{AccountRef, Executed, Transaction},
   },
+  ed25519_dalek::Signature,
   sqlx::{AnyPool, Connection, Executor},
   tracing::{debug, error, info},
 };
@@ -58,32 +59,51 @@ impl DatabaseSync {
     // that changes is the commitment flag on the block.
     if let Commitment::Confirmed = commitment {
       // insert transactions
-      for tx in &block.data {
+      for (i, tx) in block.data.iter().enumerate() {
         // first the transaction
         dbtransaction
-          .execute(transaction_stmt(&block, tx).as_str())
+          .execute(transaction_stmt(&block, tx, i).as_str())
           .await?;
 
-        // // then its referenced accounts
-        // dbtransaction
-        //   .execute(transaction_accounts_stmt(tx).as_str())
-        //   .await?;
+        // then its referenced accounts
+        for (i, acc) in tx.accounts.iter().enumerate() {
+          dbtransaction
+            .execute(transaction_account_stmt(tx, acc, i).as_str())
+            .await?;
+        }
 
-        // // then signatures of signing accounts
-        // dbtransaction
-        //   .execute(transaction_signers_stmt(tx).as_str())
-        //   .await?;
+        // then signatures of signing accounts
+        for (i, signature) in tx.signatures.iter().enumerate() {
+          dbtransaction
+            .execute(transaction_signature_stmt(tx, signature, i).as_str())
+            .await?;
+        }
 
-        // // and finally output logs or an error
-        // dbtransaction
-        //   .execute(transaction_outputs_stmt(tx).as_str())
-        //   .await?;
+        // and finally output logs or an error
+        if let Some(outputs) = block.output.logs.get(tx.hash()) {
+          for (i, output) in outputs.iter().enumerate() {
+            dbtransaction
+              .execute(transaction_output_stmt(tx, output, i).as_str())
+              .await?;
+          }
+        } else if let Some(error) = block.output.errors.get(tx.hash()) {
+          dbtransaction
+            .execute(transaction_error_stmt(tx, error.to_string()).as_str())
+            .await?;
+        }
       }
 
       // insert votes
-      for vote in &block.votes {
+      for (i, vote) in block.votes.iter().enumerate() {
         dbtransaction
-          .execute(vote_stmt(&block, vote).as_str())
+          .execute(vote_stmt(&block, vote, i).as_str())
+          .await?;
+      }
+
+      // insert state diffs
+      for (i, (addr, acc)) in block.output.state.iter().enumerate() {
+        dbtransaction
+          .execute(state_diff_stmt(&block, addr, acc, i).as_str())
           .await?;
       }
     }
@@ -139,37 +159,117 @@ fn block_header_stmt(
 fn transaction_stmt(
   block: &Executed<Vec<Transaction>>,
   tx: &Transaction,
+  pos: usize,
 ) -> String {
   format!(
-    "INSERT INTO transaction VALUES ('{}', {}, '{}', {}, '{}', '{}')",
+    "INSERT INTO transaction VALUES ('{}', {}, '{}', {}, '{}', '{}', {})",
     tx.hash().to_b58(),
     block.height,
     tx.contract,
     tx.nonce,
     tx.params.to_b58(),
-    tx.payer
+    tx.payer,
+    pos
   )
 }
 
-fn transaction_accounts_stmt(_tx: &Transaction) -> String {
-  todo!()
-}
-
-fn transaction_signers_stmt(_tx: &Transaction) -> String {
-  todo!()
-}
-
-fn transaction_outputs_stmt(_tx: &Transaction) -> String {
-  todo!()
-}
-
-fn vote_stmt(block: &Executed<Vec<Transaction>>, vote: &Vote) -> String {
+fn transaction_account_stmt(
+  tx: &Transaction,
+  acc: &AccountRef,
+  pos: usize,
+) -> String {
   format!(
-    "INSERT INTO vote VALUES ({}, '{}', '{}', '{}', '{}')",
+    "INSERT INTO transaction_accounts VALUES ('{}', '{}', {}, {}, {})",
+    tx.hash().to_b58(),
+    acc.address,
+    match acc.signer {
+      true => 1,
+      false => 0,
+    },
+    match acc.writable {
+      true => 1,
+      false => 0,
+    },
+    pos
+  )
+}
+
+fn transaction_signature_stmt(
+  tx: &Transaction,
+  signature: &Signature,
+  pos: usize,
+) -> String {
+  format!(
+    "INSERT INTO transaction_signatures VALUES ('{}', '{}', {})",
+    tx.hash().to_b58(),
+    signature.to_b58(),
+    pos
+  )
+}
+
+fn transaction_output_stmt(
+  tx: &Transaction,
+  (key, value): &(String, String),
+  pos: usize,
+) -> String {
+  format!(
+    "INSERT INTO transaction_logs VALUES ('{}', '{}', '{}', {})",
+    tx.hash().to_b58(),
+    key,
+    value,
+    pos
+  )
+}
+
+fn transaction_error_stmt(tx: &Transaction, error: String) -> String {
+  format!(
+    "INSERT INTO transaction_errors VALUES ('{}', '{}')",
+    tx.hash().to_b58(),
+    error
+  )
+}
+
+fn state_diff_stmt(
+  block: &Executed<Vec<Transaction>>,
+  account: &Pubkey,
+  data: Option<&Account>,
+  pos: usize,
+) -> String {
+  match data {
+    Some(acc) => format!(
+      "INSERT INTO state_diff VALUES ({}, '{}', {}, {}, {}, 1, 0, {})",
+      block.height,
+      account,
+      match acc.data {
+        None => "NULL".to_string(),
+        Some(ref bytes) => format!("'{}'", bytes.to_b58()),
+      },
+      acc.nonce,
+      match acc.owner {
+        None => "NULL".to_string(),
+        Some(ref owner) => format!("'{}'", owner),
+      },
+      pos
+    ),
+    None => format!(
+      "INSERT INTO state_diff VALUES ({}, '{}', NULL, NULL, NULL, 0, 1, {})",
+      block.height, account, pos
+    ),
+  }
+}
+
+fn vote_stmt(
+  block: &Executed<Vec<Transaction>>,
+  vote: &Vote,
+  pos: usize,
+) -> String {
+  format!(
+    "INSERT INTO vote VALUES ({}, '{}', '{}', '{}', '{}', {})",
     block.height,
     vote.target.to_b58(),
     vote.justification.to_b58(),
     vote.validator,
-    vote.signature.to_b58()
+    vote.signature.to_b58(),
+    pos
   )
 }

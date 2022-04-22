@@ -263,7 +263,7 @@ async fn main() -> anyhow::Result<()> {
           }
           ChainEvent::BlockIncluded(block) => {
             info!(
-              "included block {} [epoch {}] [state hash: {}]",
+              "included block {} [height {}] [state hash: {}]",
               *block, block.height() / genesis.epoch_blocks,
               block.state().hash().to_bytes().to_b58()
             );

@@ -15,7 +15,7 @@ use {
   once_cell::sync::OnceCell,
   serde::{Deserialize, Serialize},
   std::{
-    collections::{btree_map::IntoIter, BTreeMap, BTreeSet},
+    collections::{BTreeMap, BTreeSet},
     ops::Deref,
     sync::Arc,
   },
@@ -119,7 +119,7 @@ impl<'f, D: BlockData> Finalized<'f, D> {
     self.underlying = block.underlying;
     self
       .state
-      .apply(block.output.state.clone())
+      .apply(&block.output.state)
       .expect("unrecoverable storage engine error"); // most likely disk is full
   }
 
@@ -136,6 +136,18 @@ impl<D: BlockData> Deref for Finalized<'_, D> {
   }
 }
 
+/// Represents a change in Blockchain Accounts state.
+///
+/// Statediff are meant to be accumulated and logically the entire
+/// state of the blockchain is the result of cumulative application
+/// of consecutive state diffs.
+///
+/// A transaction produces a statediff, blocks produce state diffs
+/// which are all its transactions state diffs merged together.
+/// If all blocks state diffs are also merged together, then the
+/// resulting state diff would represent the entire state of the system.
+///
+/// StateDiff is also the basic unit of state sync through IPFS/bitswap.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct StateDiff {
   data: BTreeMap<Pubkey, Account>,
@@ -163,6 +175,21 @@ impl StateDiff {
       deletes,
       hashcache: OnceCell::new(),
     }
+  }
+
+  /// Iterate over all account changes in a state diff.
+  ///
+  /// There are two variants of changes:
+  ///   1. (Address, Account) => Means that account under a given address was
+  ///      created or changed its contents.
+  ///   2. (Address, None) => Means that account under a given address was
+  ///      deleted.
+  pub fn iter(&self) -> impl Iterator<Item = (&Pubkey, Option<&Account>)> {
+    self
+      .data
+      .iter()
+      .map(|(addr, acc)| (addr, Some(acc)))
+      .chain(self.deletes.iter().map(|addr| (addr, None)))
   }
 }
 
@@ -194,21 +221,6 @@ impl State for StateDiff {
       }
       MultihashCode::Sha3_256.wrap(hasher.finalize()).unwrap()
     })
-  }
-}
-
-impl IntoIterator for StateDiff {
-  type IntoIter = IntoIter<Pubkey, Option<Account>>;
-  type Item = (Pubkey, Option<Account>);
-
-  fn into_iter(self) -> Self::IntoIter {
-    self
-      .data
-      .into_iter()
-      .map(|(addr, acc)| (addr, Some(acc)))
-      .chain(self.deletes.into_iter().map(|addr| (addr, None)))
-      .collect::<BTreeMap<_, _>>()
-      .into_iter()
   }
 }
 
