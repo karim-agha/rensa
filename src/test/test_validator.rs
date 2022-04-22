@@ -7,7 +7,7 @@ use {
       Vote,
     },
     primitives::{b58::ToBase58String, Account, Keypair, Pubkey},
-    storage::{Error as StorageError, PersistentState},
+    storage::Error as StorageError,
     test::{
       currency::create_pq_token_tx,
       utils::{genesis_default, keypair_default},
@@ -27,7 +27,6 @@ use {
   },
   indexmap::IndexMap,
   multihash::Multihash,
-  rand::{distributions::Alphanumeric, thread_rng, Rng},
   std::{cell::RefCell, collections::HashMap, sync::Arc},
 };
 
@@ -38,7 +37,7 @@ pub struct InMemState {
 
 impl State for InMemState {
   fn get(&self, address: &Pubkey) -> Option<Account> {
-    todo!()
+    self.db.borrow_mut().get(address).cloned()
   }
 
   fn set(
@@ -46,15 +45,18 @@ impl State for InMemState {
     address: Pubkey,
     account: Account,
   ) -> Result<Option<Account>, StateError> {
-    todo!()
+    let account = self.db.borrow_mut().insert(address, account);
+    Ok(account)
   }
 
   fn remove(&mut self, address: Pubkey) -> Result<(), StateError> {
-    todo!()
+    self.db.borrow_mut().remove(&address);
+    Ok(())
   }
 
   fn hash(&self) -> Multihash {
-    todo!()
+    unimplemented!() // not applicable here, PersistenState also does not have
+                     // an impl for this
   }
 }
 
@@ -85,20 +87,6 @@ impl<D: BlockData> TestCtx<D> {
     let keypair = keypair_default();
     let genesis = genesis_default::<D>(&keypair);
 
-    // build persistent state, we generate a random dir
-    // for each instance of TestCtx
-    //
-    // TODO(bmaas): create a test double for PersistState, an in
-    // memory storage. This will remove the need for this randomdir
-    let mut randomdir = std::env::temp_dir();
-    randomdir.push(
-      &thread_rng()
-        .sample_iter(&Alphanumeric)
-        .take(16)
-        .map(char::from)
-        .collect::<String>(),
-    );
-    // let store = PersistentState::new(&genesis, randomdir.clone()).unwrap();
     let store = InMemState::default();
 
     let vm = vm::Machine::new(&genesis).unwrap();

@@ -3,7 +3,7 @@ use {
   crate::{
     consensus::{Block, BlockData},
     primitives::{Account, Pubkey},
-    storage::{Error as StorageError, PersistentState},
+    storage::Error as StorageError,
   },
   multihash::{
     Code as MultihashCode,
