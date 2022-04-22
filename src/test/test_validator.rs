@@ -7,32 +7,75 @@ use {
       Vote,
     },
     primitives::{b58::ToBase58String, Account, Keypair, Pubkey},
-    storage::PersistentState,
+    storage::{Error as StorageError, PersistentState},
     test::{
       currency::create_pq_token_tx,
       utils::{genesis_default, keypair_default},
     },
     vm::{
       self,
+      ApplicableState,
       BlockOutput,
       ContractError,
       Finalized,
       MachineError,
       State,
       StateDiff,
+      StateError,
       Transaction,
     },
   },
   indexmap::IndexMap,
   multihash::Multihash,
   rand::{distributions::Alphanumeric, thread_rng, Rng},
-  std::sync::Arc,
+  std::{cell::RefCell, collections::HashMap, sync::Arc},
 };
+
+#[derive(Debug, Default)]
+pub struct InMemState {
+  db: RefCell<HashMap<Pubkey, Account>>,
+}
+
+impl State for InMemState {
+  fn get(&self, address: &Pubkey) -> Option<Account> {
+    todo!()
+  }
+
+  fn set(
+    &mut self,
+    address: Pubkey,
+    account: Account,
+  ) -> Result<Option<Account>, StateError> {
+    todo!()
+  }
+
+  fn remove(&mut self, address: Pubkey) -> Result<(), StateError> {
+    todo!()
+  }
+
+  fn hash(&self) -> Multihash {
+    todo!()
+  }
+}
+
+impl ApplicableState for InMemState {
+  fn apply(&self, diff: StateDiff) -> std::result::Result<(), StorageError> {
+    let mut db = self.db.borrow_mut();
+    for (addr, account) in diff.into_iter() {
+      match account {
+        Some(account) => db.insert(addr, account),
+        None => db.remove(&addr),
+      };
+    }
+
+    Ok(())
+  }
+}
 
 /// Construct a TestCtx based on a Genesis
 pub struct TestCtx<D: BlockData> {
   genesis: Genesis<D>,
-  store: PersistentState,
+  store: InMemState,
   vm: vm::Machine,
   keypair: Keypair,
 }
@@ -55,7 +98,8 @@ impl<D: BlockData> TestCtx<D> {
         .map(char::from)
         .collect::<String>(),
     );
-    let store = PersistentState::new(&genesis, randomdir.clone()).unwrap();
+    // let store = PersistentState::new(&genesis, randomdir.clone()).unwrap();
+    let store = InMemState::default();
 
     let vm = vm::Machine::new(&genesis).unwrap();
 
@@ -119,7 +163,7 @@ impl<D: BlockData> ProcessTransactionResult<D> {
 /// processes a block per transaction.
 pub struct TestValidator<'g, D: BlockData> {
   ctx: &'g TestCtx<D>,
-  chain: Chain<'g, D>,
+  chain: Chain<'g, D, InMemState>,
   height: u64,
 }
 
