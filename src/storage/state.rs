@@ -3,7 +3,7 @@ use {
   crate::{
     consensus::{BlockData, Genesis},
     primitives::{Account, Pubkey},
-    vm::{State, StateDiff, StateError},
+    vm::{State, StateDiff, StateError, StateStore},
   },
   sled::{Batch, Db},
   std::{path::PathBuf, sync::Arc},
@@ -49,9 +49,11 @@ impl PersistentState {
 
     Ok(Self { db: Arc::new(db) })
   }
+}
 
+impl StateStore for PersistentState {
   /// Applies a state diff from a finalized block
-  pub fn apply(&self, diff: StateDiff) -> Result<(), Error> {
+  fn apply(&self, diff: StateDiff) -> Result<(), Error> {
     let mut batch = Batch::default();
     for (addr, account) in diff.into_iter() {
       match account {

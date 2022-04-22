@@ -7,7 +7,7 @@ use {
       Vote,
     },
     primitives::{b58::ToBase58String, Account, Keypair, Pubkey},
-    storage::PersistentState,
+    storage::Error as StorageError,
     test::{
       currency::create_pq_token_tx,
       utils::{genesis_default, keypair_default},
@@ -20,19 +20,64 @@ use {
       MachineError,
       State,
       StateDiff,
+      StateError,
+      StateStore,
       Transaction,
     },
   },
   indexmap::IndexMap,
   multihash::Multihash,
-  rand::{distributions::Alphanumeric, thread_rng, Rng},
-  std::sync::Arc,
+  std::{cell::RefCell, collections::HashMap, sync::Arc},
 };
+
+#[derive(Debug, Default)]
+pub struct InMemState {
+  db: RefCell<HashMap<Pubkey, Account>>,
+}
+
+impl State for InMemState {
+  fn get(&self, address: &Pubkey) -> Option<Account> {
+    self.db.borrow_mut().get(address).cloned()
+  }
+
+  fn set(
+    &mut self,
+    address: Pubkey,
+    account: Account,
+  ) -> Result<Option<Account>, StateError> {
+    let account = self.db.borrow_mut().insert(address, account);
+    Ok(account)
+  }
+
+  fn remove(&mut self, address: Pubkey) -> Result<(), StateError> {
+    self.db.borrow_mut().remove(&address);
+    Ok(())
+  }
+
+  fn hash(&self) -> Multihash {
+    unimplemented!() // not applicable here, PersistenState also does not have
+                     // an impl for this
+  }
+}
+
+impl StateStore for InMemState {
+  fn apply(&self, diff: StateDiff) -> std::result::Result<(), StorageError> {
+    let mut db = self.db.borrow_mut();
+    for (addr, account) in diff.into_iter() {
+      match account {
+        Some(account) => db.insert(addr, account),
+        None => db.remove(&addr),
+      };
+    }
+
+    Ok(())
+  }
+}
 
 /// Construct a TestCtx based on a Genesis
 pub struct TestCtx<D: BlockData> {
   genesis: Genesis<D>,
-  store: PersistentState,
+  store: InMemState,
   vm: vm::Machine,
   keypair: Keypair,
 }
@@ -42,20 +87,7 @@ impl<D: BlockData> TestCtx<D> {
     let keypair = keypair_default();
     let genesis = genesis_default::<D>(&keypair);
 
-    // build persistent state, we generate a random dir
-    // for each instance of TestCtx
-    //
-    // TODO(bmaas): create a test double for PersistState, an in
-    // memory storage. This will remove the need for this randomdir
-    let mut randomdir = std::env::temp_dir();
-    randomdir.push(
-      &thread_rng()
-        .sample_iter(&Alphanumeric)
-        .take(16)
-        .map(char::from)
-        .collect::<String>(),
-    );
-    let store = PersistentState::new(&genesis, randomdir.clone()).unwrap();
+    let store = InMemState::default();
 
     let vm = vm::Machine::new(&genesis).unwrap();
 
@@ -119,7 +151,7 @@ impl<D: BlockData> ProcessTransactionResult<D> {
 /// processes a block per transaction.
 pub struct TestValidator<'g, D: BlockData> {
   ctx: &'g TestCtx<D>,
-  chain: Chain<'g, D>,
+  chain: Chain<'g, D, InMemState>,
   height: u64,
 }
 
