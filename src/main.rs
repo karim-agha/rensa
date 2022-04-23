@@ -98,6 +98,7 @@ async fn main() -> anyhow::Result<()> {
   // and emits events by calling .poll()
   let mut network = Network::new(
     &genesis,
+    crate::network::create_tcp_transport(&opts.keypair).await?,
     opts.keypair.clone(),
     opts.listen_multiaddrs().into_iter(),
   )

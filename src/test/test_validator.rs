@@ -7,9 +7,9 @@ use {
       Vote,
     },
     primitives::{b58::ToBase58String, Account, Keypair, Pubkey},
-    storage::Error as StorageError,
     test::{
       currency::create_pq_token_tx,
+      in_mem_state::InMemState,
       utils::{genesis_default, keypair_default},
     },
     vm::{
@@ -20,59 +20,14 @@ use {
       MachineError,
       State,
       StateDiff,
-      StateError,
       StateStore,
       Transaction,
     },
   },
   indexmap::IndexMap,
   multihash::Multihash,
-  std::{cell::RefCell, collections::HashMap, sync::Arc},
+  std::sync::Arc,
 };
-
-#[derive(Debug, Default)]
-pub struct InMemState {
-  db: RefCell<HashMap<Pubkey, Account>>,
-}
-
-impl State for InMemState {
-  fn get(&self, address: &Pubkey) -> Option<Account> {
-    self.db.borrow_mut().get(address).cloned()
-  }
-
-  fn set(
-    &mut self,
-    address: Pubkey,
-    account: Account,
-  ) -> Result<Option<Account>, StateError> {
-    let account = self.db.borrow_mut().insert(address, account);
-    Ok(account)
-  }
-
-  fn remove(&mut self, address: Pubkey) -> Result<(), StateError> {
-    self.db.borrow_mut().remove(&address);
-    Ok(())
-  }
-
-  fn hash(&self) -> Multihash {
-    unimplemented!() // not applicable here, PersistenState also does not have
-                     // an impl for this
-  }
-}
-
-impl StateStore for InMemState {
-  fn apply(&self, diff: &StateDiff) -> std::result::Result<(), StorageError> {
-    let mut db = self.db.borrow_mut();
-    for (addr, account) in diff.iter() {
-      match account {
-        Some(account) => db.insert(*addr, account.clone()),
-        None => db.remove(addr),
-      };
-    }
-
-    Ok(())
-  }
-}
 
 /// Construct a TestCtx based on a Genesis
 pub struct TestCtx<D: BlockData> {

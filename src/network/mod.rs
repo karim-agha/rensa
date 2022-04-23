@@ -1,4 +1,4 @@
-use crate::vm::Transaction;
+use {crate::vm::Transaction, libp2p::core::transport::MemoryTransport};
 
 mod episub;
 pub mod responder;
@@ -36,7 +36,7 @@ use {
 
 type BoxedTransport = Boxed<(PeerId, StreamMuxerBox)>;
 
-async fn create_transport(
+pub async fn create_tcp_transport(
   keypair: &Keypair,
 ) -> std::io::Result<BoxedTransport> {
   let transport = {
@@ -57,7 +57,6 @@ async fn create_transport(
         .into(),
     ))
     .expect("Signing libp2p-noise static DH keypair failed.");
-
   Ok(
     transport
       .upgrade(Version::V1)
@@ -66,6 +65,60 @@ async fn create_transport(
       .boxed(),
   )
 }
+
+pub fn create_memory_transport(keypair: &Keypair) -> BoxedTransport {
+  let transport = MemoryTransport::default();
+
+  let noise_keys = noise::Keypair::<noise::X25519Spec>::new()
+    .into_authentic(&identity::Keypair::Ed25519(
+      SecretKey::from_bytes(keypair.secret().to_bytes())
+        .unwrap()
+        .into(),
+    ))
+    .expect("Signing libp2p-noise static DH keypair failed.");
+
+  transport
+    .upgrade(Version::V1)
+    .authenticate(noise::NoiseConfig::xx(noise_keys).into_authenticated())
+    .multiplex(YamuxConfig::default())
+    .boxed()
+}
+
+// TODO(bmaas): remove if we cannot simplify
+// fn upgrade_transport<T: 'static>(
+//   keypair: &Keypair,
+//   transport: T,
+// ) -> Result<Boxed<(PeerId, StreamMuxerBox)>, std::io::Error>
+// where
+//   <T as libp2p::Transport>::Output: futures::AsyncRead,
+//   T: libp2p::Transport
+//     + std::clone::Clone
+//     + std::marker::Sync
+//     + std::marker::Send,
+//   <T as libp2p::Transport>::Output: futures::AsyncWrite,
+//   <T as libp2p::Transport>::Output: Unpin,
+//   <T as libp2p::Transport>::Output: std::marker::Send,
+//   <T as libp2p::Transport>::Listener: std::marker::Send,
+//   <T as libp2p::Transport>::Error: std::marker::Send,
+//   <T as libp2p::Transport>::Error: Sync,
+//   <T as libp2p::Transport>::Dial: std::marker::Send,
+//   <T as libp2p::Transport>::ListenerUpgrade: std::marker::Send,
+// {
+//   let noise_keys = noise::Keypair::<noise::X25519Spec>::new()
+//     .into_authentic(&identity::Keypair::Ed25519(
+//       SecretKey::from_bytes(keypair.secret().to_bytes())
+//         .unwrap()
+//         .into(),
+//     ))
+//     .expect("Signing libp2p-noise static DH keypair failed.");
+//   Ok(
+//     transport
+//       .upgrade(Version::V1)
+//       .authenticate(noise::NoiseConfig::xx(noise_keys).into_authenticated())
+//       .multiplex(YamuxConfig::default())
+//       .boxed(),
+//   )
+// }
 
 // this is a bug in clippy, I filed an issue on GH:
 // https://github.com/rust-lang/rust-clippy/issues/8321
@@ -99,6 +152,7 @@ pub struct Network<D: BlockData> {
 impl<D: BlockData> Network<D> {
   pub async fn new(
     genesis: &Genesis<D>,
+    transport: BoxedTransport,
     keypair: Keypair,
     listenaddrs: impl Iterator<Item = Multiaddr>,
   ) -> std::io::Result<Self> {
@@ -130,7 +184,7 @@ impl<D: BlockData> Network<D> {
     });
 
     let mut swarm = Swarm::new(
-      create_transport(&keypair).await?,
+      transport,
       Episub::new(Config {
         authorizer,
         active_view_factor: 4,
