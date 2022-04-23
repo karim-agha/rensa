@@ -29,8 +29,7 @@ use {
     ValidatorScheduleStream,
     Vote,
   },
-  consumer::BlockConsumers,
-  dbsync::DatabaseSync,
+  consumer::{BlockConsumer, BlockConsumers},
   futures::StreamExt,
   network::{responder::SwarmResponder, Network},
   producer::BlockProducer,
@@ -161,15 +160,20 @@ async fn main() -> anyhow::Result<()> {
 
   // those are components that ingest newly included,
   // confirmed and finalized blocks
-  let consumers = BlockConsumers::new(vec![
-    // exports data changes to external DBs
-    Arc::new(DatabaseSync::new()),
+  let mut consumers: Vec<Arc<dyn BlockConsumer<_>>> = vec![
     // persists blocks that have been confirmed or finalized
     Arc::new(blocks_store.clone()),
     // remove all observed votes and txs from the mempool that
     // were included by other validators.
     Arc::new(producer.clone()),
-  ]);
+  ];
+
+  // dbsync is an optional opt-in feature
+  if let Some(dbsync) = opts.dbsync().await? {
+    consumers.push(Arc::new(dbsync));
+  }
+
+  let consumers = BlockConsumers::new(consumers);
 
   // responsible for deciding if the current node should
   // respond to  block reply requests.

@@ -26,7 +26,7 @@ impl Currency {
     symbol: Option<String>,
   ) -> Transaction {
     let ix = crate::vm::builtin::currency::Instruction::Create {
-      seed: seed.clone(),
+      seed: *seed,
       authority,
       decimals,
       name,
@@ -43,14 +43,14 @@ impl Currency {
       writable: true,
     }];
 
-    return Transaction::new(
+    Transaction::new(
       *CURRENCY_CONTRACT_ADDR,
       nonce,
       &payer,
       accounts,
       params,
       &[&payer],
-    );
+    )
   }
 
   // fn mint(&self, authority: Keypair, payer: Keypair, amount: u64) {}

@@ -61,12 +61,12 @@ impl State for InMemState {
 }
 
 impl StateStore for InMemState {
-  fn apply(&self, diff: StateDiff) -> std::result::Result<(), StorageError> {
+  fn apply(&self, diff: &StateDiff) -> std::result::Result<(), StorageError> {
     let mut db = self.db.borrow_mut();
-    for (addr, account) in diff.into_iter() {
+    for (addr, account) in diff.iter() {
       match account {
-        Some(account) => db.insert(addr, account),
-        None => db.remove(&addr),
+        Some(account) => db.insert(*addr, account.clone()),
+        None => db.remove(addr),
       };
     }
 
@@ -161,7 +161,7 @@ impl<'g, D: BlockData> TestValidator<'g, D> {
     let chain = Chain::new(&ctx.genesis, &ctx.vm, finalized);
 
     Self {
-      ctx: &ctx,
+      ctx,
       chain,
       height: 0,
     }
@@ -179,13 +179,13 @@ impl<'g, D: BlockData> TestValidator<'g, D> {
   pub fn add_account(&self, pubkey: Pubkey, account: Account) {
     let mut diff = StateDiff::default();
     diff.set(pubkey, account).unwrap();
-    self.ctx.store.apply(diff).unwrap();
+    self.ctx.store.apply(&diff).unwrap();
   }
 
   pub fn delete_account(&self, pubkey: Pubkey) {
     let mut diff = StateDiff::default();
     diff.remove(pubkey).unwrap();
-    self.ctx.store.apply(diff).unwrap();
+    self.ctx.store.apply(&diff).unwrap();
   }
 
   pub fn process_transaction(
@@ -204,14 +204,11 @@ impl<'g, D: BlockData> TestValidator<'g, D> {
     // execute our transaction on the head state and return the
     // parents hash
     let (parent, execution_result) = self.chain.with_head(|s, b| {
-      (
-        b.hash().unwrap().clone(),
-        transactions.execute(&self.ctx.vm, s),
-      )
+      (b.hash().unwrap(), transactions.execute(&self.ctx.vm, s))
     });
 
     let block_output = execution_result?;
-    let statehash = block_output.hash().clone();
+    let statehash = *block_output.hash();
 
     // produce a new new block
     let produced = Produced::new(
@@ -316,8 +313,9 @@ mod tests {
 
     let result = validator.process_transaction(vec![tx_create]).unwrap();
 
-    assert_eq!(result.log().is_some(), true);
-    assert_eq!(result.error().is_some(), false);
+    assert!(result.log().is_some());
+    assert!(result.error().is_none());
+
     assert_eq!(
       &result.state().hash().to_b58(),
       "W1biVagiHrDbkdaP2qQ5ktft82yppTfpL1kbGek7xGUiKS"
@@ -347,6 +345,6 @@ mod tests {
 
     assert!(validator.get_account(pubkey).is_some());
     validator.delete_account(pubkey);
-    assert!(!validator.get_account(pubkey).is_some());
+    assert!(validator.get_account(pubkey).is_none());
   }
 }

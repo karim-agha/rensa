@@ -31,6 +31,11 @@ sled = { version = "0.34", features = ["compression"] }
 lazy_static = "1.4"
 chrono = { version = "0.4", features = ["serde"] }
 multihash = { version = "0.16", features = ["serde-codec"] }
+sqlx = { version = "0.5", features = [
+  "runtime-tokio-rustls",
+  "all-databases",
+  "offline",
+] }
 thiserror = "1.0"
 once_cell = "1.9"
 rand_chacha = "0.3.1"
@@ -71,4 +76,3 @@ debug = true
 [workspace]
 members = [".", "./sdk/rust", "./sdk/rust/macros"]
 default-members = [".", "./sdk/rust", "./sdk/rust/macros"]
-

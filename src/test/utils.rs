@@ -20,7 +20,7 @@ lazy_static::lazy_static! {
 }
 
 pub fn genesis_default<D: BlockData>(keypair: &Keypair) -> Genesis<D> {
-  let genesis = Genesis::<D> {
+  Genesis::<D> {
     chain_id: "1".to_owned(),
     epoch_blocks: 32,
     genesis_time: Utc::now(),
@@ -47,8 +47,7 @@ pub fn genesis_default<D: BlockData>(keypair: &Keypair) -> Genesis<D> {
       stake: 200000,
     }],
     _marker: PhantomData,
-  };
-  genesis
+  }
 }
 
 pub fn keypair_default() -> Keypair {
