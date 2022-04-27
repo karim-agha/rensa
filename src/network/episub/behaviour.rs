@@ -276,7 +276,7 @@ impl NetworkBehaviour for Episub {
 
       // make sure that we know who we are and how we can be reached.
       if self.local_node.is_some() {
-        // for each topic that has zero active nodes,
+        // for each topic that has hasn't enough active nodes,
         // send a join request to any dialer
         self.request_join_for_starving_topics(*peer_id);
       } else {
@@ -505,7 +505,7 @@ impl Episub {
   }
 
   fn request_join_for_starving_topics(&mut self, peer: PeerId) {
-    // for each topic that has zero active nodes,
+    // for each topic with view that has not reached minimum size of active nodes,
     // send a join request to any dialer
     self
       .topics

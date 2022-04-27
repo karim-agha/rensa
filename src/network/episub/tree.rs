@@ -201,7 +201,7 @@ impl PlumTree {
   }
 
   pub fn inject_graft(&mut self, peer_id: PeerId, ids: Vec<u64>) {
-    // updgrade to eager node after graft
+    // upgrade to eager node after graft
     self.lazy.remove(&peer_id);
     self.eager.insert(peer_id);
 
@@ -238,20 +238,22 @@ impl PlumTree {
       })
       .collect();
 
-    self.lazy.iter().for_each(|p| {
-      self
-        .out_events
-        .push_back(EpisubNetworkBehaviourAction::NotifyHandler {
-          peer_id: *p,
-          handler: NotifyHandler::Any,
-          event: rpc::Rpc {
-            topic: self.topic.clone(),
-            action: Some(rpc::rpc::Action::Ihave(rpc::IHave {
-              ihaves: received.clone(),
-            })),
-          },
-        })
-    });
+    if !received.is_empty() {
+      self.lazy.iter().for_each(|p| {
+        self
+          .out_events
+          .push_back(EpisubNetworkBehaviourAction::NotifyHandler {
+            peer_id: *p,
+            handler: NotifyHandler::Any,
+            event: rpc::Rpc {
+              topic: self.topic.clone(),
+              action: Some(rpc::rpc::Action::Ihave(rpc::IHave {
+                ihaves: received.clone(),
+              })),
+            },
+          })
+      });
+    }
   }
 
   fn prune_history(&mut self) {
