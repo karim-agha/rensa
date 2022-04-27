@@ -280,7 +280,9 @@ impl MemValidator {
 }
 
 lazy_static::lazy_static! {
-    static ref LISTENADDR_COUNTER: AtomicU64 = AtomicU64::new(0);
+    // we start with 1000 as a port of 0 will generate a random port
+    // on the transport/memory hub.
+    static ref LISTENADDR_COUNTER: AtomicU64 = AtomicU64::new(1000);
 }
 
 struct TValidator {
