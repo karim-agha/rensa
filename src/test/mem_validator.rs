@@ -26,7 +26,13 @@ use {
   futures::StreamExt,
   libp2p::{multiaddr::Protocol, Multiaddr},
   multihash::Multihash,
-  std::{collections::HashMap, sync::Arc},
+  std::{
+    collections::HashMap,
+    sync::{
+      atomic::{AtomicU64, Ordering},
+      Arc,
+    },
+  },
   thiserror::Error,
   tokio::sync::{mpsc::error::SendError, RwLock},
 };
@@ -87,12 +93,12 @@ impl MemValidator {
   fn new(
     genesis: Genesis<Vec<Transaction>>,
     keypair: Keypair,
-    listenaddr: usize,
+    listenaddr: u64,
   ) -> Self {
     Self {
       genesis,
       keypair,
-      listenaddr: listenaddr as u64,
+      listenaddr,
     }
   }
 
@@ -273,17 +279,30 @@ impl MemValidator {
   }
 }
 
+lazy_static::lazy_static! {
+    static ref LISTENADDR_COUNTER: AtomicU64 = AtomicU64::new(0);
+}
+
 struct TValidator {
   keypair: Keypair,
   stake: u64,
+  listenaddr: u64,
 }
 
 impl TValidator {
   fn unique() -> Self {
+    let listenaddr = LISTENADDR_COUNTER.fetch_add(1, Ordering::SeqCst);
     Self {
       keypair: Keypair::unique(),
       stake: 2000,
+      listenaddr,
     }
+  }
+
+  fn multiaddr(&self) -> Multiaddr {
+    let mut m = Multiaddr::empty();
+    m.push(Protocol::Memory(self.listenaddr));
+    m
   }
 }
 
@@ -298,10 +317,7 @@ impl From<&TValidator> for Validator {
 
 #[cfg(test)]
 mod tests {
-  use {
-    super::*,
-    crate::test::utils::{genesis_validators, keypair_default},
-  };
+  use {super::*, crate::test::utils::genesis_validators, std::time::Duration};
 
   #[tokio::test(flavor = "multi_thread", worker_threads = 1)]
   async fn mem_validator_test() {
@@ -316,9 +332,12 @@ mod tests {
     // build a set of mem validators using the genesis
     let mem_validators: Vec<_> = validators
       .iter()
-      .enumerate()
-      .map(|(idx, tval)| {
-        MemValidator::new(genesis.clone(), tval.keypair.clone(), idx)
+      .map(|tval| {
+        MemValidator::new(
+          genesis.clone(),
+          tval.keypair.clone(),
+          tval.listenaddr,
+        )
       })
       .collect();
 
@@ -332,7 +351,8 @@ mod tests {
     // now lets generate the peers list and start connecting
     for v in mem_validators {
       tokio::spawn(v.start(bootstrap_nodes.clone()));
-      // v.start(bootstrap_nodes.clone()).await.unwrap();
     }
+
+    tokio::time::sleep(Duration::from_secs(10)).await;
   }
 }
