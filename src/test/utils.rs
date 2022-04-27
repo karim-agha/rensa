@@ -19,7 +19,9 @@ lazy_static::lazy_static! {
     pub static ref CURRENCY_CONTRACT_ADDR: Pubkey = "Currency1xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx".parse().unwrap();
 }
 
-pub fn genesis_default<D: BlockData>(keypair: &Keypair) -> Genesis<D> {
+pub fn genesis_validators<D: BlockData>(
+  validators: Vec<Validator>,
+) -> Genesis<D> {
   Genesis::<D> {
     chain_id: "1".to_owned(),
     epoch_blocks: 32,
@@ -42,12 +44,16 @@ pub fn genesis_default<D: BlockData>(keypair: &Keypair) -> Genesis<D> {
     system_coin: "RensaToken1xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
       .parse()
       .unwrap(),
-    validators: vec![Validator {
-      pubkey: keypair.public(),
-      stake: 200000,
-    }],
+    validators,
     _marker: PhantomData,
   }
+}
+
+pub fn genesis_default<D: BlockData>(keypair: &Keypair) -> Genesis<D> {
+  genesis_validators(vec![Validator {
+    pubkey: keypair.public(),
+    stake: 200000,
+  }])
 }
 
 pub fn keypair_default() -> Keypair {

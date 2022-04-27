@@ -58,6 +58,13 @@ pub struct TreeNode<D: BlockData> {
   pub children: Vec<TreeNode<D>>,
 }
 
+// SAFETY: No one beside us has the raw pointer, so we can safely
+// transfer the TreeNode to another Thread when D can be safely transferred.
+unsafe impl<D: BlockData> Send for TreeNode<D> where D: Send {}
+
+// SAFETY: Disucss this with Karim
+unsafe impl<D: BlockData> Sync for TreeNode<D> where D: Sync {}
+
 impl<D: BlockData> TreeNode<D> {
   pub fn new(block: VolatileBlock<D>) -> Self {
     Self {

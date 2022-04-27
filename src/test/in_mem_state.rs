@@ -5,17 +5,17 @@ use {
     vm::{State, StateDiff, StateError, StateStore},
   },
   multihash::Multihash,
-  std::{self, cell::RefCell, collections::HashMap},
+  std::{self, collections::HashMap, sync::RwLock},
 };
 
 #[derive(Debug, Default)]
 pub struct InMemState {
-  pub(crate) db: RefCell<HashMap<Pubkey, Account>>,
+  pub db: RwLock<HashMap<Pubkey, Account>>,
 }
 
 impl State for InMemState {
   fn get(&self, address: &Pubkey) -> Option<Account> {
-    self.db.borrow_mut().get(address).cloned()
+    self.db.write().unwrap().get(address).cloned()
   }
 
   fn set(
@@ -23,12 +23,12 @@ impl State for InMemState {
     address: Pubkey,
     account: Account,
   ) -> Result<Option<Account>, StateError> {
-    let account = self.db.borrow_mut().insert(address, account);
+    let account = self.db.write().unwrap().insert(address, account);
     Ok(account)
   }
 
   fn remove(&mut self, address: Pubkey) -> Result<(), StateError> {
-    self.db.borrow_mut().remove(&address);
+    self.db.write().unwrap().remove(&address);
     Ok(())
   }
 
@@ -40,7 +40,7 @@ impl State for InMemState {
 
 impl StateStore for InMemState {
   fn apply(&self, diff: StateDiff) -> std::result::Result<(), StorageError> {
-    let mut db = self.db.borrow_mut();
+    let mut db = self.db.write().unwrap();
     for (addr, account) in diff.into_iter() {
       match account {
         Some(account) => db.insert(addr, account),

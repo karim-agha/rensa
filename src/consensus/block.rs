@@ -76,7 +76,7 @@ where
 ///
 /// D is type of the underlying data that consensus is trying to
 ///   decide on, in case of a blockchain it is going to be Blocks
-pub trait Block<D: BlockData>: Debug {
+pub trait Block<D: BlockData>: Debug + Send + Sync {
   /// Hash of this block with its payload.
   fn hash(&self) -> Result<Multihash, StdIoError>;
 
