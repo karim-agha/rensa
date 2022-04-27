@@ -93,6 +93,9 @@ async fn main() -> anyhow::Result<()> {
   // read the genesis configuration
   let genesis = opts.genesis()?;
 
+  // SUGESTION:
+  // Validator::start(opt...);
+
   // Create the P2P networking layer.
   // Networking runs on its own separate thread,
   // and emits events by calling .poll()

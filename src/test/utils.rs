@@ -26,7 +26,7 @@ pub fn genesis_validators<D: BlockData>(
     chain_id: "1".to_owned(),
     epoch_blocks: 32,
     genesis_time: Utc::now(),
-    slot_interval: Duration::from_secs(2),
+    slot_interval: Duration::from_secs(1),
     state: BTreeMap::new(),
     builtins: vec![*CURRENCY_CONTRACT_ADDR],
     limits: Limits {

@@ -31,7 +31,7 @@ use {
     UnboundedReceiver,
     UnboundedSender,
   },
-  tracing::{debug, error, warn},
+  tracing::{debug, error, info, warn},
 };
 
 type BoxedTransport = Boxed<(PeerId, StreamMuxerBox)>;
@@ -265,11 +265,14 @@ impl<D: BlockData> Network<D> {
               } else {
                 warn!("Received a message on an unexpected topic {topic}");
               }
-            }
+            } else
+                if let SwarmEvent::Behaviour(EpisubEvent::PeerAdded(pid)) = event { info!("Peer added to active view {pid}") }
           },
           Some(event) = netout_rx.recv() => {
             match event {
               NetworkCommand::Connect(addr)=>{
+                  // TODO(bmaas): remove
+                  eprintln!("Connecting to {addr}");
                 if let Err(e) = swarm.dial(addr.clone()) {
                   error!("Dialing peer {addr} failed: {e}");
                 }

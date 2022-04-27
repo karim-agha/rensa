@@ -17,10 +17,10 @@ use {
       NetworkCommand,
       NetworkEvent,
     },
-    primitives::Keypair,
+    primitives::{b58::ToBase58String, Keypair},
     producer::BlockProducer,
     test::in_mem_state::InMemState,
-    vm::{self, Executed, Finalized, Transaction},
+    vm::{self, Executed, Finalized, State, Transaction},
   },
   async_trait::async_trait,
   futures::StreamExt,
@@ -35,6 +35,13 @@ use {
   },
   thiserror::Error,
   tokio::sync::{mpsc::error::SendError, RwLock},
+  tracing::{info, Level},
+  tracing_subscriber::{
+    filter::filter_fn,
+    prelude::__tracing_subscriber_SubscriberExt,
+    util::SubscriberInitExt,
+    Layer,
+  },
 };
 
 #[derive(Debug, Error)]
@@ -55,6 +62,7 @@ pub type BlockStoreDb = HashMap<Multihash, Executed<Vec<Transaction>>>;
 
 #[derive(Default, Clone)]
 struct BlockStore {
+  // TOOD: replace with DashMap/DashSet
   db: Arc<RwLock<BlockStoreDb>>,
 }
 
@@ -86,29 +94,57 @@ impl BlockConsumer<Vec<Transaction>> for BlockStore {
 pub struct MemValidator {
   genesis: Genesis<Vec<Transaction>>,
   keypair: Keypair,
-  listenaddr: u64,
+  connection_id: u64,
 }
 
 impl MemValidator {
   fn new(
     genesis: Genesis<Vec<Transaction>>,
     keypair: Keypair,
-    listenaddr: u64,
+    connection_id: u64,
   ) -> Self {
     Self {
       genesis,
       keypair,
-      listenaddr,
+      connection_id,
     }
   }
 
   pub fn listenaddr(&self) -> Multiaddr {
     let mut m = Multiaddr::empty();
-    m.push(Protocol::Memory(self.listenaddr));
+    m.push(Protocol::Memory(self.connection_id));
     m
   }
 
-  pub async fn start(self, peers: Vec<Multiaddr>) -> Result<()> {
+  // LocalChain: a set of validors (in-mem), with commands to start stop, and
+  // get access to the individual validators
+
+  // TODO: merge the main.rs an the MemValidator
+
+  // TODO: create a LocalChain which launches these mem validators
+  // and records everything. G
+  // Takes Genesis
+  // How many validators
+  // Keeps track of all validators
+  // And get access to the control center of each individual validator.
+  //    - validator.mute_for(_: Duration)
+  //    - validator.listen(); => to test expected events
+  //        - NetworkEvent => for testing Bitswap
+  //        - ChainEvent
+  //
+  // Usecase create topology
+  // - Iterate over the nodes, query their active view and passive view
+  // - generate a dotfile
+  // - print the topology
+  //
+  // NOTE: we can use this for our whitepaper.
+  //
+  // NOTE: we can use this to test IBC and the future developers of IBC
+  //
+  // NOTE: simulate delays of the channels.
+
+  #[tracing::instrument(name="validator", skip(self,bootnodes), fields(listenaddr=%self.listenaddr()))]
+  pub async fn start(self, bootnodes: Vec<Multiaddr>) -> Result<()> {
     // Create the P2P networking layer.
     // Networking runs on its own separate thread,
     // and emits events by calling .poll()
@@ -128,7 +164,7 @@ impl MemValidator {
     .unwrap();
 
     // connect to bootstrap nodes if specified
-    for peer in peers {
+    for peer in bootnodes {
       network.connect(peer)?;
     }
 
@@ -138,7 +174,7 @@ impl MemValidator {
       .hash()?
       .digest()
       .try_into()
-      .expect("cannot convert genesis hash into seed");
+      .expect("to be able to convert genesis hash into seed");
 
     // The validator state storage, we use in memory as we
     // are not interested in storing test validator state on disk
@@ -156,7 +192,7 @@ impl MemValidator {
 
     // the transaction processing runtime
     let vm = vm::Machine::new(&self.genesis)
-      .expect("could not initialize the virtual machine");
+      .expect("to be able to initialize the virtual machine");
 
     // components of the consensus
     let mut chain = Chain::new(&self.genesis, &vm, finalized);
@@ -263,17 +299,40 @@ impl MemValidator {
               network.gossip_missing(hash)?
             }
             ChainEvent::BlockIncluded(block) => {
+                info!(
+                    "included block {} [epoch {}] [state hash: {}]",
+                    *block, block.height() / self.genesis.epoch_blocks,
+                    block.state().hash().to_bytes().to_b58()
+                );
+
               consumers.consume(block, Commitment::Included)?;
             }
-            ChainEvent::BlockConfirmed { block, .. } => {
+            ChainEvent::BlockConfirmed { block, votes } => {
+
+                info!(
+                    "confirmed block {} with {:.02}% votes [epoch {}] [state hash: {}]",
+                    *block,
+                    (votes as f64 * 100f64) / chain.total_stake() as f64,
+                    block.height() / self.genesis.epoch_blocks,
+                    block.state().hash().to_bytes().to_b58()
+                );
+
+
+
               consumers.consume(block, Commitment::Confirmed)?;
             }
-            ChainEvent::BlockFinalized { block, .. } => {
+            ChainEvent::BlockFinalized { block, votes } => {
+                info!(
+                    "finalized block {} with {:.02}% votes [epoch {}] [state hash: {}]",
+                    *block,
+                    (votes as f64 * 100f64) / chain.total_stake() as f64,
+                    block.height() / self.genesis.epoch_blocks,
+                    block.state().hash().to_bytes().to_b58()
+                );
               consumers.consume(block, Commitment::Finalized)?;
             }
           }
         }
-
       }
     }
   }
@@ -285,6 +344,7 @@ lazy_static::lazy_static! {
     static ref LISTENADDR_COUNTER: AtomicU64 = AtomicU64::new(1000);
 }
 
+#[derive(Debug)]
 struct TValidator {
   keypair: Keypair,
   stake: u64,
@@ -321,13 +381,24 @@ impl From<&TValidator> for Validator {
 mod tests {
   use {super::*, crate::test::utils::genesis_validators, std::time::Duration};
 
-  #[tokio::test(flavor = "multi_thread", worker_threads = 1)]
+  #[tokio::test(flavor = "multi_thread", worker_threads = 72)]
   async fn mem_validator_test() {
+    // setup logging
+    tracing_subscriber::registry()
+      .with(tracing_subscriber::fmt::layer().with_filter(filter_fn(
+        move |metadata| {
+          !metadata.target().starts_with("netlink")
+            && metadata.level() <= &Level::INFO
+        },
+      )))
+      .init();
+
     // build some unique tvalidators, and use this to build a genesis with
     // standard validators
     let validators: Vec<_> = std::iter::repeat_with(|| TValidator::unique())
       .take(10)
       .collect();
+
     let genesis =
       genesis_validators(validators.iter().map(Validator::from).collect());
 
@@ -355,6 +426,9 @@ mod tests {
       tokio::spawn(v.start(bootstrap_nodes.clone()));
     }
 
-    tokio::time::sleep(Duration::from_secs(10)).await;
+    // now we have a validator set running, how do we access them?
+    // how can we request information from this validator set
+    // we have access to them through our TValidator.
+    tokio::time::sleep(Duration::from_secs(u64::max_value())).await;
   }
 }
