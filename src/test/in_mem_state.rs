@@ -39,12 +39,12 @@ impl State for InMemState {
 }
 
 impl StateStore for InMemState {
-  fn apply(&self, diff: StateDiff) -> std::result::Result<(), StorageError> {
+  fn apply(&self, diff: &StateDiff) -> std::result::Result<(), StorageError> {
     let mut db = self.db.write().unwrap();
-    for (addr, account) in diff.into_iter() {
+    for (addr, account) in diff.iter() {
       match account {
-        Some(account) => db.insert(addr, account),
-        None => db.remove(&addr),
+        Some(account) => db.insert(*addr, account.clone()),
+        None => db.remove(addr),
       };
     }
 
