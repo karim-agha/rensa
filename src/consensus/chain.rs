@@ -128,7 +128,7 @@ pub struct Chain<'g, D: BlockData, S: StateStore> {
   ///
   /// Those blocks are voted on by validators, once the finalization
   /// requirements are met, they get finalized.
-  forktrees: Vec<TreeNode<D>>,
+  forktrees: Vec<Arc<TreeNode<D>>>,
 
   /// Blocks that were received but their parent
   /// block was not included in the forrest (yet).
@@ -285,14 +285,14 @@ impl<'g, 'f, D: BlockData, S: StateStore> Chain<'g, D, S> {
   }
 
   /// Locates a node in the fork trees that has a block with a given hash.
-  fn get_block_node(&self, hash: &Multihash) -> Option<&dyn Block<D>> {
+  fn get_block_node(&self, hash: Multihash) -> Option<&dyn Block<D>> {
     for root in &self.forktrees {
       if let Some(node) = root.get(hash) {
         return Some(node.value.block.underlying.as_ref());
       }
     }
 
-    if self.finalized.hash().unwrap() == *hash {
+    if self.finalized.hash().unwrap() == hash {
       return Some(&**self.finalized);
     }
 
@@ -330,7 +330,7 @@ impl<'g, 'f, D: BlockData, S: StateStore> Chain<'g, D, S> {
       }
 
       for root in self.forktrees.iter_mut() {
-        if let Some(target) = root.get_mut(&vote.target) {
+        if let Some(target) = Arc::clone(root).get_mut(vote.target) {
           let target = unsafe { &mut *target as &mut TreeNode<D> };
 
           // verify that the justification is a known finalized block
@@ -344,6 +344,8 @@ impl<'g, 'f, D: BlockData, S: StateStore> Chain<'g, D, S> {
             );
             return;
           }
+
+          // SAFETY: Trust me...
 
           // find out which block are unconfirmed prior to the vote
           let unconfirmed: Vec<_> = target
@@ -406,7 +408,7 @@ impl<'g, 'f, D: BlockData, S: StateStore> Chain<'g, D, S> {
     &mut self,
     block: Produced<D>,
   ) -> Result<Result<(), Produced<D>>, MachineError> {
-    if self.get_block_node(&block.hash().unwrap()).is_some() {
+    if self.get_block_node(block.hash().unwrap()).is_some() {
       // duplicate block, most likely replied for some other
       // validator after an explicit replay request.
       debug!("Ignoring duplicate block {block}.");
@@ -437,8 +439,8 @@ impl<'g, 'f, D: BlockData, S: StateStore> Chain<'g, D, S> {
       return Ok(Ok(()));
     } else {
       for tree in self.forktrees.iter_mut() {
-        if let Some(parent) = tree.get_mut(&block.parent) {
-          let parent = unsafe { &mut *parent as &mut TreeNode<D> };
+        if let Some(parent) = Arc::clone(tree).get_mut(block.parent) {
+          let parent = unsafe { Arc::from_raw(parent) };
 
           if block.height != parent.value.height() + 1 {
             return Err(MachineError::InvalidBlockHeight);
@@ -449,7 +451,8 @@ impl<'g, 'f, D: BlockData, S: StateStore> Chain<'g, D, S> {
           // that the VM receives for executing this block is a union of
           // all parent blocks state and the finalized state with priority
           // given to most recent blocks.
-          parent.add_child(VolatileBlock::new(Executed::new(
+          let parent_clone = Arc::clone(&parent);
+          parent_clone.add_child(VolatileBlock::new(Executed::new(
             &Overlayed::new(self.finalized.state(), &parent.state()),
             Arc::new(block),
             self.virtual_machine,
@@ -557,7 +560,7 @@ impl<'g, 'f, D: BlockData, S: StateStore> Chain<'g, D, S> {
   ///   2. No surround vote;
   fn commit_and_vote(&mut self, target: Multihash) {
     for root in &self.forktrees {
-      if let Some(target) = root.get(&target) {
+      if let Some(target) = root.get(target) {
         let epoch = self.epoch(&*target.value);
 
         // The justification is the last finalized block.
@@ -650,10 +653,10 @@ impl<'g, 'f, D: BlockData, S: StateStore> Chain<'g, D, S> {
   ///
   /// Applies state accumulate by the root to the current
   /// finalized state.
-  fn finalize_root(&mut self, subtree: TreeNode<D>) {
+  fn finalize_root(&mut self, mut subtree: Arc<TreeNode<D>>) {
     let newroot_hash = subtree.value.hash().unwrap();
     // apply root's state diff and set it as the new finalized block
-    self.finalized.apply(subtree.value.block);
+    self.finalized.apply(&subtree.value.block);
 
     // this is the list of trees in the forktree that didn't make
     // it and will be removed permanently from the consensus tree.
@@ -686,12 +689,14 @@ impl<'g, 'f, D: BlockData, S: StateStore> Chain<'g, D, S> {
       });
     }
 
-    self.forktrees = subtree
+    let mutable_subtree = Arc::get_mut(&mut subtree).unwrap();
+    self.forktrees = mutable_subtree
       .children
-      .into_iter()
-      .map(|mut c| {
-        c.parent = None; // becomes new root in forktree
-        c
+      .iter_mut()
+      .map(|c| {
+        let m = Arc::get_mut(c).unwrap();
+        m.parent = None; // becomes new root in forktree
+        unsafe { Arc::from_raw(m as &_) }
       })
       .collect();
   }
@@ -785,7 +790,7 @@ impl<'g, D: BlockData, S: StateStore> Chain<'g, D, S> {
 impl<'g, D: BlockData, S: StateStore> Chain<'g, D, S> {
   /// Attempts to retreive a non-finalized block that is still
   /// going through the consensus algorithm.
-  pub fn get(&self, hash: &Multihash) -> Option<&Executed<D>> {
+  pub fn get(&self, hash: Multihash) -> Option<&Executed<D>> {
     for root in &self.forktrees {
       if let Some(node) = root.get(hash) {
         return Some(&node.value.block);

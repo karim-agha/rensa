@@ -246,7 +246,7 @@ impl MemValidator {
         // a requested hash. This is the rate limiter component.
         Some(block_hash) = block_reply_responder.next() => {
            if let Some(block) = chain
-            .get(&block_hash)
+            .get(block_hash)
             .cloned()
           {
             network.gossip_block((*block.underlying).clone())?
@@ -383,7 +383,7 @@ impl From<&TValidator> for Validator {
 mod tests {
   use {super::*, crate::test::utils::genesis_validators, std::time::Duration};
 
-  #[tokio::test(flavor = "multi_thread", worker_threads = 1)]
+  #[tokio::test(flavor = "multi_thread")]
   async fn mem_validator_test() {
     // setup logging
     tracing_subscriber::registry()
@@ -397,8 +397,8 @@ mod tests {
 
     // build some unique tvalidators, and use this to build a genesis with
     // standard validators
-    let validators: Vec<_> = std::iter::repeat_with(|| TValidator::unique())
-      .take(20)
+    let validators: Vec<_> = std::iter::repeat_with(TValidator::unique)
+      .take(30)
       .collect();
 
     let genesis =
@@ -419,14 +419,14 @@ mod tests {
     // first 3 are bootstrap
     let bootstrap_nodes: Vec<_> = mem_validators
       .iter()
-      .take(3)
+      .take(1)
       .map(|n| n.listenaddr())
       .collect();
 
     // now lets generate the peers list and start connecting
     for v in mem_validators {
       tokio::spawn(v.start(bootstrap_nodes.clone()));
-      tokio::time::sleep(Duration::from_millis(1000)).await;
+      tokio::time::sleep(Duration::from_millis(10)).await;
     }
 
     // now we have a validator set running, how do we access them?

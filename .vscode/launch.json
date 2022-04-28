@@ -1,0 +1,157 @@
+{
+  // Use IntelliSense to learn about possible attributes.
+  // Hover to view descriptions of existing attributes.
+  // For more information, visit: https://go.microsoft.com/fwlink/?linkid=830387
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "type": "lldb",
+      "request": "launch",
+      "name": "Debug executable 'rensa'",
+      "cargo": {
+        "args": [
+          "build",
+          "--bin=rensa",
+          "--package=rensa"
+        ],
+        "filter": {
+          "name": "rensa",
+          "kind": "bin"
+        }
+      },
+      "args": [],
+      "cwd": "${workspaceFolder}"
+    },
+    {
+      "type": "lldb",
+      "request": "launch",
+      "name": "Debug unit tests in executable 'rensa'",
+      "cargo": {
+        "args": [
+          "test",
+          "--no-run",
+          "--bin=rensa",
+          "--package=rensa"
+        ],
+        "filter": {
+          "name": "rensa",
+          "kind": "bin"
+        }
+      },
+      "args": [],
+      "cwd": "${workspaceFolder}"
+    },
+    {
+      "type": "lldb",
+      "request": "launch",
+      "name": "Debug executable 'keydump'",
+      "cargo": {
+        "args": [
+          "build",
+          "--bin=keydump",
+          "--package=rensa"
+        ],
+        "filter": {
+          "name": "keydump",
+          "kind": "bin"
+        }
+      },
+      "args": [],
+      "cwd": "${workspaceFolder}"
+    },
+    {
+      "type": "lldb",
+      "request": "launch",
+      "name": "Debug unit tests in executable 'keydump'",
+      "cargo": {
+        "args": [
+          "test",
+          "--no-run",
+          "--bin=keydump",
+          "--package=rensa"
+        ],
+        "filter": {
+          "name": "keydump",
+          "kind": "bin"
+        }
+      },
+      "args": [],
+      "cwd": "${workspaceFolder}"
+    },
+    {
+      "type": "lldb",
+      "request": "launch",
+      "name": "Debug executable 'keygen'",
+      "cargo": {
+        "args": [
+          "build",
+          "--bin=keygen",
+          "--package=rensa"
+        ],
+        "filter": {
+          "name": "keygen",
+          "kind": "bin"
+        }
+      },
+      "args": [],
+      "cwd": "${workspaceFolder}"
+    },
+    {
+      "type": "lldb",
+      "request": "launch",
+      "name": "Debug unit tests in executable 'keygen'",
+      "cargo": {
+        "args": [
+          "test",
+          "--no-run",
+          "--bin=keygen",
+          "--package=rensa"
+        ],
+        "filter": {
+          "name": "keygen",
+          "kind": "bin"
+        }
+      },
+      "args": [],
+      "cwd": "${workspaceFolder}"
+    },
+    {
+      "type": "lldb",
+      "request": "launch",
+      "name": "Debug integration test 'state_sync_test'",
+      "cargo": {
+        "args": [
+          "test",
+          "--no-run",
+          "--test=state_sync_test",
+          "--package=rensa"
+        ],
+        "filter": {
+          "name": "state_sync_test",
+          "kind": "test"
+        }
+      },
+      "args": [],
+      "cwd": "${workspaceFolder}"
+    },
+    {
+      "type": "lldb",
+      "request": "launch",
+      "name": "Debug unit tests in library 'rensa-sdk'",
+      "cargo": {
+        "args": [
+          "test",
+          "--no-run",
+          "--lib",
+          "--package=rensa-sdk"
+        ],
+        "filter": {
+          "name": "rensa-sdk",
+          "kind": "lib"
+        }
+      },
+      "args": [],
+      "cwd": "${workspaceFolder}"
+    }
+  ]
+}

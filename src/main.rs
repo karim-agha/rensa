@@ -209,7 +209,7 @@ async fn main() -> anyhow::Result<()> {
       // a requested hash. This is the rate limiter component.
       Some(block_hash) = block_reply_responder.next() => {
         if let Some(block) = chain
-          .get(&block_hash)
+          .get(block_hash)
           .cloned()
           .or_else(|| blocks_store.get_by_hash(&block_hash).map(|(b, _)| b))
         {

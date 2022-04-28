@@ -120,9 +120,9 @@ impl<'f, D: BlockData, S: State + StateStore> Finalized<'f, D, S> {
     }
   }
 
-  pub fn apply(&mut self, block: Executed<D>) {
+  pub fn apply(&mut self, block: &Executed<D>) {
     assert!(block.parent == self.underlying.hash().unwrap());
-    self.underlying = block.underlying;
+    self.underlying = Arc::clone(&block.underlying) as Arc<dyn Block<D>>;
     self
       .state
       .apply(&block.output.state)

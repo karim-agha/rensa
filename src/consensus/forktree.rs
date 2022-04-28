@@ -5,7 +5,7 @@ use {
     vm::{Executed, State, StateError},
   },
   multihash::Multihash,
-  std::{cmp::Ordering, collections::HashSet, ops::Deref},
+  std::{cmp::Ordering, collections::HashSet, ops::Deref, sync::Arc},
 };
 
 /// A block that is still not finalized and its votes
@@ -55,7 +55,7 @@ impl<D: BlockData> VolatileBlock<D> {
 pub struct TreeNode<D: BlockData> {
   pub value: VolatileBlock<D>,
   pub parent: Option<*const TreeNode<D>>,
-  pub children: Vec<TreeNode<D>>,
+  pub children: Vec<Arc<TreeNode<D>>>,
 }
 
 // SAFETY: No one beside us has the raw pointer, so we can safely
@@ -66,27 +66,28 @@ unsafe impl<D: BlockData> Send for TreeNode<D> where D: Send {}
 unsafe impl<D: BlockData> Sync for TreeNode<D> where D: Sync {}
 
 impl<D: BlockData> TreeNode<D> {
-  pub fn new(block: VolatileBlock<D>) -> Self {
-    Self {
+  pub fn new(block: VolatileBlock<D>) -> Arc<Self> {
+    Arc::new(Self {
       value: block,
       parent: None,
       children: vec![],
-    }
+    })
   }
 
   /// Returns a reference to a block with a given hash
   /// in the current subtree, or None if no such block is found.
-  pub fn get(&self, hash: &Multihash) -> Option<&Self> {
-    if self.value.block.hash().expect("previously verified") == *hash {
-      Some(self)
-    } else {
-      for child in self.children.iter() {
-        if let Some(b) = child.get(hash) {
-          return Some(b);
-        }
-      }
-      None
-    }
+  pub fn get(self: &Arc<Self>, hash: Multihash) -> Option<&'static Self> {
+    // if self.value.block.hash().expect("previously verified") == *hash {
+    //   Some(self)
+    // } else {
+    //   for child in self.children.iter() {
+    //     if let Some(b) = child.get(hash) {
+    //       return Some(b);
+    //     }
+    //   }
+    //   None
+    // }
+    self.get_mut(hash).map(|ptr| unsafe { &*ptr as &_ })
   }
 
   /// Returns a mutable reference to a block with a given hash
@@ -95,13 +96,14 @@ impl<D: BlockData> TreeNode<D> {
   /// SAFETY: This struct and its methods are internal to this module
   /// and the node pointed to by the returned poineter is never reclaimed
   /// while reading the value retuned.
-  pub fn get_mut(&mut self, hash: &Multihash) -> Option<*mut Self> {
-    if self.value.block.hash().expect("previously veriefied") == *hash {
-      Some(self)
+  pub fn get_mut(self: &Arc<Self>, hash: Multihash) -> Option<*mut Self> {
+    let ptr = Arc::into_raw(Arc::clone(self));
+    if self.value.block.hash().expect("previously veriefied") == hash {
+      Some(ptr as *mut Self)
     } else {
       let mut output = None;
-      for child in self.children.iter_mut() {
-        if let Some(b) = child.get_mut(hash) {
+      for child in self.children.iter() {
+        if let Some(b) = Arc::clone(child).get_mut(hash) {
           output = Some(b);
           break;
         }
@@ -151,18 +153,21 @@ impl<D: BlockData> TreeNode<D> {
   }
 
   /// Adds an immediate child to this forktree node.
-  pub fn add_child(&mut self, block: VolatileBlock<D>) {
+  pub fn add_child(self: &Arc<Self>, block: VolatileBlock<D>) {
     assert!(block.block.parent().unwrap() == self.value.block.hash().unwrap());
 
+    let ptr = Arc::as_ptr(self);
+
     // set parent link to ourself
-    let block = TreeNode {
+    let block = Arc::new(TreeNode {
       value: block,
-      parent: Some(self as *const Self),
+      parent: Some(ptr),
       children: vec![],
-    };
+    });
 
     // insert the block into this fork subtree as a leaf
-    self.children.push(block);
+    let ptr2 = unsafe { &mut *(ptr as *mut Self) as &mut Self };
+    ptr2.children.push(block);
   }
 
   /// Applies votes to a block, and all its ancestors until the
@@ -420,7 +425,7 @@ mod tests {
     );
 
     let executed = Executed::new(&StateDiff::default(), produced, &vm).unwrap();
-    let mut root = TreeNode::new(VolatileBlock::new(executed));
+    let root = TreeNode::new(VolatileBlock::new(executed));
     let root_hash = root.value.hash().unwrap();
     let h1 = root.head();
 
@@ -443,24 +448,24 @@ mod tests {
     let child2_2_hash = child2_2.hash().unwrap();
 
     root.add_child(VolatileBlock::new(child1));
-    let c1 = root.children.last_mut().unwrap();
+    let c1 = root.children.last().unwrap();
     c1.add_child(VolatileBlock::new(child1_1));
     c1.add_child(VolatileBlock::new(child1_2));
 
     root.add_child(VolatileBlock::new(child2));
-    let c2 = root.children.last_mut().unwrap();
+    let c2 = root.children.last().unwrap();
     c2.add_child(VolatileBlock::new(child2_1));
     c2.add_child(VolatileBlock::new(child2_2));
 
-    let get1 = root.get(&child1_hash).unwrap();
-    let get11 = root.get(&child1_1_hash).unwrap();
-    let get12 = root.get(&child1_2_hash).unwrap();
+    let get1 = root.get(child1_hash).unwrap();
+    let get11 = root.get(child1_1_hash).unwrap();
+    let get12 = root.get(child1_2_hash).unwrap();
 
-    let get2 = root.get(&child2_hash).unwrap();
-    let get21 = root.get(&child2_1_hash).unwrap();
-    let get22 = root.get(&child2_2_hash).unwrap();
+    let get2 = root.get(child2_hash).unwrap();
+    let get21 = root.get(child2_1_hash).unwrap();
+    let get22 = root.get(child2_2_hash).unwrap();
 
-    let get3 = root.get(&Multihash::default());
+    let get3 = root.get(Multihash::default());
 
     let c1 = root.children.first().unwrap();
     let c11 = c1.children.first().unwrap();

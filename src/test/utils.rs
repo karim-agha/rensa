@@ -24,9 +24,9 @@ pub fn genesis_validators<D: BlockData>(
 ) -> Genesis<D> {
   Genesis::<D> {
     chain_id: "1".to_owned(),
-    epoch_blocks: 32,
+    epoch_blocks: 4,
     genesis_time: Utc::now(),
-    slot_interval: Duration::from_secs(1),
+    slot_interval: Duration::from_millis(500),
     state: BTreeMap::new(),
     builtins: vec![*CURRENCY_CONTRACT_ADDR],
     limits: Limits {
