@@ -44,6 +44,8 @@ use {
   },
 };
 
+// libp2p::transport::memory;
+
 #[derive(Debug, Error)]
 pub enum MemValidatorError {
   #[error(transparent)]
@@ -381,7 +383,7 @@ impl From<&TValidator> for Validator {
 mod tests {
   use {super::*, crate::test::utils::genesis_validators, std::time::Duration};
 
-  #[tokio::test(flavor = "multi_thread", worker_threads = 72)]
+  #[tokio::test(flavor = "multi_thread", worker_threads = 1)]
   async fn mem_validator_test() {
     // setup logging
     tracing_subscriber::registry()
@@ -396,7 +398,7 @@ mod tests {
     // build some unique tvalidators, and use this to build a genesis with
     // standard validators
     let validators: Vec<_> = std::iter::repeat_with(|| TValidator::unique())
-      .take(10)
+      .take(20)
       .collect();
 
     let genesis =
@@ -424,6 +426,7 @@ mod tests {
     // now lets generate the peers list and start connecting
     for v in mem_validators {
       tokio::spawn(v.start(bootstrap_nodes.clone()));
+      tokio::time::sleep(Duration::from_millis(1000)).await;
     }
 
     // now we have a validator set running, how do we access them?
