@@ -7,6 +7,7 @@ use {
   },
   ed25519_dalek::Signature,
   sqlx::{AnyPool, Connection, Executor},
+  std::sync::Arc,
   tracing::{debug, error, info},
 };
 
@@ -33,7 +34,7 @@ impl DatabaseSync {
 
   async fn sync_block(
     &self,
-    block: Executed<Vec<Transaction>>,
+    block: &Executed<Vec<Transaction>>,
     commitment: Commitment,
   ) -> Result<(), sqlx::Error> {
     // non-confirmed blocks are not synced because they
@@ -44,13 +45,13 @@ impl DatabaseSync {
       return Ok(());
     }
 
-    debug!("syncing {} with external database...", *block);
+    debug!("syncing {} with external database...", **block);
 
     let mut connection = self.pool.acquire().await?;
     let mut dbtransaction = connection.begin().await?;
 
     // insert block
-    let stmt = block_header_stmt(&block, commitment);
+    let stmt = block_header_stmt(block, commitment);
     dbtransaction.execute(stmt.as_str()).await?;
 
     // data is inserted only on the commited stage, when
@@ -62,7 +63,7 @@ impl DatabaseSync {
       for (i, tx) in block.data.iter().enumerate() {
         // first the transaction
         dbtransaction
-          .execute(transaction_stmt(&block, tx, i).as_str())
+          .execute(transaction_stmt(block, tx, i).as_str())
           .await?;
 
         // then its referenced accounts
@@ -96,14 +97,14 @@ impl DatabaseSync {
       // insert votes
       for (i, vote) in block.votes.iter().enumerate() {
         dbtransaction
-          .execute(vote_stmt(&block, vote, i).as_str())
+          .execute(vote_stmt(block, vote, i).as_str())
           .await?;
       }
 
       // insert state diffs
       for (i, (addr, acc)) in block.output.state.iter().enumerate() {
         dbtransaction
-          .execute(state_diff_stmt(&block, addr, acc, i).as_str())
+          .execute(state_diff_stmt(block, addr, acc, i).as_str())
           .await?;
       }
     }
@@ -118,10 +119,10 @@ impl DatabaseSync {
 impl BlockConsumer<Vec<Transaction>> for DatabaseSync {
   async fn consume(
     &self,
-    block: Executed<Vec<Transaction>>,
+    block: Arc<Executed<Vec<Transaction>>>,
     commitment: Commitment,
   ) {
-    if let Err(error) = self.sync_block(block, commitment).await {
+    if let Err(error) = self.sync_block(block.as_ref(), commitment).await {
       error!("dbsync error: {error:?}");
     }
   }

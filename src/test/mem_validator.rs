@@ -47,14 +47,15 @@ use {
 // libp2p::transport::memory;
 
 #[derive(Debug, Error)]
+#[allow(clippy::large_enum_variant)]
 pub enum MemValidatorError {
   #[error(transparent)]
-  IOError(#[from] std::io::Error),
+  IO(#[from] std::io::Error),
   #[error(transparent)]
-  CommandSendError(#[from] SendError<NetworkCommand<Vec<Transaction>>>),
+  CommandSend(#[from] SendError<NetworkCommand<Vec<Transaction>>>),
   #[error(transparent)]
-  ExecutedSendError(
-    #[from] SendError<(Executed<Vec<Transaction>>, Commitment)>,
+  ExecutedSend(
+    #[from] SendError<(Arc<Executed<Vec<Transaction>>>, Commitment)>,
   ),
 }
 
@@ -81,13 +82,17 @@ impl BlockStore {
 impl BlockConsumer<Vec<Transaction>> for BlockStore {
   async fn consume(
     &self,
-    block: Executed<Vec<Transaction>>,
+    block: Arc<Executed<Vec<Transaction>>>,
     _commitment: Commitment,
   ) {
     // NOTE(bmaas): looked at the block.hash() method, this returns a
     // result the question becomes how to handle this on consumption
     // here.
-    self.db.write().await.insert(block.hash().unwrap(), block);
+    self
+      .db
+      .write()
+      .await
+      .insert(block.hash().unwrap(), block.as_ref().clone());
   }
 }
 
@@ -247,7 +252,6 @@ impl MemValidator {
         Some(block_hash) = block_reply_responder.next() => {
            if let Some(block) = chain
             .get(block_hash)
-            .cloned()
           {
             network.gossip_block((*block.underlying).clone())?
           } else if let Some(block) = blocks_store.get_by_hash(&block_hash).await {
@@ -303,7 +307,7 @@ impl MemValidator {
             ChainEvent::BlockIncluded(block) => {
                 info!(
                     "included block {} [epoch {}] [state hash: {}]",
-                    *block, block.height() / self.genesis.epoch_blocks,
+                    **block, block.height() / self.genesis.epoch_blocks,
                     block.state().hash().to_bytes().to_b58()
                 );
 
@@ -313,7 +317,7 @@ impl MemValidator {
 
                 info!(
                     "confirmed block {} with {:.02}% votes [epoch {}] [state hash: {}]",
-                    *block,
+                    **block,
                     (votes as f64 * 100f64) / chain.total_stake() as f64,
                     block.height() / self.genesis.epoch_blocks,
                     block.state().hash().to_bytes().to_b58()
@@ -326,7 +330,7 @@ impl MemValidator {
             ChainEvent::BlockFinalized { block, votes } => {
                 info!(
                     "finalized block {} with {:.02}% votes [epoch {}] [state hash: {}]",
-                    *block,
+                    **block,
                     (votes as f64 * 100f64) / chain.total_stake() as f64,
                     block.height() / self.genesis.epoch_blocks,
                     block.state().hash().to_bytes().to_b58()
@@ -363,7 +367,7 @@ impl TValidator {
     }
   }
 
-  fn multiaddr(&self) -> Multiaddr {
+  fn _multiaddr(&self) -> Multiaddr {
     let mut m = Multiaddr::empty();
     m.push(Protocol::Memory(self.listenaddr));
     m
@@ -398,7 +402,7 @@ mod tests {
     // build some unique tvalidators, and use this to build a genesis with
     // standard validators
     let validators: Vec<_> = std::iter::repeat_with(TValidator::unique)
-      .take(30)
+      .take(10)
       .collect();
 
     let genesis =

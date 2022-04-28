@@ -24,24 +24,24 @@ pub enum Commitment {
 /// things like disk persistance, RPC service, sync service, etc.
 #[async_trait::async_trait]
 pub trait BlockConsumer<D: BlockData>: Sync + Send {
-  async fn consume(&self, block: Executed<D>, commitment: Commitment);
+  async fn consume(&self, block: Arc<Executed<D>>, commitment: Commitment);
 }
 
 /// A collection of block consumers that will all receive
 /// a reference to all newly included, committed and finalized blocks.
 pub struct BlockConsumers<D: BlockData> {
-  sender: UnboundedSender<(Executed<D>, Commitment)>,
+  sender: UnboundedSender<(Arc<Executed<D>>, Commitment)>,
 }
 
 impl<D: BlockData> BlockConsumers<D> {
   pub fn new(consumers: Vec<Arc<dyn BlockConsumer<D>>>) -> Self {
     // move all the consumption heavyweight work to a sperate thread
     let (sender, mut receiver) =
-      unbounded_channel::<(Executed<D>, Commitment)>();
+      unbounded_channel::<(Arc<Executed<D>>, Commitment)>();
     tokio::spawn(async move {
       while let Some((b, c)) = receiver.recv().await {
         join_all(consumers.iter().map(|consumer| {
-          let block = b.clone();
+          let block = Arc::clone(&b);
           let consumer = Arc::clone(consumer);
           tokio::spawn(async move {
             consumer.consume(block, c).await;
@@ -56,9 +56,9 @@ impl<D: BlockData> BlockConsumers<D> {
 
   pub fn consume(
     &self,
-    block: Executed<D>,
+    block: Arc<Executed<D>>,
     commitment: Commitment,
-  ) -> Result<(), SendError<(Executed<D>, Commitment)>> {
+  ) -> Result<(), SendError<(Arc<Executed<D>>, Commitment)>> {
     self.sender.send((block, commitment))
   }
 }

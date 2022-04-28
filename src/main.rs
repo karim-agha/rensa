@@ -210,10 +210,9 @@ async fn main() -> anyhow::Result<()> {
       Some(block_hash) = block_reply_responder.next() => {
         if let Some(block) = chain
           .get(block_hash)
-          .cloned()
-          .or_else(|| blocks_store.get_by_hash(&block_hash).map(|(b, _)| b))
+          .or_else(|| blocks_store.get_by_hash(&block_hash).map(|(b, _)| Arc::new(b)))
         {
-          info!("Replaying block {}", &*block);
+          info!("Replaying block {}", &**block);
           network.gossip_block((*block.underlying).clone())?
         }
       }
@@ -271,7 +270,7 @@ async fn main() -> anyhow::Result<()> {
           ChainEvent::BlockIncluded(block) => {
             info!(
               "included block {} [epoch {}] [state hash: {}]",
-              *block, block.height() / genesis.epoch_blocks,
+              **block, block.height() / genesis.epoch_blocks,
               block.state().hash().to_bytes().to_b58()
             );
 
@@ -281,7 +280,7 @@ async fn main() -> anyhow::Result<()> {
           ChainEvent::BlockConfirmed { block, votes } => {
             info!(
               "confirmed block {} with {:.02}% votes [epoch {}] [state hash: {}]",
-              *block,
+              **block,
               (votes as f64 * 100f64) / chain.total_stake() as f64,
               block.height() / genesis.epoch_blocks,
               block.state().hash().to_bytes().to_b58()
@@ -291,7 +290,7 @@ async fn main() -> anyhow::Result<()> {
           ChainEvent::BlockFinalized { block, votes } => {
             info!(
               "finalized block {} with {:.02}% votes [epoch {}] [state hash: {}]",
-              *block,
+              **block,
               (votes as f64 * 100f64) / chain.total_stake() as f64,
               block.height() / genesis.epoch_blocks,
               block.state().hash().to_bytes().to_b58()

@@ -241,7 +241,7 @@ impl HyParView {
 
     if ttl == 0 && !self.is_active(&peer.peer_id) {
       // if we're full, free up a slot and move a node to passive.
-      //self.free_up_active_slot();
+      self.free_up_active_slot();
     }
 
     if !self.overconnected() {
@@ -286,7 +286,7 @@ impl HyParView {
       // space for them by moving one of the active peers
       // to the passive view and accepting their request.
       if priority == rpc::neighbor::Priority::High as i32 {
-        //self.free_up_active_slot();
+        self.free_up_active_slot();
         self.add_node_to_active_view(peer, false);
       } else {
         // This is a low-priority neighbor request and we are

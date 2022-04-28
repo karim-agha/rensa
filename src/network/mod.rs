@@ -1,5 +1,3 @@
-use {crate::vm::Transaction, libp2p::core::transport::MemoryTransport};
-
 mod episub;
 pub mod responder;
 
@@ -7,6 +5,7 @@ use {
   crate::{
     consensus::{BlockData, Genesis, Produced, Vote},
     primitives::{Keypair, Pubkey, ToBase58String},
+    vm::Transaction,
   },
   episub::{Config, Episub, EpisubEvent, PeerAuthorizer},
   futures::StreamExt,
@@ -31,7 +30,7 @@ use {
     UnboundedReceiver,
     UnboundedSender,
   },
-  tracing::{debug, error, info, warn},
+  tracing::{debug, error, warn},
 };
 
 type BoxedTransport = Boxed<(PeerId, StreamMuxerBox)>;
@@ -66,7 +65,9 @@ pub async fn create_tcp_transport(
   )
 }
 
+#[cfg(test)]
 pub fn create_memory_transport(keypair: &Keypair) -> BoxedTransport {
+  use libp2p::core::transport::MemoryTransport;
   let transport = MemoryTransport::default();
 
   let noise_keys = noise::Keypair::<noise::X25519Spec>::new()
@@ -265,8 +266,9 @@ impl<D: BlockData> Network<D> {
               } else {
                 warn!("Received a message on an unexpected topic {topic}");
               }
-            } else
-                if let SwarmEvent::Behaviour(EpisubEvent::PeerAdded(pid)) = event { debug!("Peer added to active view {pid}") }
+            } else if let SwarmEvent::Behaviour(EpisubEvent::PeerAdded(pid)) = event {
+              debug!("Peer added to active view {pid}")
+            }
           },
           Some(event) = netout_rx.recv() => {
             match event {

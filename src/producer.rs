@@ -95,7 +95,7 @@ impl MempoolState {
     output.iter().for_each(|tx| {
       self.txs.remove(tx.hash());
     });
-    
+
     output
   }
 }
@@ -214,7 +214,7 @@ impl Stream for BlockProducer {
 impl BlockConsumer<Vec<Transaction>> for BlockProducer {
   async fn consume(
     &self,
-    block: vm::Executed<Vec<Transaction>>,
+    block: Arc<vm::Executed<Vec<Transaction>>>,
     commitment: Commitment,
   ) {
     if let Commitment::Included = commitment {

@@ -87,16 +87,16 @@ pub enum ChainEvent<D: BlockData> {
 
   /// Indicates that a block was successfully verified and included
   /// in the forktree but has not yet received more than 2/3rds vote.
-  BlockIncluded(Executed<D>),
+  BlockIncluded(Arc<Executed<D>>),
 
   /// Indicates that the block has already received more than 2/3rds
   /// of the voting stake and is in the canonical chain.
-  BlockConfirmed { block: Executed<D>, votes: u64 },
+  BlockConfirmed { block: Arc<Executed<D>>, votes: u64 },
 
   /// Indicates that a block has reached a point where it will never
   /// be reverted in any case and its state is final for the entire
   /// chain across all participating validators.
-  BlockFinalized { block: Executed<D>, votes: u64 },
+  BlockFinalized { block: Arc<Executed<D>>, votes: u64 },
 }
 
 /// Represents the state of the consensus protocol
@@ -230,7 +230,7 @@ impl<'g, D: BlockData, S: StateStore> Chain<'g, D, S> {
     // if no volatile state, either all blocks
     // are finalized or we are still at genesis block.
     let head_block = match heads.last() {
-      Some(head) => &*head.value.block,
+      Some(head) => &**head.value.block,
       None => self.finalized.as_ref(),
     };
 
@@ -285,15 +285,16 @@ impl<'g, 'f, D: BlockData, S: StateStore> Chain<'g, D, S> {
   }
 
   /// Locates a node in the fork trees that has a block with a given hash.
-  fn get_block_node(&self, hash: Multihash) -> Option<&dyn Block<D>> {
+  fn get_block_node(&self, hash: Multihash) -> Option<Arc<dyn Block<D>>> {
     for root in &self.forktrees {
       if let Some(node) = root.get(hash) {
-        return Some(node.value.block.underlying.as_ref());
+        let clone = Arc::clone(&node.value.block.underlying);
+        return Some(clone);
       }
     }
 
     if self.finalized.hash().unwrap() == hash {
-      return Some(&**self.finalized);
+      return Some(Arc::clone(&*self.finalized));
     }
 
     None
@@ -330,9 +331,7 @@ impl<'g, 'f, D: BlockData, S: StateStore> Chain<'g, D, S> {
       }
 
       for root in self.forktrees.iter_mut() {
-        if let Some(target) = Arc::clone(root).get_mut(vote.target) {
-          let target = unsafe { &mut *target as &mut TreeNode<D> };
-
+        if let Some(target) = root.get(vote.target) {
           // verify that the justification is a known finalized block
           // or an ancestor of the voted on block
           if !self.in_finalized_history(&vote.justification)
@@ -344,8 +343,6 @@ impl<'g, 'f, D: BlockData, S: StateStore> Chain<'g, D, S> {
             );
             return;
           }
-
-          // SAFETY: Trust me...
 
           // find out which block are unconfirmed prior to the vote
           let unconfirmed: Vec<_> = target
@@ -365,7 +362,7 @@ impl<'g, 'f, D: BlockData, S: StateStore> Chain<'g, D, S> {
               .map(|u| unsafe { &**u as &_ }) // borrow checker workaround, back to ref from ptr
               .filter(|b| self.confirmed(b)) // only the ones that become confirmed
               .map(|b| ChainEvent::BlockConfirmed { // generate a new event
-                block: b.block.clone(),
+                block: Arc::clone(&b.block),
                 votes: b.votes,
               })
               .into_iter()
@@ -415,10 +412,10 @@ impl<'g, 'f, D: BlockData, S: StateStore> Chain<'g, D, S> {
       return Ok(Ok(()));
     }
 
-    let mut emit_event = |block: &Executed<D>| {
+    let mut emit_event = |block: &Arc<Executed<D>>| {
       self
         .events
-        .push_front(ChainEvent::BlockIncluded(block.clone()));
+        .push_front(ChainEvent::BlockIncluded(Arc::clone(block)));
     };
 
     if block.parent == self.finalized.hash().unwrap() {
@@ -439,9 +436,7 @@ impl<'g, 'f, D: BlockData, S: StateStore> Chain<'g, D, S> {
       return Ok(Ok(()));
     } else {
       for tree in self.forktrees.iter_mut() {
-        if let Some(parent) = Arc::clone(tree).get_mut(block.parent) {
-          let parent = unsafe { Arc::from_raw(parent) };
-
+        if let Some(mut parent) = tree.get(block.parent) {
           if block.height != parent.value.height() + 1 {
             return Err(MachineError::InvalidBlockHeight);
           }
@@ -451,8 +446,7 @@ impl<'g, 'f, D: BlockData, S: StateStore> Chain<'g, D, S> {
           // that the VM receives for executing this block is a union of
           // all parent blocks state and the finalized state with priority
           // given to most recent blocks.
-          let parent_clone = Arc::clone(&parent);
-          parent_clone.add_child(VolatileBlock::new(Executed::new(
+          parent.add_child(VolatileBlock::new(Executed::new(
             &Overlayed::new(self.finalized.state(), &parent.state()),
             Arc::new(block),
             self.virtual_machine,
@@ -606,13 +600,11 @@ impl<'g, 'f, D: BlockData, S: StateStore> Chain<'g, D, S> {
   /// for finalization and returns its index.
   fn find_finalizable_root(&self) -> Option<usize> {
     for (i, root) in self.forktrees.iter().enumerate() {
+      // we need to find two consecutive epochs that have
+      // 2/3 of the votig stake, then we can finalize the
+      // second ancestor and all its parents.
+      let head = root.head();
       if root.value.votes >= self.minimum_majority_stake() {
-        let head = root.head();
-
-        // we need to find two consecutive epochs that have
-        // 2/3 of the votig stake, then we can finalize the
-        // second ancestor and all its parents.
-
         // first rewind to the beginning of the epoch of the current head
         let head_epoch_start = head.epoch_start(self.genesis.epoch_blocks);
 
@@ -689,16 +681,22 @@ impl<'g, 'f, D: BlockData, S: StateStore> Chain<'g, D, S> {
       });
     }
 
-    let mutable_subtree = Arc::get_mut(&mut subtree).unwrap();
-    self.forktrees = mutable_subtree
-      .children
-      .iter_mut()
-      .map(|c| {
-        let m = Arc::get_mut(c).unwrap();
-        m.parent = None; // becomes new root in forktree
-        unsafe { Arc::from_raw(m as &_) }
-      })
-      .collect();
+    if let Some(mutable_subtree) = Arc::get_mut(&mut subtree) {
+      self.forktrees = mutable_subtree
+        .children
+        .iter_mut()
+        .map(|c| {
+          let m = Arc::get_mut(c).unwrap();
+          m.parent = None; // becomes new root in forktree
+          unsafe { Arc::from_raw(m as &_) }
+        })
+        .collect();
+    } else {
+      tracing::error!(
+        "failed to finalize root! strong count: {}",
+        Arc::strong_count(&subtree)
+      );
+    }
   }
 
   /// A block is finalized if two consecutive epochs get 2/3 majority votes.
@@ -733,12 +731,13 @@ impl<'g, 'f, D: BlockData, S: StateStore> Chain<'g, D, S> {
 
       // keep this collection size bounded,
       // finalized votes are irrelevant for new votes.
-      self.ownvotes.remove(&self.epoch(&*block));
+      self.ownvotes.remove(&self.epoch(&**block));
 
       // signal to external listeners that a block was finalized
-      self
-        .events
-        .push_front(ChainEvent::BlockFinalized { block, votes });
+      self.events.push_front(ChainEvent::BlockFinalized {
+        block: Arc::clone(&block),
+        votes,
+      });
       return true;
     }
     false
@@ -790,10 +789,10 @@ impl<'g, D: BlockData, S: StateStore> Chain<'g, D, S> {
 impl<'g, D: BlockData, S: StateStore> Chain<'g, D, S> {
   /// Attempts to retreive a non-finalized block that is still
   /// going through the consensus algorithm.
-  pub fn get(&self, hash: Multihash) -> Option<&Executed<D>> {
+  pub fn get(&self, hash: Multihash) -> Option<Arc<Executed<D>>> {
     for root in &self.forktrees {
       if let Some(node) = root.get(hash) {
-        return Some(&node.value.block);
+        return Some(Arc::clone(&node.value.block));
       }
     }
     None

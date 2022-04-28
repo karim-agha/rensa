@@ -21,16 +21,17 @@ pub struct BlockStore {
 
 impl BlockStore {
   /// Creates a new block storage.
-  /// 
-  /// The history len parameter specifies how many latest blocks should be 
+  ///
+  /// The history len parameter specifies how many latest blocks should be
   /// kept in storage. This value determines how old is the oldest replayeable
   /// block by this node, and how old is the oldest accessible transaction and
   /// block information through RPC.
-  /// 
-  /// Detailed means that details of block execution (individual transaction 
-  /// logs, tx errors, etc.) are also persisted for [`history_len`] latest blocks.
-  /// This value is true when the RPC interface is enabled on the node, otherwise
-  /// detailed data is useless for a node to participate in consensus.
+  ///
+  /// Detailed means that details of block execution (individual transaction
+  /// logs, tx errors, etc.) are also persisted for [`history_len`] latest
+  /// blocks. This value is true when the RPC interface is enabled on the
+  /// node, otherwise detailed data is useless for a node to participate in
+  /// consensus.
   pub fn new(
     directory: PathBuf,
     history_len: u64,
@@ -285,7 +286,11 @@ impl Clone for BlockStore {
 impl BlockConsumer<BlockType> for BlockStore {
   /// The block consumer guarantees that we will get all blocks in order
   /// and without gaps, their height should be monotonically increasing.
-  async fn consume(&self, block: Executed<BlockType>, commitment: Commitment) {
+  async fn consume(
+    &self,
+    block: Arc<Executed<BlockType>>,
+    commitment: Commitment,
+  ) {
     if commitment == Commitment::Included {
       return; // unconfirmed blocks are not persisted
     }

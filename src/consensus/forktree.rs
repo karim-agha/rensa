@@ -5,7 +5,12 @@ use {
     vm::{Executed, State, StateError},
   },
   multihash::Multihash,
-  std::{cmp::Ordering, collections::HashSet, ops::Deref, sync::Arc},
+  std::{
+    cmp::Ordering,
+    collections::HashSet,
+    ops::Deref,
+    sync::{Arc, Weak},
+  },
 };
 
 /// A block that is still not finalized and its votes
@@ -16,7 +21,7 @@ use {
 /// voted on and finalized.
 #[derive(Debug, Clone)]
 pub struct VolatileBlock<D: BlockData> {
-  pub block: Executed<D>,
+  pub block: Arc<Executed<D>>,
   pub votes: u64,
   pub voters: HashSet<Pubkey>,
 }
@@ -32,7 +37,7 @@ impl<D: BlockData> Deref for VolatileBlock<D> {
 impl<D: BlockData> VolatileBlock<D> {
   pub fn new(block: Executed<D>) -> Self {
     Self {
-      block,
+      block: Arc::new(block),
       votes: 0,
       voters: HashSet::new(),
     }
@@ -54,7 +59,7 @@ impl<D: BlockData> VolatileBlock<D> {
 #[derive(Debug, Clone)]
 pub struct TreeNode<D: BlockData> {
   pub value: VolatileBlock<D>,
-  pub parent: Option<*const TreeNode<D>>,
+  pub parent: Option<Weak<TreeNode<D>>>,
   pub children: Vec<Arc<TreeNode<D>>>,
 }
 
@@ -76,34 +81,13 @@ impl<D: BlockData> TreeNode<D> {
 
   /// Returns a reference to a block with a given hash
   /// in the current subtree, or None if no such block is found.
-  pub fn get(self: &Arc<Self>, hash: Multihash) -> Option<&'static Self> {
-    // if self.value.block.hash().expect("previously verified") == *hash {
-    //   Some(self)
-    // } else {
-    //   for child in self.children.iter() {
-    //     if let Some(b) = child.get(hash) {
-    //       return Some(b);
-    //     }
-    //   }
-    //   None
-    // }
-    self.get_mut(hash).map(|ptr| unsafe { &*ptr as &_ })
-  }
-
-  /// Returns a mutable reference to a block with a given hash
-  /// in the current subtree, or None if no such block is found.
-  ///
-  /// SAFETY: This struct and its methods are internal to this module
-  /// and the node pointed to by the returned poineter is never reclaimed
-  /// while reading the value retuned.
-  pub fn get_mut(self: &Arc<Self>, hash: Multihash) -> Option<*mut Self> {
-    let ptr = Arc::into_raw(Arc::clone(self));
+  pub fn get(self: &Arc<Self>, hash: Multihash) -> Option<Arc<Self>> {
     if self.value.block.hash().expect("previously veriefied") == hash {
-      Some(ptr as *mut Self)
+      Some(Arc::clone(self))
     } else {
       let mut output = None;
       for child in self.children.iter() {
-        if let Some(b) = Arc::clone(child).get_mut(hash) {
+        if let Some(b) = child.get(hash) {
           output = Some(b);
           break;
         }
@@ -120,9 +104,9 @@ impl<D: BlockData> TreeNode<D> {
   /// means that returns the last block from the subtree
   /// that has accumulated the largest amount of votes
   /// so far or highest slot number if there is a draw.
-  pub fn head(&self) -> &Self {
+  pub fn head(self: &Arc<Self>) -> Arc<Self> {
     if self.children.is_empty() {
-      return self; // leaf block
+      return Arc::clone(self); // leaf block
     }
 
     let mut max_votes = 0;
@@ -153,40 +137,39 @@ impl<D: BlockData> TreeNode<D> {
   }
 
   /// Adds an immediate child to this forktree node.
-  pub fn add_child(self: &Arc<Self>, block: VolatileBlock<D>) {
+  pub fn add_child(self: &mut Arc<Self>, block: VolatileBlock<D>) {
     assert!(block.block.parent().unwrap() == self.value.block.hash().unwrap());
-
-    let ptr = Arc::as_ptr(self);
 
     // set parent link to ourself
     let block = Arc::new(TreeNode {
       value: block,
-      parent: Some(ptr),
+      parent: Some(Arc::downgrade(self)),
       children: vec![],
     });
 
     // insert the block into this fork subtree as a leaf
-    let ptr2 = unsafe { &mut *(ptr as *mut Self) as &mut Self };
-    ptr2.children.push(block);
+    Arc::get_mut(self).unwrap().children.push(block);
   }
 
   /// Applies votes to a block, and all its ancestors until the
   /// last finalized block that is used as the justification for
   /// this vote.
-  pub fn add_votes(&mut self, votes: u64, voter: Pubkey) {
+  pub fn add_votes(self: &mut Arc<Self>, votes: u64, voter: Pubkey) {
     // apply those votes to the current block, but don't duplicate
     // validator votes on the same block.
-    if self.value.voters.insert(voter) {
-      self.value.votes += votes;
+    let mutable = Arc::get_mut(self).unwrap();
+    if mutable.value.voters.insert(voter) {
+      mutable.value.votes += votes;
     }
 
     // also apply those votes to all the parent votes
     // until the justification point.
-    let mut current = self;
-    while let Some(ancestor) = current.parent {
-      let ancestor = unsafe { &mut *(ancestor as *mut Self) as &mut Self };
-      if ancestor.value.voters.insert(voter) {
-        ancestor.value.votes += votes;
+    let mut current = Arc::clone(self);
+    while let Some(ref ancestor) = current.parent {
+      let mut ancestor = ancestor.upgrade().unwrap();
+      let mut ancestor_mut = Arc::get_mut(&mut ancestor).unwrap();
+      if ancestor_mut.value.voters.insert(voter) {
+        ancestor_mut.value.votes += votes;
       }
       current = ancestor;
     }
@@ -194,17 +177,17 @@ impl<D: BlockData> TreeNode<D> {
 
   /// The distance of this node from the root of the tree.
   /// This is used in determining the longest current chain.
-  pub fn depth(&self) -> usize {
+  pub fn depth(self: &Arc<Self>) -> usize {
     self.path().count() - 1
   }
 
   /// Creates an iterator that walks the path from the current
   /// node until the last finalized block.
-  pub fn path(&self) -> impl Iterator<Item = &TreeNode<D>> {
+  pub fn path(self: &Arc<Self>) -> impl Iterator<Item = Arc<TreeNode<D>>> {
     PathIter::new(self)
   }
 
-  pub fn is_descendant_of(&self, hash: &Multihash) -> bool {
+  pub fn is_descendant_of(self: &Arc<Self>, hash: &Multihash) -> bool {
     for step in self.path().skip(1) {
       if step.value.hash().unwrap() == *hash {
         return true;
@@ -222,61 +205,61 @@ impl<D: BlockData> TreeNode<D> {
   /// This is used to check for finality of a block, and
   /// checking if the two consecutive epoch checkpoints
   /// are finalized.
-  pub fn epoch_start(&self, epoch_blocks: u64) -> &TreeNode<D> {
-    let epoch = |n: &TreeNode<D>| n.value.height() / epoch_blocks;
+  pub fn epoch_start(self: &Arc<Self>, epoch_blocks: u64) -> Arc<Self> {
+    let epoch = |n: &Arc<Self>| n.value.height() / epoch_blocks;
     let mut needle = self;
     for step in self.path().skip(1) {
-      if epoch(step) == epoch(self) {
-        needle = step;
+      if epoch(&step) == epoch(self) {
+        needle = &step;
       } else {
         break;
       }
     }
     if needle.value.hash().unwrap() != self.value.hash().unwrap() {
-      needle
+      Arc::clone(needle)
     } else {
-      self
+      Arc::clone(self)
     }
   }
 
   /// Returns a state object that gives access to the entire
   /// state of this block and all its parents up to the root
   /// of the unfinalized state.
-  pub fn state<'s>(&'s self) -> CascadingState<'s, D> {
-    CascadingState::<'s, D> {
+  pub fn state(self: &Arc<Self>) -> CascadingState<D> {
+    CascadingState::<D> {
       iterator: PathIter::new(self),
     }
   }
 }
 
 #[derive(Debug)]
-struct PathIter<'c, D: BlockData> {
-  current: Option<&'c TreeNode<D>>,
+struct PathIter<D: BlockData> {
+  current: Option<Arc<TreeNode<D>>>,
 }
 
-impl<'c, D: BlockData> PathIter<'c, D> {
-  pub fn new(current: &'c TreeNode<D>) -> Self {
+impl<D: BlockData> PathIter<D> {
+  pub fn new(current: &Arc<TreeNode<D>>) -> Self {
     Self {
-      current: Some(current),
+      current: Some(Arc::clone(current)),
     }
   }
 }
 
-impl<'c, D: BlockData> Clone for PathIter<'c, D> {
+impl<D: BlockData> Clone for PathIter<D> {
   fn clone(&self) -> Self {
     Self {
-      current: self.current,
+      current: self.current.clone(),
     }
   }
 }
 
-impl<'c, D: BlockData> Iterator for PathIter<'c, D> {
-  type Item = &'c TreeNode<D>;
+impl<D: BlockData> Iterator for PathIter<D> {
+  type Item = Arc<TreeNode<D>>;
 
   fn next(&mut self) -> Option<Self::Item> {
-    if let Some(node) = self.current {
-      self.current = node.parent.map(|p| unsafe { &*p as &_ });
-      Some(node)
+    if let Some(ref node) = self.current {
+      self.current = node.parent.as_ref().and_then(|w| w.upgrade());
+      Some(Arc::clone(&node))
     } else {
       None
     }
@@ -292,11 +275,11 @@ impl<'c, D: BlockData> Iterator for PathIter<'c, D> {
 /// Whenever asked for an account data, it will traverse the tree upwards
 /// until the first node returns a value for the requested address or none
 /// if it wasn't found and it should be retreived from the finalized state.
-pub struct CascadingState<'c, D: BlockData> {
-  iterator: PathIter<'c, D>,
+pub struct CascadingState<D: BlockData> {
+  iterator: PathIter<D>,
 }
 
-impl<'c, D: BlockData> State for CascadingState<'c, D> {
+impl<D: BlockData> State for CascadingState<D> {
   fn get(&self, address: &Pubkey) -> Option<Account> {
     for current in self.iterator.clone() {
       if let Some(value) = current.value.block.state().get(address) {
