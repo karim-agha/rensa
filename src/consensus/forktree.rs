@@ -5,7 +5,11 @@ use {
     vm::{Executed, State, StateError},
   },
   multihash::Multihash,
-  std::{cmp::Ordering, collections::HashSet, ops::Deref},
+  std::{
+    cmp::Ordering,
+    collections::{HashSet, LinkedList},
+    ops::Deref,
+  },
 };
 
 /// A block that is still not finalized and its votes
@@ -55,7 +59,7 @@ impl<D: BlockData> VolatileBlock<D> {
 pub struct TreeNode<D: BlockData> {
   pub value: VolatileBlock<D>,
   pub parent: Option<*const TreeNode<D>>,
-  pub children: Vec<TreeNode<D>>,
+  pub children: LinkedList<TreeNode<D>>,
 }
 
 impl<D: BlockData> TreeNode<D> {
@@ -63,7 +67,7 @@ impl<D: BlockData> TreeNode<D> {
     Self {
       value: block,
       parent: None,
-      children: vec![],
+      children: LinkedList::new(),
     }
   }
 
@@ -119,7 +123,7 @@ impl<D: BlockData> TreeNode<D> {
     let mut max_votes = 0;
     let mut top_subtree = self
       .children
-      .first()
+      .front()
       .expect("is_empty would have returned earlier");
     for subtree in &self.children {
       match subtree.value.votes.cmp(&max_votes) {
@@ -151,11 +155,11 @@ impl<D: BlockData> TreeNode<D> {
     let block = TreeNode {
       value: block,
       parent: Some(self as *const Self),
-      children: vec![],
+      children: LinkedList::new(),
     };
 
     // insert the block into this fork subtree as a leaf
-    self.children.push(block);
+    self.children.push_back(block);
   }
 
   /// Applies votes to a block, and all its ancestors until the
@@ -436,12 +440,12 @@ mod tests {
     let child2_2_hash = child2_2.hash().unwrap();
 
     root.add_child(VolatileBlock::new(child1));
-    let c1 = root.children.last_mut().unwrap();
+    let c1 = root.children.back_mut().unwrap();
     c1.add_child(VolatileBlock::new(child1_1));
     c1.add_child(VolatileBlock::new(child1_2));
 
     root.add_child(VolatileBlock::new(child2));
-    let c2 = root.children.last_mut().unwrap();
+    let c2 = root.children.back_mut().unwrap();
     c2.add_child(VolatileBlock::new(child2_1));
     c2.add_child(VolatileBlock::new(child2_2));
 
@@ -455,13 +459,13 @@ mod tests {
 
     let get3 = root.get(&Multihash::default());
 
-    let c1 = root.children.first().unwrap();
-    let c11 = c1.children.first().unwrap();
-    let c12 = c1.children.last().unwrap();
+    let c1 = root.children.front().unwrap();
+    let c11 = c1.children.front().unwrap();
+    let c12 = c1.children.back().unwrap();
 
-    let c2 = root.children.last().unwrap();
-    let c21 = c2.children.first().unwrap();
-    let c22 = c2.children.last().unwrap();
+    let c2 = root.children.back().unwrap();
+    let c21 = c2.children.front().unwrap();
+    let c22 = c2.children.back().unwrap();
 
     assert_eq!(root.value.hash().unwrap(), root_hash);
     assert_eq!(get1.value.hash().unwrap(), c1.value.hash().unwrap());

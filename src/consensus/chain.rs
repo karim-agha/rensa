@@ -55,7 +55,7 @@ use {
   multihash::Multihash,
   std::{
     cmp::Ordering,
-    collections::{hash_map::Entry, HashMap, HashSet, VecDeque},
+    collections::{hash_map::Entry, HashMap, HashSet, LinkedList, VecDeque},
     pin::Pin,
     sync::Arc,
     task::{Context, Poll},
@@ -128,7 +128,7 @@ pub struct Chain<'g, D: BlockData, S: StateStore> {
   ///
   /// Those blocks are voted on by validators, once the finalization
   /// requirements are met, they get finalized.
-  forktrees: Vec<TreeNode<D>>,
+  forktrees: LinkedList<TreeNode<D>>,
 
   /// Blocks that were received but their parent
   /// block was not included in the forrest (yet).
@@ -184,7 +184,7 @@ impl<'g, D: BlockData, S: StateStore> Chain<'g, D, S> {
     Self {
       genesis,
       finalized,
-      forktrees: vec![],
+      forktrees: LinkedList::new(),
       orphans: Orphans::new(epoch_duration),
       ownvotes: HashMap::new(),
       events: VecDeque::new(),
@@ -432,8 +432,8 @@ impl<'g, 'f, D: BlockData, S: StateStore> Chain<'g, D, S> {
         self.virtual_machine,
       )?);
 
-      self.forktrees.push(TreeNode::new(block));
-      emit_event(&self.forktrees.last().unwrap().value.block);
+      self.forktrees.push_back(TreeNode::new(block));
+      emit_event(&self.forktrees.back().unwrap().value.block);
       return Ok(Ok(()));
     } else {
       for tree in self.forktrees.iter_mut() {
@@ -454,7 +454,7 @@ impl<'g, 'f, D: BlockData, S: StateStore> Chain<'g, D, S> {
             Arc::new(block),
             self.virtual_machine,
           )?));
-          emit_event(&parent.children.last().unwrap().value.block);
+          emit_event(&parent.children.back().unwrap().value.block);
           return Ok(Ok(()));
         }
       }
@@ -718,7 +718,9 @@ impl<'g, 'f, D: BlockData, S: StateStore> Chain<'g, D, S> {
       // found one, remove it from the tree and
       // finalize it, then make its children the
       // new forktrees roots.
-      let subtree = self.forktrees.remove(index);
+      let mut split = self.forktrees.split_off(index);
+      let subtree = split.pop_front().unwrap();
+      self.forktrees.append(&mut split);
 
       // clones is for the output event
       let votes = subtree.value.votes;
