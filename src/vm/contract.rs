@@ -5,16 +5,17 @@
 //! input and output data into and from the contract.
 
 use {
-  super::{transaction::SignatureError, Machine},
+  super::{transaction::SignatureError, AccountRef, Machine},
   crate::primitives::Pubkey,
+  borsh::{BorshDeserialize, BorshSerialize},
   serde::{Deserialize, Serialize},
   thiserror::Error,
 };
 
-#[derive(Debug, Error, Clone, Serialize, Deserialize)]
+#[derive(Debug, Error, Clone, Serialize, Deserialize, BorshDeserialize)]
 pub enum ContractError {
-  #[error("Invalid transaction nonce value for this payer, expected {0}")]
-  InvalidTransactionNonce(u64),
+  #[error("Invalid transaction nonce value for this payer")]
+  InvalidTransactionNonce,
 
   #[error("Account already exists")]
   AccountAlreadyExists,
@@ -52,6 +53,9 @@ pub enum ContractError {
   #[error("Contract does not exit")]
   ContractDoesNotExit,
 
+  #[error("The called account is not executable")]
+  AccountIsNotExecutable,
+
   #[error("Signature Error: {0}")]
   SignatureError(#[from] SignatureError),
 
@@ -60,6 +64,9 @@ pub enum ContractError {
 
   #[error("This contract is not allowed to perform this operation")]
   UnauthorizedOperation,
+
+  #[error("Runtime Error: {0}")]
+  Runtime(String),
 
   #[error("Contract error: {0}")]
   Other(String),
@@ -74,7 +81,7 @@ impl From<std::io::Error> for ContractError {
   }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, BorshSerialize, BorshDeserialize)]
 pub struct AccountView {
   pub signer: bool,
   pub writable: bool,
@@ -83,7 +90,7 @@ pub struct AccountView {
   pub data: Option<Vec<u8>>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, BorshDeserialize)]
 pub enum Output {
   /// This type represents a log entry emitted by a smart contract.
   ///
@@ -123,7 +130,7 @@ pub enum Output {
     ///
     /// Those accounts must already be referenced by the calling
     /// contract, with the same or higher writability flags.
-    accounts: Vec<(Pubkey, AccountView)>,
+    accounts: Vec<AccountRef>,
 
     /// Input bytes to the invoked contract
     params: Vec<u8>,
@@ -145,8 +152,19 @@ pub type Result = std::result::Result<Vec<Output>, ContractError>;
 /// This is the self-cointained input type that is passed to the
 /// contract code containing all accounts data referenced by the
 /// transaction.
-#[derive(Debug)]
+#[derive(Debug, BorshSerialize)]
 pub struct Environment {
+  /// Address of the contract invoking this contract.
+  ///
+  /// For top-level contracts, that are invoked by the transaction
+  /// directly this value is None.
+  ///
+  /// This value is used in contracts to ensure that certain
+  /// instructions are internal and not permitted to be called
+  /// by external contracts, or explicitly specify access policy
+  /// to those instructions based on the caller address.
+  pub caller: Option<Pubkey>,
+
   /// Address of the contract that is being invoked
   pub address: Pubkey,
 
@@ -163,4 +181,4 @@ pub type NativeContractEntrypoint = fn(&Environment, &[u8], &Machine) -> Result;
 ///
 /// WASM contracts run in an isolated environment and have no direct access
 /// to any runtime facilities.
-pub type ContractEntrypoint = fn(&Environment, &[u8]) -> Result;
+pub type ContractEntrypoint = Box<dyn Fn(&Environment, &[u8]) -> Result>;

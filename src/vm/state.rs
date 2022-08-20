@@ -3,7 +3,7 @@ use {
   crate::{
     consensus::{Block, BlockData},
     primitives::{Account, Pubkey},
-    storage::PersistentState,
+    storage::Error as StorageError,
   },
   multihash::{
     Code as MultihashCode,
@@ -15,7 +15,7 @@ use {
   once_cell::sync::OnceCell,
   serde::{Deserialize, Serialize},
   std::{
-    collections::{btree_map::IntoIter, BTreeMap, BTreeSet},
+    collections::{BTreeMap, BTreeSet},
     ops::Deref,
     sync::Arc,
   },
@@ -31,7 +31,8 @@ pub enum StateError {
   StorageEngineError(#[from] crate::storage::Error),
 }
 
-type Result<T> = std::result::Result<T, StateError>;
+type StateResult<T> = std::result::Result<T, StateError>;
+type StorageResult<T> = std::result::Result<T, StorageError>;
 
 /// Represents the state of the blockchain that is the result
 /// of running the replicated state machine.
@@ -44,10 +45,10 @@ pub trait State {
     &mut self,
     address: Pubkey,
     account: Account,
-  ) -> Result<Option<Account>>;
+  ) -> StateResult<Option<Account>>;
 
   /// Stores or overwrites an account object and its contents in the state.
-  fn remove(&mut self, address: Pubkey) -> Result<()>;
+  fn remove(&mut self, address: Pubkey) -> StateResult<()>;
 
   /// Returns the CID or hash of the current state.
   ///
@@ -56,6 +57,11 @@ pub trait State {
   /// object that also points to the previous state that this
   /// state was built upon.
   fn hash(&self) -> Multihash;
+}
+
+pub trait StateStore: State {
+  /// Applies a state diff from a finalized block
+  fn apply(&self, diff: &StateDiff) -> StorageResult<()>;
 }
 
 /// Represents a view of two overlayed states without modifying any of them.
@@ -85,11 +91,11 @@ impl<'s1, 's2> State for Overlayed<'s1, 's2> {
     }
   }
 
-  fn set(&mut self, _: Pubkey, _: Account) -> Result<Option<Account>> {
+  fn set(&mut self, _: Pubkey, _: Account) -> StateResult<Option<Account>> {
     Err(StateError::WritesNotSupported)
   }
 
-  fn remove(&mut self, _: Pubkey) -> Result<()> {
+  fn remove(&mut self, _: Pubkey) -> StateResult<()> {
     Err(StateError::WritesNotSupported)
   }
 
@@ -101,13 +107,13 @@ impl<'s1, 's2> State for Overlayed<'s1, 's2> {
 /// Represents a block that has been finalized and is guaranteed
 /// to never be reverted. It contains the global blockchain state.
 #[derive(Debug)]
-pub struct Finalized<'f, D: BlockData> {
+pub struct Finalized<'f, D: BlockData, S: StateStore> {
   underlying: Arc<dyn Block<D>>,
-  state: &'f PersistentState,
+  state: &'f S,
 }
 
-impl<'f, D: BlockData> Finalized<'f, D> {
-  pub fn new(block: Arc<dyn Block<D>>, storage: &'f PersistentState) -> Self {
+impl<'f, D: BlockData, S: State + StateStore> Finalized<'f, D, S> {
+  pub fn new(block: Arc<dyn Block<D>>, storage: &'f S) -> Self {
     Self {
       underlying: block,
       state: storage,
@@ -119,7 +125,7 @@ impl<'f, D: BlockData> Finalized<'f, D> {
     self.underlying = block.underlying;
     self
       .state
-      .apply(block.output.state.clone())
+      .apply(&block.output.state)
       .expect("unrecoverable storage engine error"); // most likely disk is full
   }
 
@@ -128,7 +134,7 @@ impl<'f, D: BlockData> Finalized<'f, D> {
   }
 }
 
-impl<D: BlockData> Deref for Finalized<'_, D> {
+impl<D: BlockData, S: StateStore> Deref for Finalized<'_, D, S> {
   type Target = Arc<dyn Block<D>>;
 
   fn deref(&self) -> &Self::Target {
@@ -136,6 +142,18 @@ impl<D: BlockData> Deref for Finalized<'_, D> {
   }
 }
 
+/// Represents a change in Blockchain Accounts state.
+///
+/// Statediff are meant to be accumulated and logically the entire
+/// state of the blockchain is the result of cumulative application
+/// of consecutive state diffs.
+///
+/// A transaction produces a statediff, blocks produce state diffs
+/// which are all its transactions state diffs merged together.
+/// If all blocks state diffs are also merged together, then the
+/// resulting state diff would represent the entire state of the system.
+///
+/// StateDiff is also the basic unit of state sync through IPFS/bitswap.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct StateDiff {
   data: BTreeMap<Pubkey, Account>,
@@ -164,6 +182,21 @@ impl StateDiff {
       hashcache: OnceCell::new(),
     }
   }
+
+  /// Iterate over all account changes in a state diff.
+  ///
+  /// There are two variants of changes:
+  ///   1. (Address, Account) => Means that account under a given address was
+  ///      created or changed its contents.
+  ///   2. (Address, None) => Means that account under a given address was
+  ///      deleted.
+  pub fn iter(&self) -> impl Iterator<Item = (&Pubkey, Option<&Account>)> {
+    self
+      .data
+      .iter()
+      .map(|(addr, acc)| (addr, Some(acc)))
+      .chain(self.deletes.iter().map(|addr| (addr, None)))
+  }
 }
 
 impl State for StateDiff {
@@ -175,12 +208,12 @@ impl State for StateDiff {
     &mut self,
     address: Pubkey,
     account: Account,
-  ) -> Result<Option<Account>> {
+  ) -> StateResult<Option<Account>> {
     self.deletes.remove(&address);
     Ok(self.data.insert(address, account))
   }
 
-  fn remove(&mut self, address: Pubkey) -> Result<()> {
+  fn remove(&mut self, address: Pubkey) -> StateResult<()> {
     self.deletes.insert(address);
     Ok(())
   }
@@ -194,21 +227,6 @@ impl State for StateDiff {
       }
       MultihashCode::Sha3_256.wrap(hasher.finalize()).unwrap()
     })
-  }
-}
-
-impl IntoIterator for StateDiff {
-  type IntoIter = IntoIter<Pubkey, Option<Account>>;
-  type Item = (Pubkey, Option<Account>);
-
-  fn into_iter(self) -> Self::IntoIter {
-    self
-      .data
-      .into_iter()
-      .map(|(addr, acc)| (addr, Some(acc)))
-      .chain(self.deletes.into_iter().map(|addr| (addr, None)))
-      .collect::<BTreeMap<_, _>>()
-      .into_iter()
   }
 }
 

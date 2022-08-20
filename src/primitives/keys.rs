@@ -83,6 +83,12 @@ impl Pubkey {
       .decompress()
       .is_some()
   }
+
+  #[cfg(test)]
+  pub fn unique() -> Self {
+    let keypair = Keypair::unique();
+    keypair.public()
+  }
 }
 
 impl AsRef<[u8]> for Pubkey {

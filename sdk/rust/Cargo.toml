@@ -1,0 +1,22 @@
+[package]
+name = "rensa-sdk"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.60"
+authors = ["Karim Agha <karim.dev@gmail.com>"]
+license = "MIT"
+description = "Fast PoS Blockchain in Rust"
+homepage = "https://github.com/terra-money/rensa"
+repository = "https://github.com/terra-money/rensa"
+keywords = ["blockchain", "cryptocurrency"]
+categories = ["blockchain", "cryptocurrency"]
+
+[dependencies]
+rensa-sdk-macros = { path = "./macros" }
+
+bs58 = "0.4.0"
+borsh = "0.9.3"
+
+
+[lib]
+crate-type = ["cdylib", "rlib"]

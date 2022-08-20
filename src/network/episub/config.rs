@@ -86,7 +86,7 @@ pub struct Config {
 
   /// Defines if message payloads are going to be compressed over the wire.
   /// This trades processing speed vs network bandwidth. Both sides of the
-  /// p2p protocol must use the same configuration, otherwise they will 
+  /// p2p protocol must use the same configuration, otherwise they will
   /// attempt to decompress uncompressed data.
   pub enable_compression: bool,
 
@@ -117,6 +117,17 @@ impl Config {
   pub fn max_active_view_size(&self) -> usize {
     ((self.network_size as f64).log2() + self.active_view_factor as f64).round()
       as usize
+  }
+
+  /// A node is considered starving when it's active view size is less than 
+  /// this value. It will try to maintain half of `max_active_view_size` to 
+  /// achieve minimum level of connection redundancy, another half is reserved 
+  /// for peering connections from other nodes.
+  /// 
+  /// Two thresholds allow to avoid cyclical connections and disconnections when new
+  /// nodes are connected to a group of overconnected nodes.
+  pub fn min_active_view_size(&self) -> usize {
+    self.max_active_view_size().div_euclid(2).max(1)
   }
 
   pub fn max_passive_view_size(&self) -> usize {

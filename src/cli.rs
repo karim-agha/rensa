@@ -1,5 +1,10 @@
 use {
-  crate::{consensus::Genesis, primitives::Keypair, vm::Transaction},
+  crate::{
+    consensus::Genesis,
+    dbsync::DatabaseSync,
+    primitives::Keypair,
+    vm::Transaction,
+  },
   clap::Parser,
   libp2p::{multiaddr::Protocol, Multiaddr},
   std::{
@@ -53,11 +58,14 @@ pub struct CliOpts {
   )]
   data_dir: PathBuf,
 
+  #[clap(long, help = "The number of N most recent block to store")]
+  blocks_history: Option<u64>,
+
   #[clap(
     long,
-    help = "The number of N most recent block to store"
+    help = "A connection string to a SQL database for uploading blockchain data"
   )]
-  blocks_history: Option<u64>,
+  dbsync: Option<String>,
 }
 
 impl CliOpts {
@@ -154,22 +162,41 @@ impl CliOpts {
   }
 
   /// Specifies how many blocks need to be persisted by a node to respond
-  /// to block reply requests for other nodes and RPC requests with block details. 
-  /// 
+  /// to block reply requests for other nodes and RPC requests with block
+  /// details.
+  ///
   /// If the command line value is not provided, then the default is calculated
-  /// to make sure that the node can replay any block and serve detailed RPC calls
-  /// for blocks within the last hour of confirmation. An hour is more than enough for
-  /// any realistic operation that needs to check the status of a block or a transaction.
-  /// 
-  /// Longer storage intervals have to be requested explicitly as they require vast
-  /// amounts of disk space and they are reserved for archival nodes. For block 
-  /// explorers and analytics its recommended to use the dbsync mechanism instead of
-  /// relying on this.
+  /// to make sure that the node can replay any block and serve detailed RPC
+  /// calls for blocks within the last hour of confirmation. An hour is more
+  /// than enough for any realistic operation that needs to check the status
+  /// of a block or a transaction.
+  ///
+  /// Longer storage intervals have to be requested explicitly as they require
+  /// vast amounts of disk space and they are reserved for archival nodes. For
+  /// block explorers and analytics its recommended to use the dbsync
+  /// mechanism instead of relying on this.
   pub fn blocks_history(&self) -> u64 {
     self.blocks_history.unwrap_or_else(|| {
       let slot = self.genesis().unwrap().slot_interval.as_millis() as u64;
       let oldest = Duration::from_secs(60 * 60).as_millis() as u64; // 1h
       oldest / slot
     })
+  }
+
+  /// An optional field that specifies a connection to a SQL database for
+  /// dbsync.
+  ///
+  /// When dbsync is enabled, then all blocks, transactions, outputs etc,
+  /// are also inserted to an external SQL database. This feature is most useful
+  /// when building explorers or other analytical tools that need offline
+  /// blockchain data processing.
+  pub async fn dbsync(&self) -> Result<Option<DatabaseSync>, sqlx::Error> {
+    if let Some(ref connection_string) = self.dbsync {
+      let pool = sqlx::AnyPool::connect(connection_string).await?;
+      let dbsync = DatabaseSync::new(pool).await?;
+      Ok(Some(dbsync))
+    } else {
+      Ok(None)
+    }
   }
 }

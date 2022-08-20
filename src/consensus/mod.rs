@@ -2,13 +2,13 @@
 //! protocols." Implementation of the Latest Message Driven CBC Casper GHOST
 //! consensus
 
-mod block;
+pub mod block;
 mod chain;
-mod forktree;
-mod genesis;
+pub mod forktree;
+pub mod genesis;
 mod orphans;
 mod schedule;
-mod validator;
+pub mod validator;
 mod vote;
 
 pub use {

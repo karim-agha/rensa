@@ -8,6 +8,7 @@ use {
     vm::{
       contract::{self, AccountView, ContractError, Environment},
       transaction::SignatureError,
+      AccountRef,
       Machine,
     },
   },
@@ -425,7 +426,14 @@ fn process_install(
     let accounts = env.accounts[2..].to_vec();
     output.push(contract::Output::ContractInvoke {
       contract: *c_addr,
-      accounts,
+      accounts: accounts
+        .iter()
+        .map(|(addr, acc)| AccountRef {
+          address: *addr,
+          writable: acc.writable,
+          signer: acc.signer,
+        })
+        .collect(),
       params,
     });
   }

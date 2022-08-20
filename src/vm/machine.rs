@@ -1,7 +1,7 @@
 use {
   super::{
     builtin::BUILTIN_CONTRACTS,
-    contract::{ContractEntrypoint, NativeContractEntrypoint},
+    contract::{ContractEntrypoint, ContractError, NativeContractEntrypoint},
     output::{BlockOutput, ErrorsMap, LogsMap},
     unit::ExecutionUnit,
     Overlayed,
@@ -12,6 +12,7 @@ use {
   crate::{
     consensus::{BlockData, Genesis, Limits, Produced},
     primitives::{Account, Pubkey, ToBase58String},
+    vm::{contract::Environment, runtime::Runtime, WASM_VM_BUILTIN_ADDR},
   },
   std::{cmp::Ordering, collections::HashMap},
   thiserror::Error,
@@ -81,8 +82,28 @@ impl Machine {
   }
 
   /// Gets a WASM contract deployed externally to the blockchain.
-  pub fn contract(&self, _addr: &Pubkey) -> Option<ContractEntrypoint> {
-    todo!()
+  pub fn contract(
+    &self,
+    addr: &Pubkey,
+    state: &dyn State,
+  ) -> Result<ContractEntrypoint, ContractError> {
+    if let Some(account) = state.get(addr) {
+      if let Some(owner) = account.owner {
+        if owner == *WASM_VM_BUILTIN_ADDR
+          && account.executable
+          && account.data.is_some()
+        {
+          let runtime = Runtime::new(account.data.unwrap().as_ref())?;
+          return Ok(Box::new(move |env: &Environment, params: &[u8]| {
+            runtime.invoke(env, params)
+          }));
+        }
+      }
+
+      Err(ContractError::AccountIsNotExecutable)
+    } else {
+      Err(ContractError::ContractDoesNotExit)
+    }
   }
 
   /// Configured execution contraints.
@@ -123,6 +144,8 @@ impl Executable for Vec<Transaction> {
       // on execution of a tranasction, increment payer's nonce value
       // so the same transaction could not be replayed in the future,
       // regardless of its execution outcome.
+      // TODO(karim): why has is this an Overlayed and not just directly the
+      // state?
       match Overlayed::new(state, &accstate).get(&transaction.payer) {
         Some(mut payer) => {
           payer.nonce += 1;
@@ -143,9 +166,8 @@ impl Executable for Vec<Transaction> {
       let state = Overlayed::new(state, &accstate);
 
       // try instantiating the contract, construct its
-      // isolated environment and execute it then injest
+      // isolated environment and execute it then ingest
       // all its outputs if ran successfully to completion.
-
       match ExecutionUnit::new(transaction, &state, vm)
         .and_then(|exec_unit| exec_unit.execute())
       {
@@ -170,6 +192,8 @@ impl Executable for Vec<Transaction> {
       };
     }
 
+    // NOTE(bmaas): this blockoutput would be perfect
+    // to ease our testing
     Ok(BlockOutput::new(accstate, acclogs, accerrors))
   }
 }

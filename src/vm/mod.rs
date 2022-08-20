@@ -3,13 +3,24 @@ mod contract;
 mod executed;
 mod machine;
 mod output;
+mod runtime;
 mod state;
 mod transaction;
 mod unit;
 
 pub use {
+  contract::ContractError,
   executed::Executed,
   machine::{Executable, Machine, MachineError},
-  state::{Finalized, Overlayed, State, StateDiff, StateError},
+  output::BlockOutput,
+  state::{Finalized, Overlayed, State, StateDiff, StateError, StateStore},
   transaction::{AccountRef, ExecutedTransaction, Transaction},
 };
+
+lazy_static::lazy_static! {
+  /// Address of the only contract that is allowed to create executable accounts.
+  pub static ref WASM_VM_BUILTIN_ADDR: crate::primitives::Pubkey =
+    "WasmVM1xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+      .parse()
+      .unwrap();
+}

@@ -353,10 +353,9 @@ fn get_confirmed_account(
       let mut cursor = confirmed_height;
       while cursor > finalized_height {
         if let Some((block, _)) = state.blocks.get_by_height(cursor) {
-          if let Some(acc) = block.state().get(account) {
-            return Some(acc);
-          } else {
-            cursor -= 1;
+          match block.state().get(account) {
+            Some(acc) => return Some(acc),
+            None => cursor -= 1,
           }
         }
       }

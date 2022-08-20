@@ -119,10 +119,16 @@ impl HyParView {
     })
   }
 
+  /// Overconnected nodes are ones where the active view
+  /// has a full set of nodes in it.
+  pub fn overconnected(&self) -> bool {
+    self.active.len() >= self.config.max_active_view_size()
+  }
+
   /// Starved topics are ones where the active view
-  /// doesn't have a full set of nodes in it.
+  /// doesn't have a minimum set of nodes in it.
   pub fn starved(&self) -> bool {
-    self.active.len() < self.config.max_active_view_size()
+    self.active.len() < self.config.min_active_view_size()
   }
 }
 
@@ -132,7 +138,7 @@ impl HyParView {
   /// a random node from the active view and makes space for the new
   /// node.
   fn free_up_active_slot(&mut self) {
-    if self.starved() {
+    if self.overconnected() {
       let random = self.passive.iter().choose(&mut rand::thread_rng()).cloned();
       if let Some(random) = random {
         debug!(
@@ -191,7 +197,7 @@ impl HyParView {
       return;
     }
 
-    if self.starved() {
+    if !self.overconnected() {
       // notify the peer that we have accepted their join request, so
       // it can add us to its active view, and in case it is the first
       // join request on a pending topic, it moves to the fully joined
@@ -238,7 +244,7 @@ impl HyParView {
       self.free_up_active_slot();
     }
 
-    if self.starved() {
+    if !self.overconnected() {
       self.add_node_to_active_view(peer.clone(), true);
     } else {
       self.add_node_to_passive_view(peer.clone());
@@ -267,23 +273,26 @@ impl HyParView {
   }
 
   pub fn inject_neighbor(&mut self, peer: AddressablePeer, priority: i32) {
-    if self.starved() && !self.is_active(&peer.peer_id) {
+    if self.is_active(&peer.peer_id) {
+      debug!(
+        "peer {} is ignoring neighbor request from {}: already in active view",
+        self.local_node.peer_id, peer.peer_id
+      )
+    } else if !self.overconnected() {
       self.add_node_to_active_view(peer, false);
     } else {
       // high priority NEIGHBOR messages are sent by nodes
       // that have zero active peers, in that case we make
       // space for them by moving one of the active peers
       // to the passive view and accepting their request.
-      if let Some(priority) = rpc::neighbor::Priority::from_i32(priority) {
-        if priority == rpc::neighbor::Priority::High {
-          self.free_up_active_slot();
-          self.add_node_to_active_view(peer, false);
-        } else {
-          // This is a low-priority neighbor request and we are
-          // at capacity for active peers, send back a disconnect
-          // message and place the peer in passive view.
-          self.inject_disconnect(peer.peer_id, true);
-        }
+      if priority == rpc::neighbor::Priority::High as i32 {
+        self.free_up_active_slot();
+        self.add_node_to_active_view(peer, false);
+      } else {
+        // This is a low-priority neighbor request and we are
+        // at capacity for active peers, send back a disconnect
+        // message and place the peer in passive view.
+        self.inject_disconnect(peer.peer_id, true);
       }
     }
   }
